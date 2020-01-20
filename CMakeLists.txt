@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(dht)
 
 set(CMAKE_CXX_STANDARD 20)
-find_package(Boost COMPONENTS asio)
+find_package(Boost COMPONENTS system)
 
 add_library(bencoding STATIC bencoding.cpp)
 add_library(krpc STATIC krpc.cpp)

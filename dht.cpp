@@ -88,9 +88,10 @@ int main(int argc, char* argv[]) {
       udp::resolver resolver(io_service);
       udp::endpoint ep;
       try {
-        for (const auto &q : resolver.resolve(udp::resolver::query(node_host, node_port))) {
-          if (q.endpoint().protocol() == udp::v4()) {
-            ep = q.endpoint();
+        auto resolutions = resolver.resolve(udp::resolver::query(node_host, node_port));
+        for (auto it = resolutions.begin(); it != resolutions.end(); it++) {
+          if (it->endpoint().protocol() == udp::v4()) {
+            ep = it->endpoint();
             break;
           }
         }
