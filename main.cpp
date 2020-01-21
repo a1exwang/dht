@@ -1,11 +1,7 @@
-#include "dht.hpp"
+#include "log.hpp"
+
+#include <dht.hpp>
 #include <krpc.hpp>
-
-
-#include <cstdlib>
-#include <vector>
-#include <iostream>
-
 
 int main(int argc, char* argv[]) {
   dht::Config config;

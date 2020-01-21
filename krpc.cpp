@@ -1,3 +1,4 @@
+#include "log.hpp"
 #include "krpc.hpp"
 
 #include <algorithm>
@@ -338,9 +339,9 @@ std::shared_ptr<bencoding::Node> FindNodeResponse::get_response_node() const {
   return std::make_shared<bencoding::DictNode>(response_dict);
 }
 void FindNodeResponse::print_nodes() {
-  std::cout << "FindNodeResponse " << std::endl;
+  LOG(debug) << "FindNodeResponse ";
   for (auto node : nodes_) {
-    std::cout << node.to_string() << std::endl;
+    LOG(debug) << node.to_string();
   }
 }
 std::shared_ptr<bencoding::Node> FindNodeQuery::get_arguments_node() const {

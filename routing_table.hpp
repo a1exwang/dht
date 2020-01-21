@@ -16,8 +16,14 @@ class Entry {
   explicit Entry(krpc::NodeID id) :id_(id) { }
   Entry(krpc::NodeID id, uint32_t ip, uint16_t port)
       :id_(id), ip_(ip), port_(port) { }
+
+  [[nodiscard]]
   krpc::NodeID id() const { return id_; }
+
+  [[nodiscard]]
   uint32_t ip() const { return ip_; }
+
+  [[nodiscard]]
   uint16_t port() const { return port_; }
 
   bool operator<(const Entry &rhs) const {

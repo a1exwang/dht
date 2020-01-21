@@ -1,4 +1,5 @@
 #include "dht.hpp"
+#include <log.hpp>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
@@ -25,23 +26,23 @@ class DHTImpl {
   void loop() {
     try {
       io.run();
-      std::cout << "successfully end" << std::endl;
+      LOG(info) << "Successfully end";
     } catch (std::exception& e) {
-      std::cerr << "Exception: " << e.what() << "\n";
+      LOG(error) << "Exception: " << e.what();
       std::exit(EXIT_FAILURE);
     }
   }
 
   void handle_send(const boost::system::error_code &error, std::size_t bytes_transferred) {
     if (error || bytes_transferred <= 0) {
-      std::cerr << "sendto failed: " << error.message() << std::endl;
+      LOG(error) << "sendto failed: " << error.message();
     }
   };
 
 
   void handle_receive_from(const boost::system::error_code& error, std::size_t bytes_transferred) {
     if (error || bytes_transferred <= 0) {
-      std::cout << "receive failed: " << error.message() << std::endl;
+      LOG(error) << "receive failed: " << error.message();
       return;
     }
 
@@ -58,7 +59,7 @@ class DHTImpl {
         return method_name;
       });
     } catch (const krpc::InvalidMessage &e) {
-      std::cout << "Invalid Message, e: " << e.what() << ", skipped package" << std::endl;
+      LOG(error) << "Invalid Message, e: " << e.what() << ", skipped package";
       continue_receive();
       return;
     }
@@ -69,16 +70,14 @@ class DHTImpl {
         for (auto &target_node : find_node_response->nodes()) {
           dht::Entry entry(target_node.id(), target_node.ip(), target_node.port());
           this->dht_->routing_table.add_node(entry);
-//                routing_table.encode(std::cout);
-//          this->dht_->routing_table.stat(std::cout);
         }
       } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
-        std::cout << "received ping response" << std::endl;
+        LOG(info) << "received ping response";
       } else {
-        std::cerr << "Warning! response type not supported" << std::endl;
+        LOG(error) << "Warning! response type not supported";
       }
     } else if(auto query = std::dynamic_pointer_cast<krpc::Query>(message); query) {
-      std::cout << "query received, ignored" << std::endl;
+      LOG(info) << "query received, ignored";
     }
     continue_receive();
   }
@@ -118,7 +117,7 @@ class DHTImpl {
           }
         }
       } catch (std::exception &e) {
-        std::cerr << "failed to resolve '" << node_host << ":" << node_port << ", skipping, reason: " <<  e.what() << std::endl;
+        LOG(error) << "failed to resolve '" << node_host << ":" << node_port << ", skipping, reason: " <<  e.what();
         break;
       }
 
@@ -162,7 +161,7 @@ class DHTImpl {
 
   void handle_report_stat_timer(const boost::system::error_code& e) {
     if (e) {
-      std::cout << "report stat timer error: " << e.message() << std::endl;
+      LOG(error) << "report stat timer error: " << e.message();
       return;
     }
     report_stat_timer.expires_at(
@@ -174,12 +173,12 @@ class DHTImpl {
             this,
             boost::asio::placeholders::error));
 
-    std::cout << "routing table " << dht_->routing_table.size() << std::endl;
+    LOG(info) << "routing table " << dht_->routing_table.size();
   }
 
   void handle_expand_route_timer(const boost::system::error_code& e) {
     if (e) {
-      std::cout << "Timer error: " << e.message() << std::endl;
+      LOG(error) << "Timer error: " << e.message();
       return;
     }
 
@@ -193,7 +192,7 @@ class DHTImpl {
             boost::asio::placeholders::error));
 
     if (!dht_->routing_table.is_full()) {
-//      std::cout << "sending find node query..." << std::endl;
+      LOG(debug) << "sending find node query...";
       auto targets = dht_->routing_table.select_expand_route_targets();
       for (auto &target : targets) {
         send_find_node_query(
@@ -237,7 +236,6 @@ std::string DHT::create_query(krpc::Query &query) {
   });
   std::stringstream ss;
   query.encode(ss, bencoding::EncodeMode::Bencoding);
-//  query.encode(std::cout, bencoding::EncodeMode::JSON);
   return ss.str();
 }
 krpc::NodeID DHT::parse_node_id(const std::string &s) {
