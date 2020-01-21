@@ -21,7 +21,7 @@ struct Config {
   std::vector<std::pair<std::string, std::string>> bootstrap_nodes;
 
   int discovery_interval_seconds = 5;
-  int report_interval_seconds = 1;
+  int report_interval_seconds = 3;
   int refresh_nodes_check_interval_seconds = 5;
 };
 
@@ -58,6 +58,9 @@ class DHT {
    * Stats
    */
   std::chrono::high_resolution_clock::time_point bootstrap_time_;
+  size_t total_ping_query_received_{};
+  size_t total_ping_query_sent_{};
+  size_t total_ping_response_received_{};
 
   // This must be placed last
   // Hide network IO implementation details

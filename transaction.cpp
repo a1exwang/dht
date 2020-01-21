@@ -24,8 +24,9 @@ void transaction::TransactionManager::start(const std::function<void(Transaction
 
   transactions_[transaction_id] = transaction;
 }
-void transaction::TransactionManager::end(const std::string &id,
-                                          const std::function<void(const Transaction &)> &callback) {
+void transaction::TransactionManager::end(
+    const std::string &id,
+    const std::function<void(const Transaction &)> &callback) {
   std::unique_lock<std::mutex> _(lock_);
   if (this->transactions_.find(id) == this->transactions_.end()) {
     throw TransactionError("Transaction not found");

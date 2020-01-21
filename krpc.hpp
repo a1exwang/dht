@@ -26,7 +26,7 @@ class InvalidMessage : public std::runtime_error {
 
 constexpr size_t NodeIDLength = 20;
 constexpr size_t NodeIDBits = NodeIDLength * 8;
-constexpr auto KRPCTimeout = std::chrono::seconds(10);
+constexpr auto KRPCTimeout = std::chrono::seconds(30);
 class NodeID {
  public:
   NodeID() {
@@ -38,6 +38,22 @@ class NodeID {
   static NodeID from_string(std::string s);
   void encode(std::ostream &os) const;
   static NodeID random();
+  static NodeID random_from_prefix(const NodeID &prefix, size_t prefix_length) {
+    // TODO: not tested
+    NodeID ret = random();
+    if (prefix_length == 0)
+      return ret;
+
+    // prefix_length >= 1
+    auto bytes = (prefix_length-1) / 8;
+    // 0 <= bytes < NodeIDLength
+    auto bits = 8 - prefix_length % 8;
+    std::copy(prefix.data_.begin(), std::next(prefix.data_.begin(), bytes), ret.data_.begin());
+    auto mask_low = ((1u << bits) - 1u);
+    auto mask_high = mask_low;
+    ret.data_[bytes] = (ret.data_[bytes] & mask_low) | (prefix.data_[bytes] & mask_high);
+    return ret;
+  }
 
   std::string to_string() const;
 
@@ -57,6 +73,7 @@ class NodeID {
 
 class NodeInfo {
  public:
+  NodeInfo() { }
   NodeInfo(NodeID node_id, uint32_t ip, uint32_t port)
       :node_id_(node_id), ip_(ip), port_(port) { }
   static NodeInfo decode(std::istream &is);
@@ -67,19 +84,27 @@ class NodeInfo {
   uint16_t port() const { return port_; }
  private:
   NodeID node_id_;
-  uint32_t ip_;
-  uint16_t port_;
+  uint32_t ip_{};
+  uint16_t port_{};
 };
 
 constexpr const char *MessageTypeQuery = "q";
 constexpr const char *MessageTypeResponse = "r";
+constexpr const char *MessageTypeError = "e";
 constexpr const char *MethodNamePing = "ping";
 constexpr const char *MethodNameFindNode = "find_node";
 constexpr const char *MethodNameGetPeers = "get_peers";
 constexpr const char *MethodNameAnnouncePeer = "announce_peer";
 
+constexpr int ErrorCodeGenericError = 201;
+constexpr int ErrorServerError = 202;
+constexpr int ErrorProtocolError = 203;
+constexpr int ErrorMethodUnknown = 204;
+
 class Message {
  public:
+  Message(std::string type)
+      :type_(std::move(type)), client_version_(ClientVersion) { }
   Message(std::string type, std::string client_version)
       :type_(std::move(type)), client_version_(std::move(client_version)) { }
   Message(std::string transaction_id, std::string type, std::string client_version)
@@ -102,6 +127,26 @@ class Message {
   std::string type_;
   std::string client_version_;
 };
+
+class Error :public Message {
+ public:
+  Error(int error_code, std::string message)
+      :Message(MessageTypeError), error_code_(error_code), message_(message) { }
+
+  std::string message() const {
+    return message_;
+  }
+
+  static std::shared_ptr<Message> decode(
+      const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict,
+      const std::string &t,
+      const std::string &v,
+      const std::string &method_name);
+ private:
+  int error_code_;
+  std::string message_;
+};
+
 
 class Query :public Message {
  public:
@@ -126,26 +171,30 @@ class Query :public Message {
 class PingQuery :public Query {
  public:
   PingQuery(std::string transaction_id, std::string client_version, NodeID sender_id)
-      :Query(std::move(transaction_id), std::move(client_version), MethodNamePing), node_id_(sender_id) { }
-  PingQuery(NodeID sender_id)
-      :Query(MethodNamePing), node_id_(sender_id) { }
-  NodeID node_id() const { return node_id_; }
+      : Query(std::move(transaction_id), std::move(client_version), MethodNamePing), sender_id_(sender_id) { }
+  explicit PingQuery(NodeID sender_id)
+      : Query(MethodNamePing), sender_id_(sender_id) { }
+  NodeID sender_id() const { return sender_id_; }
+
  protected:
+  [[nodiscard]]
   std::shared_ptr<bencoding::Node> get_arguments_node() const override;
 
  private:
-  NodeID node_id_;
+  NodeID sender_id_;
 };
 
 class FindNodeQuery :public Query {
  public:
-  FindNodeQuery(NodeID self_id, NodeID target_id)
-      :Query(MethodNameFindNode), self_id_(self_id), target_id_(target_id) {}
+  FindNodeQuery(NodeID sender_id, NodeID target_id)
+      : Query(MethodNameFindNode), sender_id_(sender_id), target_id_(target_id) {}
+
+  const NodeID &sender_id() const { return sender_id_; }
+
  protected:
   std::shared_ptr<bencoding::Node> get_arguments_node() const override;
-
  private:
-  NodeID self_id_;
+  NodeID sender_id_;
   NodeID target_id_;
 };
 

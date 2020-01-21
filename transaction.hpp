@@ -27,8 +27,10 @@ class TransactionError : std::runtime_error {
 class TransactionManager {
  public:
   void start(const std::function<void (Transaction &transaction)> &callback);
-
   void end(const std::string& id, const std::function<void (const Transaction &transaction)> &callback);
+  bool has_transaction(const std::string &id) const {
+    return transactions_.find(id) != transactions_.end();
+  }
  private:
   std::map<std::string, Transaction> transactions_;
   int64_t transaction_counter_;

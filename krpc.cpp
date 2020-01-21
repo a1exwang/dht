@@ -10,11 +10,9 @@ namespace krpc {
 
 NodeID NodeID::random() {
   std::random_device device;
-  int seed = 123;
-  std::mt19937 rng(seed);
+  std::mt19937 rng{std::random_device()()};
   NodeID ret{};
   std::generate(ret.data_.begin(), ret.data_.end(), rng);
-//  memcpy(ret.data_.data(), "abcdefghijklmnoprqstuvwxyz:::::::", ret.data_.size());
   return ret;
 }
 std::string NodeID::to_string() const {
@@ -151,11 +149,11 @@ std::shared_ptr<Message> krpc::Query::decode(
     auto node_id = NodeID::from_string(node_id_string);
     return std::make_shared<PingQuery>(t, v, node_id);
   } else if (q == MethodNameFindNode) {
-    throw InvalidMessage("Query, method not implemented");
+    throw InvalidMessage("Query, FindNode method not implemented");
   } else if (q == MethodNameGetPeers) {
-    throw InvalidMessage("Query, method not implemented");
+    throw InvalidMessage("Query, GetPeers method not implemented");
   } else if (q == MethodNameAnnouncePeer) {
-    throw InvalidMessage("Query, method not implemented");
+    throw InvalidMessage("Query, AnnouncePeer method not implemented");
   } else {
     throw InvalidMessage("Query, Unknown method name '" + q + "'");
   }
@@ -194,8 +192,8 @@ std::shared_ptr<Message> Response::decode(
     auto id = get_string_or_throw(r_dict, "id", "PingResponse");
     return std::make_shared<PingResponse>(t, v, NodeID::from_string(id));
   } else if (method_name == MethodNameFindNode) {
-    auto id_str = get_string_or_throw(r_dict, "id", "PingResponse");
-    auto nodes_str = get_string_or_throw(r_dict, "nodes", "PingResponse");
+    auto id_str = get_string_or_throw(r_dict, "id", "FindNode");
+    auto nodes_str = get_string_or_throw(r_dict, "nodes", "FindNode");
     std::stringstream ss(nodes_str);
     // the stream has at least 1 character
     std::vector<NodeInfo> nodes;
@@ -205,8 +203,10 @@ std::shared_ptr<Message> Response::decode(
     return std::make_shared<FindNodeResponse>(t, v, NodeID::from_string(id_str), nodes);
   } else if (method_name == MethodNameGetPeers) {
     // TODO
+    LOG(warning) << "GetPeers query received, ignored";
   } else if (method_name == MethodNameAnnouncePeer) {
     // TODO
+    LOG(warning) << "AnnouncePeer query received, ignored";
   } else {
     throw InvalidMessage("Unknown response type: " + method_name);
   }
@@ -229,16 +229,17 @@ std::shared_ptr<krpc::Message> krpc::Message::decode(
   if (y == "q") {
     return krpc::Query::decode(dict, t, v);
   } else if (y == "r") {
-    // FIXME
     return krpc::Response::decode(dict, t, v, get_method_name(t));
+  } else if (y == "e") {
+    return krpc::Error::decode(dict, t, v, get_method_name(t));
   } else {
-    throw InvalidMessage("Root node, 'y' is either 'q' nor 'r'");
+    throw InvalidMessage("Root node, 'y' is not one of  {'q', 'r', 'e'}");
   }
 }
 std::shared_ptr<bencoding::Node> krpc::PingQuery::get_arguments_node() const {
   std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
   std::stringstream ss;
-  node_id_.encode(ss);
+  sender_id_.encode(ss);
   arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
   return std::make_shared<bencoding::DictNode>(arguments_dict);
 }
@@ -348,7 +349,7 @@ std::shared_ptr<bencoding::Node> FindNodeQuery::get_arguments_node() const {
   std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
   {
     std::stringstream ss;
-    self_id_.encode(ss);
+    sender_id_.encode(ss);
     arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
   }
   {
@@ -358,5 +359,35 @@ std::shared_ptr<bencoding::Node> FindNodeQuery::get_arguments_node() const {
   }
   return std::make_shared<bencoding::DictNode>(arguments_dict);
 
+}
+std::shared_ptr<Message> Error::decode(const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict,
+                                       const std::string &t,
+                                       const std::string &v,
+                                       const std::string &method_name) {
+  if (dict.find("e") == dict.end()) {
+    throw InvalidMessage("Invalid 'Error' message, 'e' not found");
+  }
+  auto e = std::dynamic_pointer_cast<bencoding::ListNode>(dict.at("e"));
+  if (!e) {
+    throw InvalidMessage("Invalid 'Error' message, 'e' is not a list");
+  }
+  if (e->size() != 2) {
+    throw InvalidMessage("Invalid 'Error' message, size of 'e' is not 2");
+  }
+  int error_code = -1;
+  if (auto err_code = std::dynamic_pointer_cast<bencoding::IntNode>((*e)[0]); err_code) {
+    error_code = *err_code;
+  } else {
+    throw InvalidMessage("Invalid 'Error' message, the first element of 'e' is not a int");
+  }
+
+  std::string message;
+  if (auto err_message = std::dynamic_pointer_cast<bencoding::StringNode>((*e)[1]); err_message) {
+    message = *err_message;
+  } else {
+    throw InvalidMessage("Invalid 'Error' message, the second element of 'e' is not a string");
+  }
+
+  return std::make_shared<Error>(error_code, message);
 }
 }

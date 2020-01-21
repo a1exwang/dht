@@ -24,15 +24,9 @@ class DHTImpl {
         report_stat_timer(io, boost::asio::chrono::seconds(dht->config_.report_interval_seconds)),
         refresh_nodes_timer(io, boost::asio::chrono::seconds(dht->config_.refresh_nodes_check_interval_seconds)) { }
 
-  void loop() {
-    try {
-      io.run();
-      LOG(info) << "Successfully end";
-    } catch (std::exception& e) {
-      LOG(error) << "Exception: " << e.what();
-      std::exit(EXIT_FAILURE);
-    }
-  }
+  /**
+   * DHT Message handlers
+   */
 
   void handle_send(const boost::system::error_code &error, std::size_t bytes_transferred) {
     if (error || bytes_transferred <= 0) {
@@ -41,9 +35,11 @@ class DHTImpl {
   };
 
   void handle_ping_response(const krpc::PingResponse &response) {
-    LOG(info) << "received ping response from '" << response.node_id().to_string() << "'";
+    LOG(debug) << "received ping response from '" << response.node_id().to_string() << "'";
+    dht_->routing_table.add_node(Entry(response.node_id(), sender_endpoint.address().to_v4().to_uint(), sender_endpoint.port()));
+    dht_->routing_table.make_good_now(response.node_id());
+    dht_->total_ping_response_received_++;
   }
-
   void handle_find_node_response(const krpc::FindNodeResponse &response) {
     for (auto &target_node : response.nodes()) {
       dht::Entry entry(target_node);
@@ -52,10 +48,22 @@ class DHTImpl {
   }
   void handle_find_node_query(const krpc::FindNodeQuery &query) {
     LOG(warning) << "find_node query received, not implemented";
+    dht_->routing_table.add_node(
+        Entry(
+            query.sender_id(),
+            sender_endpoint.address().to_v4().to_uint(),
+            sender_endpoint.port()));
+    dht_->routing_table.make_good_now(query.sender_id());
   }
-
   void handle_ping_query(const krpc::PingQuery &query) {
     krpc::PingResponse res(query.transaction_id(), self());
+
+    dht_->routing_table.add_node(
+        Entry(
+            query.sender_id(),
+            sender_endpoint.address().to_v4().to_uint(),
+            sender_endpoint.port()));
+    dht_->routing_table.make_good_now(query.sender_id());
 
     socket.async_send_to(
         boost::asio::buffer(
@@ -63,6 +71,7 @@ class DHTImpl {
         ),
         sender_endpoint,
         default_handle_send());
+    dht_->total_ping_query_received_++;
   }
 
   void handle_receive_from(const boost::system::error_code& error, std::size_t bytes_transferred) {
@@ -77,14 +86,19 @@ class DHTImpl {
     try {
       auto node = bencoding::Node::decode(ss);
       message = krpc::Message::decode(*node, [this](std::string id) -> std::string {
-        std::string method_name;
-        this->dht_->transaction_manager.end(id, [&method_name](const transaction::Transaction &transaction) {
-          method_name = transaction.method_name_;
-        });
+        std::string method_name{};
+        if (dht_->transaction_manager.has_transaction(id)) {
+          this->dht_->transaction_manager.end(id, [&method_name](const transaction::Transaction &transaction) {
+            method_name = transaction.method_name_;
+          });
+        }
         return method_name;
       });
+    } catch (const bencoding::InvalidBencoding &e) {
+      LOG(error) << "Invalid bencoding, e: '"<< e.what() << "', ignored";
+
     } catch (const krpc::InvalidMessage &e) {
-      LOG(error) << "Invalid Message, e: " << e.what() << ", skipped package";
+      LOG(error) << "InvalidMessage, e: '" << e.what() << ", ignored";
       continue_receive();
       return;
     }
@@ -108,6 +122,11 @@ class DHTImpl {
         LOG(error) << "Warning! query type not supported";
         has_error = true;
       }
+    } else if(auto dht_error = std::dynamic_pointer_cast<krpc::Error>(message); dht_error) {
+      LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "'";
+    } else {
+      LOG(error) << "Unknown message type";
+      has_error = true;
     }
 
     // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
@@ -121,6 +140,21 @@ class DHTImpl {
       }
     }
     continue_receive();
+  }
+
+  void find_self(const udp::endpoint &ep) {
+    // bootstrap by finding self
+    auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), self());
+    socket.async_send_to(
+        boost::asio::buffer(
+            dht_->create_query(*find_node_query)
+        ),
+        ep,
+        boost::bind(
+            &DHTImpl::handle_send,
+            this,
+            boost::asio::placeholders::error,
+            boost::asio::placeholders::bytes_transferred));
   }
 
   void bootstrap() {
@@ -149,18 +183,7 @@ class DHTImpl {
         break;
       }
 
-      // bootstrap by finding self
-      auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), self());
-      socket.async_send_to(
-          boost::asio::buffer(
-              dht_->create_query(*find_node_query)
-          ),
-          ep,
-          boost::bind(
-              &DHTImpl::handle_send,
-              this,
-              boost::asio::placeholders::error,
-              boost::asio::placeholders::bytes_transferred));
+      find_self(ep);
     }
     expand_route_timer.async_wait(
         boost::bind(
@@ -178,6 +201,16 @@ class DHTImpl {
             &DHTImpl::handle_refresh_nodes_timer,
             this,
             boost::asio::placeholders::error));
+  }
+
+  void loop() {
+    try {
+      io.run();
+      LOG(info) << "Successfully end";
+    } catch (std::exception& e) {
+      LOG(error) << "Exception: " << e.what();
+      std::exit(EXIT_FAILURE);
+    }
   }
 
   /**
@@ -206,15 +239,7 @@ class DHTImpl {
     return dht_->self_node_id_;
   }
 
-  void send_find_node_query(const krpc::NodeInfo &target) {
-    auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), target.id());
-    udp::endpoint ep{boost::asio::ip::make_address_v4(target.ip()), target.port()};
-    socket.async_send_to(
-        boost::asio::buffer(dht_->create_query(*find_node_query)),
-        ep,
-        boost::bind(&DHTImpl::handle_send, this,
-                    boost::asio::placeholders::error,
-                    boost::asio::placeholders::bytes_transferred));
+  void send_find_node_query(const krpc::NodeInfo &receiver, const krpc::NodeID &target) {
   }
   void ping(const krpc::NodeInfo &target) {
     auto ping_query = std::make_shared<krpc::PingQuery>(self());
@@ -223,6 +248,7 @@ class DHTImpl {
         boost::asio::buffer(dht_->create_query(*ping_query)),
         ep,
         default_handle_send());
+    dht_->total_ping_query_sent_++;
   }
 
   /**
@@ -248,6 +274,9 @@ class DHTImpl {
     std::stringstream ss;
     dht_->routing_table.stat(ss);
     LOG(info) << ss.str();
+    LOG(info) << "total ping query sent: " << dht_->total_ping_query_sent_;
+    LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
+    LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
   }
   void handle_expand_route_timer(const boost::system::error_code& e) {
     if (e) {
@@ -265,12 +294,20 @@ class DHTImpl {
             boost::asio::placeholders::error));
 
     if (!dht_->routing_table.is_full()) {
-      LOG(debug) << "sending find node query...";
+      LOG(debug) << "sending find node query and find_self()...";
       auto targets = dht_->routing_table.select_expand_route_targets();
-      for (auto &target : targets) {
-        send_find_node_query(
-            krpc::NodeInfo{target.id(), target.ip(), target.port()}
-        );
+      Entry node;
+      krpc::NodeID target_id;
+      for (auto &item : targets) {
+        std::tie(node, target_id) = item;
+
+        auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), target_id);
+        udp::endpoint ep{boost::asio::ip::make_address_v4(node.ip()), node.port()};
+        socket.async_send_to(
+            boost::asio::buffer(dht_->create_query(*find_node_query)),
+            ep,
+            default_handle_send());
+        find_self(udp::endpoint{boost::asio::ip::address_v4(node.ip()), node.port()});
       }
     }
   }
@@ -294,7 +331,9 @@ class DHTImpl {
     // try refreshing questionable nodes
     dht_->routing_table.iterate_nodes([this](const Entry &node) {
       if (!node.is_good()) {
-        dht_->routing_table.require_response_now(node.id());
+        if (!dht_->routing_table.require_response_now(node.id())) {
+          LOG(error) << "Node gone when iterating " << node.to_string();
+        }
         ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
       }
     });

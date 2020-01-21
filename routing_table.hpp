@@ -20,6 +20,7 @@ class Entry {
   explicit Entry(krpc::NodeID id) :info_(id, 0, 0) { }
   Entry(krpc::NodeID id, uint32_t ip, uint16_t port)
       :info_(id, ip, port) { }
+  Entry() = default;
 
   [[nodiscard]]
   krpc::NodeInfo node_info() const { return info_; }
@@ -64,7 +65,7 @@ const size_t BucketMaxItems = 32;
 class Bucket {
  public:
   Bucket(krpc::NodeID self_id, Bucket *parent) :self_(self_id), parent_(parent) {}
-  void add_node(Entry entry);
+  void add_node(const Entry &entry);
 
   bool self_in_bucket() const;
   bool in_bucket(krpc::NodeID id) const;
@@ -94,7 +95,7 @@ class Bucket {
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
 
-  void split();
+  void split_if_required();
 
   void encode(std::ostream &os);
 
@@ -102,7 +103,7 @@ class Bucket {
   std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
 
   [[nodiscard]]
-  std::list<Entry> find_some_node_for_filling_bucket(size_t k) const;
+  std::list<std::tuple<Entry, krpc::NodeID>> find_some_node_for_filling_bucket(size_t k) const;
  private:
   static std::string indent(int n);
   void encode_(std::ostream &os, int i);
@@ -179,12 +180,12 @@ class RoutingTable {
   // encode to json
   void encode(std::ostream &os);
 
-  std::list<Entry> select_expand_route_targets();
+  std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
   void add_node(Entry entry);
   void remove_node(const krpc::NodeID &target);
-  void require_response_now(const krpc::NodeID &target) {
-    root_.require_response_now(target);
+  bool require_response_now(const krpc::NodeID &target) {
+    return root_.require_response_now(target);
   }
 
   bool make_good_now(const krpc::NodeID &id);

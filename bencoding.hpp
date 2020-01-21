@@ -58,6 +58,10 @@ class ListNode :public Node {
   explicit ListNode(std::vector<std::shared_ptr<Node>> nodes) :Node(Type::List), list_(std::move(nodes)) { }
 
   void encode(std::ostream &os, EncodeMode mode) const override;
+  size_t size() const { return list_.size(); }
+  std::shared_ptr<Node> operator[](size_t i) {
+    return list_[i];
+  }
  private:
   std::vector<std::shared_ptr<Node>> list_;
 };
