@@ -54,7 +54,10 @@ class Bucket {
 
   void encode(std::ostream &os);
 
+  [[nodiscard]]
   std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
+
+  [[nodiscard]]
   std::list<Entry> find_some_node_for_filling_bucket(size_t k) const;
  private:
   static std::string indent(int n) {
@@ -63,9 +66,12 @@ class Bucket {
   void encode_(std::ostream &os, int i);
 
  private:
+  [[nodiscard]]
   krpc::NodeID min() const {
     return prefix_;
   }
+
+  [[nodiscard]]
   krpc::NodeID max() const {
     auto ret  = prefix_ | krpc::NodeID::pow2m1(krpc::NodeIDBits - prefix_length_);
     return ret;
@@ -106,41 +112,24 @@ class Bucket {
 
 class RoutingTable {
  public:
-  RoutingTable(krpc::NodeID self_id) :root_(self_id, nullptr), self_id_(self_id) {}
+  explicit RoutingTable(krpc::NodeID self_id) :root_(self_id, nullptr), self_id_(self_id) {}
   void add_node(Entry entry) {
     root_.add_node(entry);
   }
 
+  [[nodiscard]]
   bool is_full() const {
     return root_.is_full();
   }
 
+  [[nodiscard]]
   size_t size() const {
     return root_.total_good_node_count();
   }
-  void stat(std::ostream &os) const {
-    os << "Routing Table: self: " << self_id_.to_string() << std::endl;
-    os << "  total entries: " << root_.total_good_node_count() << std::endl;
-    root_.bfs([&os](const Bucket &bucket) {
-      if (bucket.is_leaf()) {
-        if (bucket.good_node_count() > 0) {
-          os << "  p=" << bucket.prefix().to_string()
-             << ", len(p)=" << bucket.prefix_length()
-             << ", n=" << bucket.good_node_count() << std::endl;
-        }
-      }
-    });
-  }
 
+  void stat(std::ostream &os) const;
   // encode to json
-  void encode(std::ostream &os) {
-    os << "{"  << std::endl;
-    os << R"("type": "routing_table",)" << std::endl;
-    os << R"("self_id": ")" << self_id_.to_string() << "\"," << std::endl;
-    os << R"("data": )" << std::endl;
-    root_.encode(os);
-    os << "}" << std::endl;
-  }
+  void encode(std::ostream &os);
 
   std::list<Entry> select_expand_route_targets();
 

@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.0)
 project(dht)
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
+
+if(CMAKE_BUILD_TYPE STREQUAL Release)
+    #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
+    set(BUILD_SHARED_LIBS OFF)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+endif()
+
 find_package(Boost COMPONENTS system)
 
 add_library(bencoding STATIC bencoding.cpp)
@@ -13,7 +19,11 @@ target_link_libraries(transaction PUBLIC krpc)
 add_library(routing_table STATIC routing_table.cpp)
 target_link_libraries(routing_table PUBLIC krpc)
 
-add_executable(dht dht.cpp)
-target_link_libraries(dht PRIVATE routing_table transaction krpc bencoding ${BOOST_LIBRARIES} pthread)
+add_library(dht STATIC dht.cpp)
+target_link_libraries(dht PUBLIC krpc transaction routing_table bencoding)
+target_include_directories(dht PUBLIC ${CMAKE_SOURCE_DIR})
+
+add_executable(main main.cpp)
+target_link_libraries(main PRIVATE dht routing_table transaction krpc bencoding ${BOOST_LIBRARIES} pthread)
 add_executable(bencoding_test_echo bencoding_test_echo.cpp)
 target_link_libraries(bencoding_test_echo PRIVATE bencoding)

@@ -1,132 +1,119 @@
-#include "routing_table.hpp"
-#include "krpc.hpp"
-#include "bencoding.hpp"
-#include "transaction.hpp"
+#include "dht.hpp"
 
-#include <cstdlib>
-#include <iostream>
+#include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
+#include <boost/bind.hpp>
 
 using boost::asio::ip::udp;
 
-std::array<char, 65536> receive_buffer;
+namespace dht {
 
-void send_cb(const boost::system::error_code &error, std::size_t bytes_transferred) {
-  if (error || bytes_transferred <= 0) {
-    std::cerr << "sendto failed: " << error.message() << std::endl;
+class DHTImpl {
+ public:
+  friend class DHT;
+
+  explicit DHTImpl(DHT *dht)
+      : dht_(dht),
+        io(),
+        socket(io,
+              udp::endpoint(
+                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
+                  dht->config_.bind_port)),
+        expand_route_timer(io, boost::asio::chrono::seconds(dht->config_.discovery_interval_seconds)),
+        report_stat_timer(io, boost::asio::chrono::seconds(dht->config_.report_interval_seconds)) { }
+
+  void loop() {
+    try {
+      io.run();
+      std::cout << "successfully end" << std::endl;
+    } catch (std::exception& e) {
+      std::cerr << "Exception: " << e.what() << "\n";
+      std::exit(EXIT_FAILURE);
+    }
   }
-};
 
-
-std::string create_query(
-    transaction::TransactionManager &transaction_manager,
-    const krpc::NodeID &self_node_id,
-    krpc::Query &query) {
-
-  transaction_manager.start([&query, self_node_id](transaction::Transaction &transaction) {
-    transaction.method_name_ = query.method_name();
-    query.set_transaction_id(transaction.id_);
-  });
-  std::stringstream ss;
-  query.encode(ss, bencoding::EncodeMode::Bencoding);
-//  query.encode(std::cout, bencoding::EncodeMode::JSON);
-  return ss.str();
-};
-
-void send_find_node_query(
-    transaction::TransactionManager &transaction_manager,
-    udp::socket &socket,
-    krpc::NodeID self_node_id,
-    const krpc::NodeInfo &target) {
-
-  auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self_node_id, target.id());
-  udp::endpoint ep{boost::asio::ip::make_address_v4(target.ip()), target.port()};
-  socket.async_send_to(
-      boost::asio::buffer(create_query(transaction_manager, self_node_id, *find_node_query)),
-      ep,
-      send_cb);
-}
-
-
-int main(int argc, char* argv[]) {
-  uint16_t port = 16667;
-  auto self_node_id = krpc::NodeID::random();
-  std::vector<std::pair<std::string, std::string>> bootstrap_nodes = {
-      {"router.utorrent.com", "6881"},
-      {"router.bittorrent.com", "6881"},
-      {"dht.transmissionbt.com", "6881"},
-      {"dht.aelitis.com", "6881"},
+  void handle_send(const boost::system::error_code &error, std::size_t bytes_transferred) {
+    if (error || bytes_transferred <= 0) {
+      std::cerr << "sendto failed: " << error.message() << std::endl;
+    }
   };
-  transaction::TransactionManager transaction_manager;
-  dht::RoutingTable routing_table(self_node_id);
 
 
-  try {
-    boost::asio::io_service io;
-    udp::socket socket(io, udp::endpoint(udp::v4(), port));
-    udp::endpoint sender_endpoint;
+  void handle_receive_from(const boost::system::error_code& error, std::size_t bytes_transferred) {
+    if (error || bytes_transferred <= 0) {
+      std::cout << "receive failed: " << error.message() << std::endl;
+      return;
+    }
 
-    std::function<void(const boost::system::error_code& error, std::size_t bytes_transferred)> cb =
-        [&sender_endpoint, &socket, &cb, &transaction_manager, &routing_table](const boost::system::error_code& error, std::size_t bytes_transferred) {
-          if (error || bytes_transferred <= 0) {
-            std::cout << "receive failed: " << error.message() << std::endl;
-            return;
-          }
+    // parse receive data into a Message
+    std::stringstream ss(std::string(receive_buffer.data(), bytes_transferred));
+    std::shared_ptr<krpc::Message> message;
+    try {
+      auto node = bencoding::Node::decode(ss);
+      message = krpc::Message::decode(*node, [this](std::string id) -> std::string {
+        std::string method_name;
+        this->dht_->transaction_manager.end(id, [&method_name](const transaction::Transaction &transaction) {
+          method_name = transaction.method_name_;
+        });
+        return method_name;
+      });
+    } catch (const krpc::InvalidMessage &e) {
+      std::cout << "Invalid Message, e: " << e.what() << ", skipped package" << std::endl;
+      continue_receive();
+      return;
+    }
 
-          // parse receive data into a Message
-          std::stringstream ss(std::string(receive_buffer.data(), bytes_transferred));
-          auto node = bencoding::Node::decode(ss);
-          auto message = krpc::Message::decode(*node, [&transaction_manager](std::string id) -> std::string {
-            std::string method_name;
-            transaction_manager.end(id, [&method_name](const transaction::Transaction &transaction) {
-              method_name = transaction.method_name_;
-            });
-            return method_name;
-          });
-
-          if (auto response = std::dynamic_pointer_cast<krpc::Response>(message); response) {
-            if (auto find_node_response = std::dynamic_pointer_cast<krpc::FindNodeResponse>(response); find_node_response) {
-              find_node_response->print_nodes();
-              for (auto &target_node : find_node_response->nodes()) {
-                dht::Entry entry(target_node.id(), target_node.ip(), target_node.port());
-                routing_table.add_node(entry);
+    if (auto response = std::dynamic_pointer_cast<krpc::Response>(message); response) {
+      if (auto find_node_response = std::dynamic_pointer_cast<krpc::FindNodeResponse>(response); find_node_response) {
+//        find_node_response->print_nodes();
+        for (auto &target_node : find_node_response->nodes()) {
+          dht::Entry entry(target_node.id(), target_node.ip(), target_node.port());
+          this->dht_->routing_table.add_node(entry);
 //                routing_table.encode(std::cout);
-                routing_table.stat(std::cout);
-              }
-            } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
-              std::cout << "received ping response" << std::endl;
-            } else {
-              std::cerr << "Warning! response type not supported" << std::endl;
-            }
-          } else if(auto query = std::dynamic_pointer_cast<krpc::Query>(message); query) {
-            std::cout << "query received, ignored" << std::endl;
-          }
-
-          socket.async_receive_from(
-              boost::asio::buffer(receive_buffer),
-              sender_endpoint,
-              cb
-          );
-        };
-
-
+//          this->dht_->routing_table.stat(std::cout);
+        }
+      } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
+        std::cout << "received ping response" << std::endl;
+      } else {
+        std::cerr << "Warning! response type not supported" << std::endl;
+      }
+    } else if(auto query = std::dynamic_pointer_cast<krpc::Query>(message); query) {
+      std::cout << "query received, ignored" << std::endl;
+    }
+    continue_receive();
+  }
+  void continue_receive() {
     socket.async_receive_from(
         boost::asio::buffer(receive_buffer),
         sender_endpoint,
-        cb
-    );
+        boost::bind(&DHTImpl::handle_receive_from, this,
+                    boost::asio::placeholders::error,
+                    boost::asio::placeholders::bytes_transferred));
 
-    for (const auto &item : bootstrap_nodes) {
+  }
+
+  krpc::NodeID self() const {
+    return dht_->self_node_id_;
+  }
+
+  void bootstrap() {
+    socket.async_receive_from(
+        boost::asio::buffer(receive_buffer),
+        sender_endpoint,
+        boost::bind(&DHTImpl::handle_receive_from, this,
+                    boost::asio::placeholders::error,
+                    boost::asio::placeholders::bytes_transferred));
+
+    for (const auto &item : this->dht_->config_.bootstrap_nodes) {
       std::string node_host{}, node_port{};
       std::tie(node_host, node_port) = item;
 
       udp::resolver resolver(io);
       udp::endpoint ep;
       try {
-        auto resolutions = resolver.resolve(udp::resolver::query(node_host, node_port));
-        for (auto it = resolutions.begin(); it != resolutions.end(); it++) {
-          if (it->endpoint().protocol() == udp::v4()) {
-            ep = it->endpoint();
+        for (auto &item : resolver.resolve(udp::resolver::query(node_host, node_port))) {
+          if (item.endpoint().protocol() == udp::v4()) {
+            ep = item.endpoint();
             break;
           }
         }
@@ -135,58 +122,130 @@ int main(int argc, char* argv[]) {
         break;
       }
 
-      auto ping_query = std::make_shared<krpc::PingQuery>(self_node_id);
-      auto buf = create_query(transaction_manager, self_node_id, *ping_query);
-
-      socket.async_send_to(
-          boost::asio::buffer(buf),
-          ep,
-          send_cb);
-
       // bootstrap by finding self
-      auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self_node_id, self_node_id);
-      buf = create_query(transaction_manager, self_node_id, *find_node_query);
-
+      auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), self());
       socket.async_send_to(
-          boost::asio::buffer(buf),
+          boost::asio::buffer(
+              dht_->create_query(*find_node_query)
+          ),
           ep,
-          send_cb);
+          boost::bind(
+              &DHTImpl::handle_send,
+              this,
+              boost::asio::placeholders::error,
+              boost::asio::placeholders::bytes_transferred));
     }
+    expand_route_timer.async_wait(
+        boost::bind(
+            &DHTImpl::handle_expand_route_timer,
+            this,
+            boost::asio::placeholders::error));
 
-    boost::asio::steady_timer timer(io, boost::asio::chrono::seconds(5));
-
-    std::function<void(const boost::system::error_code&)> timer_cb =
-        [&timer_cb, &io, &socket, &routing_table, &self_node_id, &transaction_manager, &timer](const boost::system::error_code &e) {
-          if (e) {
-            std::cout << "Timer error: " << e.message() << std::endl;
-            return;
-          }
-
-          timer.expires_at(timer.expiry() +
-              boost::asio::chrono::seconds(5));
-
-          timer.async_wait(timer_cb);
-          if (!routing_table.is_full()) {
-            std::cout << "sending find node query..." << std::endl;
-            auto targets = routing_table.select_expand_route_targets();
-            for (auto &target : targets) {
-              send_find_node_query(
-                  transaction_manager,
-                  socket,
-                  self_node_id,
-                  krpc::NodeInfo{target.id(), target.ip(), target.port()}
-              );
-            }
-          }
-        };
-
-    timer_cb(boost::system::error_code());
-
-    io.run();
-  } catch (std::exception& e) {
-    std::cerr << "Exception: " << e.what() << "\n";
+    expand_route_timer.async_wait(
+        boost::bind(
+            &DHTImpl::handle_report_stat_timer,
+            this,
+            boost::asio::placeholders::error));
   }
 
-  return 0;
+
+  void send_find_node_query(const krpc::NodeInfo &target) {
+    auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), target.id());
+    udp::endpoint ep{boost::asio::ip::make_address_v4(target.ip()), target.port()};
+    socket.async_send_to(
+        boost::asio::buffer(dht_->create_query(*find_node_query)),
+        ep,
+        boost::bind(&DHTImpl::handle_send, this,
+                    boost::asio::placeholders::error,
+                    boost::asio::placeholders::bytes_transferred));
+  }
+
+  void handle_report_stat_timer(const boost::system::error_code& e) {
+    if (e) {
+      std::cout << "report stat timer error: " << e.message() << std::endl;
+      return;
+    }
+    report_stat_timer.expires_at(
+        report_stat_timer.expiry() +
+            boost::asio::chrono::seconds(dht_->config_.report_interval_seconds));
+    report_stat_timer.async_wait(
+        boost::bind(
+            &DHTImpl::handle_report_stat_timer,
+            this,
+            boost::asio::placeholders::error));
+
+    std::cout << "routing table " << dht_->routing_table.size() << std::endl;
+  }
+
+  void handle_expand_route_timer(const boost::system::error_code& e) {
+    if (e) {
+      std::cout << "Timer error: " << e.message() << std::endl;
+      return;
+    }
+
+    expand_route_timer.expires_at(expand_route_timer.expiry() +
+        boost::asio::chrono::seconds(dht_->config_.discovery_interval_seconds));
+
+    expand_route_timer.async_wait(
+        boost::bind(
+            &DHTImpl::handle_expand_route_timer,
+            this,
+            boost::asio::placeholders::error));
+
+    if (!dht_->routing_table.is_full()) {
+//      std::cout << "sending find node query..." << std::endl;
+      auto targets = dht_->routing_table.select_expand_route_targets();
+      for (auto &target : targets) {
+        send_find_node_query(
+            krpc::NodeInfo{target.id(), target.ip(), target.port()}
+        );
+      }
+    }
+  }
+ private:
+  DHT *dht_;
+  boost::asio::io_service io{};
+
+  std::array<char, 65536> receive_buffer{};
+  udp::socket socket;
+  udp::endpoint sender_endpoint{};
+
+  boost::asio::steady_timer expand_route_timer;
+  boost::asio::steady_timer report_stat_timer;
+};
+
+DHT::DHT(const Config &config)
+    :config_(config),
+     self_node_id_(parse_node_id(config.self_node_id)),
+     transaction_manager(),
+     routing_table(self_node_id_),
+     impl_(std::make_unique<DHTImpl>(this)) {
+}
+void DHT::loop() { impl_->loop(); }
+
+std::unique_ptr<DHT> DHT::make(const Config &config) {
+  return std::make_unique<DHT>(config);
 }
 
+DHT::~DHT() {}
+
+void DHT::bootstrap() { impl_->bootstrap(); }
+std::string DHT::create_query(krpc::Query &query) {
+  transaction_manager.start([&query, this](transaction::Transaction &transaction) {
+    transaction.method_name_ = query.method_name();
+    query.set_transaction_id(transaction.id_);
+  });
+  std::stringstream ss;
+  query.encode(ss, bencoding::EncodeMode::Bencoding);
+//  query.encode(std::cout, bencoding::EncodeMode::JSON);
+  return ss.str();
+}
+krpc::NodeID DHT::parse_node_id(const std::string &s) {
+  if (s.empty()) {
+    return krpc::NodeID::random();
+  } else {
+    return krpc::NodeID::from_string(s);
+  }
+}
+
+}

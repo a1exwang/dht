@@ -151,18 +151,23 @@ bool Bucket::is_full() const {
 
 std::list<Entry> Bucket::find_some_node_for_filling_bucket(size_t k) const {
 
-  std::list<std::pair<krpc::NodeID, Entry>> results2;
+  std::map<krpc::NodeID, Entry> results2;
   int seed = 1;
-//  std::sample(
-//      good_nodes_.begin(),
-//      good_nodes_.end(), std::back_inserter(results2),
-//      k,
-//      std::mt19937(seed));
-  if (good_nodes_.size() >= k) {
-    std::copy(good_nodes_.begin(), std::next(good_nodes_.begin(), k), std::back_inserter(results2));
-  } else {
-    std::copy(good_nodes_.begin(), good_nodes_.end(), std::back_inserter(results2));
+  // TODO: work around a possibilly glibc issue
+  if (good_nodes_.begin() == good_nodes_.end()) {
+    return {};
   }
+  std::sample(
+      good_nodes_.begin(),
+      good_nodes_.end(),
+      std::inserter(results2, results2.begin()),
+      k,
+      std::mt19937{std::random_device{}()});
+//  if (good_nodes_.size() >= k) {
+//    std::copy(good_nodes_.begin(), std::next(good_nodes_.begin(), k), std::back_inserter(results2));
+//  } else {
+//    std::copy(good_nodes_.begin(), good_nodes_.end(), std::back_inserter(results2));
+//  }
 
 //  std::sample(
 //      good_nodes_.begin(),
@@ -231,5 +236,26 @@ std::list<Entry> RoutingTable::select_expand_route_targets() {
     }
   });
   return entries;
+}
+void RoutingTable::encode(std::ostream &os) {
+  os << "{"  << std::endl;
+  os << R"("type": "routing_table",)" << std::endl;
+  os << R"("self_id": ")" << self_id_.to_string() << "\"," << std::endl;
+  os << R"("data": )" << std::endl;
+  root_.encode(os);
+  os << "}" << std::endl;
+}
+void RoutingTable::stat(std::ostream &os) const {
+  os << "Routing Table: self: " << self_id_.to_string() << std::endl;
+  os << "  total entries: " << root_.total_good_node_count() << std::endl;
+  root_.bfs([&os](const Bucket &bucket) {
+    if (bucket.is_leaf()) {
+      if (bucket.good_node_count() > 0) {
+        os << "  p=" << bucket.prefix().to_string()
+           << ", len(p)=" << bucket.prefix_length()
+           << ", n=" << bucket.good_node_count() << std::endl;
+      }
+    }
+  });
 }
 }
