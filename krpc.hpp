@@ -19,30 +19,38 @@ constexpr const char *ClientVersion = "WTF0.0";
 
 class InvalidMessage : public std::runtime_error {
  public:
-  InvalidMessage(const std::string &msg) :runtime_error(msg) { }
+  explicit InvalidMessage(const std::string &msg) :runtime_error(msg) { }
 };
 
 
 constexpr size_t NodeIDLength = 20;
+constexpr size_t NodeIDBits = NodeIDLength * 8;
 class NodeID {
  public:
-  static NodeID from_string(std::string s) {
-    NodeID ret{};
-    if (s.size() != NodeIDLength) {
-      throw InvalidMessage("NodeID is not NodeIDLength long");
-    }
-    std::copy(s.begin(), s.end(), ret.data_.begin());
-    return ret;
+  NodeID() {
+    data_.fill(0);
   }
-  void encode(std::ostream &os) const {
-    os.write(data_.data(), data_.size());
-  }
+
+  static NodeID pow2(size_t r);
+  static NodeID pow2m1(size_t r);
+  static NodeID from_string(std::string s);
+  void encode(std::ostream &os) const;
   static NodeID random();
 
   std::string to_string() const;
 
+  bool operator<(const NodeID &rhs) const;
+  bool operator==(const NodeID &rhs) const;
+  bool operator<=(const NodeID &rhs) const;
+  NodeID operator&(const NodeID &rhs) const;
+  NodeID operator|(const NodeID &rhs) const;
+  NodeID operator^(const NodeID &rhs) const;
+  uint8_t bit(size_t r) const;
+  NodeID distance(const NodeID &rhs) const { return *this ^ rhs; }
+
  private:
-  std::array<char, NodeIDLength> data_;
+  // network byte order
+  std::array<uint8_t, NodeIDLength> data_{};
 };
 
 class NodeInfo {
@@ -52,6 +60,9 @@ class NodeInfo {
   static NodeInfo decode(std::istream &is);
   void encode(std::ostream &os) const;
   std::string to_string() const;
+  NodeID id() const { return node_id_; }
+  uint32_t ip() const { return ip_; }
+  uint16_t port() const { return port_; }
  private:
   NodeID node_id_;
   uint32_t ip_;
@@ -127,21 +138,7 @@ class FindNodeQuery :public Query {
   FindNodeQuery(NodeID self_id, NodeID target_id)
       :Query(MethodNameFindNode), self_id_(self_id), target_id_(target_id) {}
  protected:
-  std::shared_ptr<bencoding::Node> get_arguments_node() const override {
-    std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
-    {
-      std::stringstream ss;
-      self_id_.encode(ss);
-      arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
-    }
-    {
-      std::stringstream ss;
-      target_id_.encode(ss);
-      arguments_dict["target"] = std::make_shared<bencoding::StringNode>(ss.str());
-    }
-    return std::make_shared<bencoding::DictNode>(arguments_dict);
-
-  }
+  std::shared_ptr<bencoding::Node> get_arguments_node() const override;
 
  private:
   NodeID self_id_;
@@ -178,12 +175,8 @@ class FindNodeResponse :public Response {
       NodeID node_id,
       std::vector<NodeInfo> nodes)
       :Response(std::move(transaction_id), std::move(client_version)), node_id_(node_id), nodes_(std::move(nodes)) { }
-  void print_nodes() {
-    std::cout << "FindNodeResponse " << std::endl;
-    for (auto node : nodes_) {
-      std::cout << node.to_string() << std::endl;
-    }
-  }
+  void print_nodes();
+  const std::vector<NodeInfo> &nodes() { return nodes_; }
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:

@@ -23,6 +23,76 @@ std::string NodeID::to_string() const {
   }
   return ss.str();
 }
+NodeID NodeID::pow2m1(size_t r) {
+  assert(r > 0 && r <= NodeIDBits);
+  // NodeIDLength - ceil(r/8)
+  size_t index = NodeIDLength - ((r-1) / 8 + 1);
+  size_t bit = (r % 8 == 0) ? 8 : (r % 8);
+  NodeID ret{};
+  ret.data_[index] = (1u << bit) - 1;
+  for (size_t i = index+1; i < NodeIDLength; i++) {
+    ret.data_[i] = 0xffu;
+  }
+  return ret;
+}
+NodeID NodeID::pow2(size_t r) {
+  assert(r >= 0 && r < NodeIDBits);
+  size_t index = NodeIDLength - 1 - r / 8;
+  size_t bit = r % 8;
+  NodeID ret{};
+  ret.data_[index] = 1u << bit;
+  return ret;
+}
+NodeID NodeID::from_string(std::string s) {
+  NodeID ret{};
+  if (s.size() != NodeIDLength) {
+    throw InvalidMessage("NodeID is not NodeIDLength long");
+  }
+  std::copy(s.begin(), s.end(), ret.data_.begin());
+  return ret;
+}
+void NodeID::encode(std::ostream &os) const {
+  os.write((const char*)data_.data(), data_.size());
+}
+bool NodeID::operator<=(const NodeID &rhs) const {
+  return *this < rhs || *this == rhs;
+}
+bool NodeID::operator==(const NodeID &rhs) const {
+  return !(*this < rhs) && !(rhs < *this);
+}
+bool NodeID::operator<(const NodeID &rhs) const {
+  // data_ is big endian so we can use lexicographical_compare
+  return std::lexicographical_compare(data_.begin(), data_.end(), rhs.data_.begin(), rhs.data_.end());
+}
+NodeID NodeID::operator&(const NodeID &rhs) const {
+  NodeID ret{};
+  for (int i = 0; i < data_.size(); i++) {
+    ret.data_[i] = data_[i] & rhs.data_[i];
+  }
+  return ret;
+}
+NodeID NodeID::operator|(const NodeID &rhs) const {
+  NodeID ret{};
+  for (int i = 0; i < data_.size(); i++) {
+    ret.data_[i] = data_[i] | rhs.data_[i];
+  }
+  return ret;
+}
+NodeID NodeID::operator^(const NodeID &rhs) const {
+  NodeID ret{};
+  for (int i = 0; i < data_.size(); i++) {
+    ret.data_[i] = data_[i] ^ rhs.data_[i];
+  }
+  return ret;
+}
+uint8_t NodeID::bit(size_t r) const {
+  assert(r >= 0 && r < NodeIDBits);
+  // NodeIDLength - ceil(r/8)
+  size_t index = NodeIDLength - 1 - r / 8;
+  size_t bit = r % 8;
+  return (data_[index] >> bit) & 1u;
+}
+
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) {
   dict["t"] = std::make_shared<bencoding::StringNode>(transaction_id_);
   dict["y"] = std::make_shared<bencoding::StringNode>(type_);
@@ -266,5 +336,26 @@ std::shared_ptr<bencoding::Node> FindNodeResponse::get_response_node() const {
   response_dict["nodes"] = std::make_shared<bencoding::StringNode>(ss2.str());
 
   return std::make_shared<bencoding::DictNode>(response_dict);
+}
+void FindNodeResponse::print_nodes() {
+  std::cout << "FindNodeResponse " << std::endl;
+  for (auto node : nodes_) {
+    std::cout << node.to_string() << std::endl;
+  }
+}
+std::shared_ptr<bencoding::Node> FindNodeQuery::get_arguments_node() const {
+  std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
+  {
+    std::stringstream ss;
+    self_id_.encode(ss);
+    arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  {
+    std::stringstream ss;
+    target_id_.encode(ss);
+    arguments_dict["target"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  return std::make_shared<bencoding::DictNode>(arguments_dict);
+
 }
 }
