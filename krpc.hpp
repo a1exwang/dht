@@ -3,6 +3,7 @@
 #include "bencoding.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -25,6 +26,7 @@ class InvalidMessage : public std::runtime_error {
 
 constexpr size_t NodeIDLength = 20;
 constexpr size_t NodeIDBits = NodeIDLength * 8;
+constexpr auto KRPCTimeout = std::chrono::seconds(10);
 class NodeID {
  public:
   NodeID() {
@@ -92,6 +94,8 @@ class Message {
   void build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict);
 
   void set_transaction_id(std::string transaction_id) { this->transaction_id_ = std::move(transaction_id); }
+  std::string transaction_id() const { return this->transaction_id_; }
+
  private:
 
   std::string transaction_id_;
@@ -121,11 +125,11 @@ class Query :public Message {
 
 class PingQuery :public Query {
  public:
-  PingQuery(std::string transaction_id, std::string client_version, NodeID node_id)
-      :Query(std::move(transaction_id), std::move(client_version), MethodNamePing), node_id_(node_id) { }
-  PingQuery(NodeID node_id)
-      :Query(MethodNamePing), node_id_(node_id) { }
-
+  PingQuery(std::string transaction_id, std::string client_version, NodeID sender_id)
+      :Query(std::move(transaction_id), std::move(client_version), MethodNamePing), node_id_(sender_id) { }
+  PingQuery(NodeID sender_id)
+      :Query(MethodNamePing), node_id_(sender_id) { }
+  NodeID node_id() const { return node_id_; }
  protected:
   std::shared_ptr<bencoding::Node> get_arguments_node() const override;
 
@@ -147,6 +151,8 @@ class FindNodeQuery :public Query {
 
 class Response :public Message {
  public:
+  explicit Response(std::string transaction_id)
+      :Message(std::move(transaction_id), MessageTypeResponse, ClientVersion) { }
   Response(std::string transaction_id, std::string client_version)
       :Message(std::move(transaction_id), MessageTypeResponse, std::move(client_version)) { }
 
@@ -161,6 +167,9 @@ class PingResponse :public Response {
  public:
   PingResponse(std::string transaction_id, std::string client_version, NodeID node_id)
       :Response(std::move(transaction_id), std::move(client_version)), node_id_(node_id) { }
+  PingResponse(std::string transaction_id, NodeID node_id)
+      :Response(std::move(transaction_id)), node_id_(node_id) { }
+  NodeID node_id() const { return node_id_; }
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:
@@ -176,7 +185,7 @@ class FindNodeResponse :public Response {
       std::vector<NodeInfo> nodes)
       :Response(std::move(transaction_id), std::move(client_version)), node_id_(node_id), nodes_(std::move(nodes)) { }
   void print_nodes();
-  const std::vector<NodeInfo> &nodes() { return nodes_; }
+  const std::vector<NodeInfo> &nodes() const { return nodes_; }
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:

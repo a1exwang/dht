@@ -22,6 +22,7 @@ struct Config {
 
   int discovery_interval_seconds = 5;
   int report_interval_seconds = 1;
+  int refresh_nodes_check_interval_seconds = 5;
 };
 
 class DHTImpl;
@@ -35,7 +36,8 @@ class DHT {
   void loop();
   void bootstrap();
 
-  std::string create_query(krpc::Query &query);;
+  std::string create_query(krpc::Query &query);
+  std::string create_response(krpc::Response &query);
   double get_current_time() const {
     return std::chrono::duration<double>(
         std::chrono::high_resolution_clock::now() - bootstrap_time_).count();

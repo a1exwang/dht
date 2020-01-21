@@ -1,6 +1,7 @@
 #pragma once
 #include "krpc.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <list>
@@ -11,33 +12,55 @@
 
 namespace dht {
 
+const int MaxGoodNodeAliveMinutes = 15;
+
 class Entry {
  public:
-  explicit Entry(krpc::NodeID id) :id_(id) { }
+  explicit Entry(krpc::NodeInfo info) :info_(std::move(info)) { }
+  explicit Entry(krpc::NodeID id) :info_(id, 0, 0) { }
   Entry(krpc::NodeID id, uint32_t ip, uint16_t port)
-      :id_(id), ip_(ip), port_(port) { }
+      :info_(id, ip, port) { }
 
   [[nodiscard]]
-  krpc::NodeID id() const { return id_; }
+  krpc::NodeInfo node_info() const { return info_; }
 
   [[nodiscard]]
-  uint32_t ip() const { return ip_; }
+  krpc::NodeID id() const { return info_.id(); }
 
   [[nodiscard]]
-  uint16_t port() const { return port_; }
+  uint32_t ip() const { return info_.ip(); }
+
+  [[nodiscard]]
+  uint16_t port() const { return info_.port(); }
 
   bool operator<(const Entry &rhs) const {
-    return id_ < rhs.id_;
+    return info_.id() < rhs.info_.id();
   }
+
+  [[nodiscard]]
+  bool is_good() const;
+
+  [[nodiscard]]
+  bool is_bad() const;
+
+  void make_good_now();
+  void require_response_now();
+
+  [[nodiscard]]
+  std::string to_string() const { return info_.to_string(); }
+
  private:
-  krpc::NodeID id_{};
-  uint32_t ip_{};
-  uint16_t port_{};
+  krpc::NodeInfo info_;
+
+  std::chrono::high_resolution_clock::time_point last_seen_{};
+  bool response_required = false;
+  std::chrono::high_resolution_clock::time_point last_require_response_{};
 };
 
 // ref:
 //  Each bucket can only hold K nodes, currently eight, before becoming "full."
-const size_t BucketMaxItems = 8;
+const size_t BucketMaxGoodItems = 8;
+const size_t BucketMaxItems = 32;
 class Bucket {
  public:
   Bucket(krpc::NodeID self_id, Bucket *parent) :self_(self_id), parent_(parent) {}
@@ -51,10 +74,25 @@ class Bucket {
   krpc::NodeID prefix() const { return prefix_; }
   size_t leaf_count() const;
   size_t total_good_node_count() const;
-  size_t good_node_count() const { return this->good_nodes_.size(); }
+  size_t good_node_count() const;
+  size_t total_known_node_count() const;
+  size_t known_node_count() const;
+  void gc();
+
+  // search functions return a nullptr if not found.
+  const Entry *search(uint32_t ip, uint16_t port) const;
+  const Entry *search(const krpc::NodeID &id) const {
+    return (const_cast<Bucket* const>(this))->search(id);
+  }
+  void remove(const krpc::NodeID &id);
 
   void dfs(const std::function<void (const Bucket&)> &cb) const;
   void bfs(const std::function<void (const Bucket&)> &cb) const;
+  void iterate_entries(const std::function<void (const Entry&)> &cb) const;
+  bool require_response_now(const krpc::NodeID &target);
+
+  bool make_good_now(const krpc::NodeID &id);
+  bool make_good_now(uint32_t ip, uint16_t port);
 
   void split();
 
@@ -66,16 +104,18 @@ class Bucket {
   [[nodiscard]]
   std::list<Entry> find_some_node_for_filling_bucket(size_t k) const;
  private:
-  static std::string indent(int n) {
-    return std::string(n*2, ' ');
-  }
+  static std::string indent(int n);
   void encode_(std::ostream &os, int i);
 
  private:
+  // NOTE:
+  //  This function is quite dangerous.
+  //  as changing `entry.id_` may cause the map key and value.id inconsistent
+  void dfs_w(const std::function<void (Bucket&)> &cb);
+  Entry *search(const krpc::NodeID &id);
+
   [[nodiscard]]
-  krpc::NodeID min() const {
-    return prefix_;
-  }
+  krpc::NodeID min() const;
 
   [[nodiscard]]
   krpc::NodeID max() const {
@@ -85,7 +125,7 @@ class Bucket {
 
  private:
   // nodes are sorted in one buckets
-  std::map<krpc::NodeID, Entry> good_nodes_{};
+  std::map<krpc::NodeID, Entry> known_nodes_{};
 
   /**
    * How `prefix`, `min` and `max` Are Related.
@@ -119,9 +159,6 @@ class Bucket {
 class RoutingTable {
  public:
   explicit RoutingTable(krpc::NodeID self_id) :root_(self_id, nullptr), self_id_(self_id) {}
-  void add_node(Entry entry) {
-    root_.add_node(entry);
-  }
 
   [[nodiscard]]
   bool is_full() const {
@@ -129,8 +166,13 @@ class RoutingTable {
   }
 
   [[nodiscard]]
-  size_t size() const {
+  size_t good_node_count() const {
     return root_.total_good_node_count();
+  }
+
+  [[nodiscard]]
+  size_t known_node_count() const {
+    return root_.total_known_node_count();
   }
 
   void stat(std::ostream &os) const;
@@ -138,6 +180,18 @@ class RoutingTable {
   void encode(std::ostream &os);
 
   std::list<Entry> select_expand_route_targets();
+
+  void add_node(Entry entry);
+  void remove_node(const krpc::NodeID &target);
+  void require_response_now(const krpc::NodeID &target) {
+    root_.require_response_now(target);
+  }
+
+  bool make_good_now(const krpc::NodeID &id);
+  bool make_good_now(uint32_t ip, uint16_t port);
+
+  void iterate_nodes(const std::function<void (const Entry &)> &callback);
+  void gc() { root_.gc(); }
 
  private:
   Bucket root_;

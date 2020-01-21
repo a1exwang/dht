@@ -1,4 +1,5 @@
 #include "routing_table.hpp"
+#include "log.hpp"
 
 #include <random>
 #include <memory>
@@ -21,26 +22,35 @@ void dht::Bucket::split() {
   right_->prefix_ = prefix_ | krpc::NodeID::pow2(krpc::NodeIDBits - prefix_length_ - 1);
   right_->prefix_length_ = prefix_length_ + 1;
 
-  for (auto &item : good_nodes_) {
+  for (auto &item : known_nodes_) {
     if (left_->in_bucket(item.first)) {
-      left_->good_nodes_.insert(item);
+      left_->known_nodes_.insert(item);
     } else {
       assert(right_->in_bucket(item.first));
-      right_->good_nodes_.insert(item);
+      right_->known_nodes_.insert(item);
     }
   }
+
+  if (left_->good_node_count() > BucketMaxGoodItems) {
+    left_->split();
+  }
+  if (right_->good_node_count() > BucketMaxGoodItems) {
+    right_->split();
+  }
 }
+
+
 void Bucket::add_node(Entry entry) {
   assert(in_bucket(entry.id()));
   if (is_leaf()) {
     if (self_in_bucket()) {
-      good_nodes_.insert({entry.id(), entry});
-      if (good_nodes_.size() > BucketMaxItems) {
+      known_nodes_.insert({entry.id(), entry});
+      if (good_node_count() > BucketMaxGoodItems) {
         split();
       }
     } else {
-      if (good_nodes_.size() < BucketMaxItems) {
-        good_nodes_.insert({entry.id(), entry});
+      if (good_node_count() < BucketMaxGoodItems) {
+        known_nodes_.insert({entry.id(), entry});
       }
     }
   } else {
@@ -57,7 +67,7 @@ void Bucket::encode_(std::ostream &os, int i) {
     os << indent(i) << "{" << std::endl;
     os << indent(i+1) << R"("prefix_length": )" << prefix_length_ << "," << std::endl;
     os << indent(i+1) << R"("prefix": ")" << prefix_.to_string() << "\"," << std::endl;
-    os << indent(i+1) << R"("entry_count": )" << good_nodes_.size() << std::endl;
+    os << indent(i+1) << R"("entry_count": )" << known_nodes_.size() << std::endl;
     os << indent(i) << "}" << std::endl;
   } else {
     left_->encode_(os, i);
@@ -82,7 +92,7 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const krpc::NodeID &id, size_t k) 
   if (is_leaf()) {
     std::list<Entry> results;
     size_t i = 0;
-    for (auto item : good_nodes_) {
+    for (auto item : known_nodes_) {
       results.push_back(item.second);
       i++;
       if (i >= k) {
@@ -143,7 +153,11 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const krpc::NodeID &id, size_t k) 
 }
 bool Bucket::is_full() const {
   if (is_leaf()) {
-    return this->good_nodes_.size() >= BucketMaxItems;
+    if (self_in_bucket()) {
+      return prefix_length_ >= (krpc::NodeIDBits - 1);
+    } else {
+      return this->good_node_count() >= BucketMaxGoodItems;
+    }
   } else {
     return left_->is_full() && right_->is_full();
   }
@@ -154,12 +168,13 @@ std::list<Entry> Bucket::find_some_node_for_filling_bucket(size_t k) const {
   std::map<krpc::NodeID, Entry> results2;
   int seed = 1;
   // TODO: work around a possibilly glibc issue
-  if (good_nodes_.begin() == good_nodes_.end()) {
+  if (known_nodes_.begin() == known_nodes_.end()) {
     return {};
   }
+  // TODO: priorize good nodes
   std::sample(
-      good_nodes_.begin(),
-      good_nodes_.end(),
+      known_nodes_.begin(),
+      known_nodes_.end(),
       std::inserter(results2, results2.begin()),
       k,
       std::mt19937{std::random_device{}()});
@@ -190,7 +205,7 @@ std::list<Entry> Bucket::find_some_node_for_filling_bucket(size_t k) const {
 }
 size_t Bucket::total_good_node_count() const {
   if (is_leaf()) {
-    return this->good_nodes_.size();
+    return good_node_count();
   } else {
     return left_->total_good_node_count() + right_->total_good_node_count();
   }
@@ -200,6 +215,13 @@ void Bucket::dfs(const std::function<void(const Bucket &)> &cb) const {
   if (!is_leaf()) {
     left_->dfs(cb);
     right_->dfs(cb);
+  }
+}
+void Bucket::dfs_w(const std::function<void(Bucket &)> &cb) {
+  cb(*this);
+  if (!is_leaf()) {
+    left_->dfs_w(cb);
+    right_->dfs_w(cb);
   }
 }
 void Bucket::bfs(const std::function<void(const Bucket &)> &cb) const {
@@ -228,6 +250,147 @@ bool Bucket::in_bucket(krpc::NodeID id) const {
 }
 size_t Bucket::prefix_length() const { return prefix_length_; }
 
+const Entry *Bucket::search(uint32_t ip, uint16_t port) const {
+  const Entry *ret = nullptr;
+  bool found = false;
+  dfs([&ret, &found, ip, port](const Bucket &bucket) {
+    if (!found && bucket.is_leaf()) {
+      for (auto &item : bucket.known_nodes_) {
+        auto &node = item.second;
+        if (node.ip() == ip && node.port() == port) {
+          ret = &node;
+          return;
+        }
+      }
+    }
+  });
+  return ret;
+}
+krpc::NodeID Bucket::min() const {
+  return prefix_;
+}
+bool Bucket::make_good_now(const krpc::NodeID &id) {
+  bool found = false;
+  dfs_w([&found, id](Bucket &bucket) {
+    if (!found && bucket.is_leaf()) {
+      for (auto &item : bucket.known_nodes_) {
+        if (item.first == id) {
+          item.second.make_good_now();
+          found = true;
+          return;
+        }
+      }
+    }
+  });
+  return found;
+}
+bool Bucket::make_good_now(uint32_t ip, uint16_t port) {
+  bool found = false;
+  dfs_w([&found, ip, port](Bucket &bucket) {
+    if (!found && bucket.is_leaf()) {
+      for (auto &item : bucket.known_nodes_) {
+        if (item.second.ip() == ip && item.second.port() == port) {
+          item.second.make_good_now();
+          found = true;
+          return;
+        }
+      }
+    }
+  });
+  return found;
+}
+std::string Bucket::indent(int n) {
+  return std::string(n*2, ' ');
+}
+size_t Bucket::good_node_count() const {
+  size_t ret = 0;
+  for (auto &item : known_nodes_) {
+    if (item.second.is_good()) {
+      ret++;
+    }
+  }
+  return ret;
+}
+size_t Bucket::total_known_node_count() const {
+  if (is_leaf()) {
+    return known_node_count();
+  } else {
+    return left_->total_known_node_count() + right_->total_known_node_count();
+  }
+}
+size_t Bucket::known_node_count() const {
+  return this->known_nodes_.size();
+}
+void Bucket::iterate_entries(const std::function<void(const Entry &)> &cb) const {
+  for (auto item : known_nodes_) {
+    cb(item.second);
+  }
+}
+void Bucket::remove(const krpc::NodeID &id) {
+  dfs_w([id](Bucket &bucket) {
+    if (bucket.known_nodes_.find(id) != bucket.known_nodes_.end()) {
+      bucket.known_nodes_.erase(id);
+    }
+  });
+}
+bool Bucket::require_response_now(const krpc::NodeID &target) {
+  auto entry = search(target);
+  if (entry) {
+    entry->require_response_now();
+    return true;
+  } else {
+    return false;
+  }
+}
+Entry *Bucket::search(const krpc::NodeID &id) {
+  Entry *ret = nullptr;
+  bool found = false;
+  dfs_w([&ret, &found, &id](Bucket &bucket) {
+    if (!found && bucket.is_leaf()) {
+      for (auto &item : bucket.known_nodes_) {
+        if (item.first == id) {
+          ret = &item.second;
+          return;
+        }
+      }
+    }
+  });
+  return ret;
+
+}
+void Bucket::gc() {
+  if (is_leaf()) {
+    std::list<krpc::NodeID> nodes_to_delete;
+    std::vector<krpc::NodeID> questionable_nodes;
+    size_t n_good = 0, n_non_bad = 0;
+    for (auto &node : known_nodes_) {
+      if (node.second.is_bad()) {
+        LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete bad node " << node.second.to_string();
+        nodes_to_delete.push_back(node.first);
+      } else if (node.second.is_good()) {
+        n_good++;
+        n_non_bad++;
+      } else {
+        n_non_bad++;
+        questionable_nodes.push_back(node.first);
+      }
+    }
+    if (n_non_bad > BucketMaxItems) {
+      LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " non_bad count " << n_non_bad << " delete extra nodes";
+      for (size_t i = 0; i < n_non_bad - BucketMaxGoodItems && i < questionable_nodes.size(); i++) {
+        LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete questionable node " << questionable_nodes[i].to_string();
+        nodes_to_delete.push_back(questionable_nodes[i]);
+      }
+    }
+    for (auto &id : nodes_to_delete) {
+      known_nodes_.erase(id);
+    }
+  } else {
+    left_->gc();
+    right_->gc();
+  }
+}
+
 std::list<Entry> RoutingTable::select_expand_route_targets() {
   std::list<Entry> entries;
   root_.dfs([&entries](const Bucket &bucket) {
@@ -247,15 +410,57 @@ void RoutingTable::encode(std::ostream &os) {
 }
 void RoutingTable::stat(std::ostream &os) const {
   os << "Routing Table: self: " << self_id_.to_string() << std::endl;
-  os << "  total entries: " << root_.total_good_node_count() << std::endl;
+  os << "  total entries: " << root_.total_known_node_count() << std::endl;
+  os << "  total good entries: " << root_.total_good_node_count() << std::endl;
   root_.bfs([&os](const Bucket &bucket) {
     if (bucket.is_leaf()) {
-      if (bucket.good_node_count() > 0) {
+      if (bucket.known_node_count() > 0) {
         os << "  p=" << bucket.prefix().to_string()
            << ", len(p)=" << bucket.prefix_length()
-           << ", n=" << bucket.good_node_count() << std::endl;
+           << ", good " << bucket.good_node_count() << ", n " << bucket.known_node_count() << std::endl;
       }
     }
   });
+}
+bool RoutingTable::make_good_now(const krpc::NodeID &id) {
+  return root_.make_good_now(id);
+}
+void RoutingTable::add_node(Entry entry) {
+  root_.add_node(entry);
+}
+bool RoutingTable::make_good_now(uint32_t ip, uint16_t port) {
+  return root_.make_good_now(ip, port);
+}
+void RoutingTable::iterate_nodes(const std::function<void(const Entry &)> &callback) {
+  root_.dfs([&callback](const Bucket &bucket) {
+    if (bucket.is_leaf()) {
+      bucket.iterate_entries(callback);
+    }
+  });
+}
+void RoutingTable::remove_node(const krpc::NodeID &target) {
+  root_.remove(target);
+}
+
+void Entry::make_good_now() {
+  this->last_seen_ = std::chrono::high_resolution_clock::now();
+  this->response_required = false;
+}
+bool Entry::is_good() const {
+  // A good node is a node has responded to one of our queries within the last 15 minutes,
+  // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
+
+  return !is_bad() &&
+      (std::chrono::high_resolution_clock::now() - last_seen_) < std::chrono::minutes(MaxGoodNodeAliveMinutes);
+}
+void Entry::require_response_now() {
+  response_required = true;
+  this->last_require_response_ = std::chrono::high_resolution_clock::now();
+}
+bool Entry::is_bad() const {
+  if (!response_required)
+    return false;
+
+  return ((std::chrono::high_resolution_clock::now() - last_require_response_) > krpc::KRPCTimeout);
 }
 }
