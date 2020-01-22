@@ -109,6 +109,8 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       handle_find_node_response(*find_node_response);
     } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
       handle_ping_response(*ping_response);
+    } else if (auto sample_infohashes_res = std::dynamic_pointer_cast<krpc::SampleInfohashesResponse>(response); sample_infohashes_res) {
+      handle_sample_infohashes_response(*sample_infohashes_res);
     } else {
       LOG(error) << "Warning! response type not supported";
       has_error = true;
@@ -120,8 +122,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       handle_find_node_query(*find_node_query);
     } else if (auto get_peers_query = std::dynamic_pointer_cast<krpc::GetPeersQuery>(query); get_peers_query) {
       handle_get_peers_query(*get_peers_query);
-    } else if (auto
-          announce_peer_query = std::dynamic_pointer_cast<krpc::AnnouncePeerQuery>(query); announce_peer_query) {
+    } else if (auto announce_peer_query = std::dynamic_pointer_cast<krpc::AnnouncePeerQuery>(query); announce_peer_query) {
       handle_announce_peer_query(*announce_peer_query);
     } else {
       LOG(error) << "Warning! query type not supported";

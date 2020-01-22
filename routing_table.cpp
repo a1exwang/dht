@@ -383,7 +383,7 @@ std::tuple<size_t, size_t, size_t> Bucket::gc() {
         questionable_nodes.push_back(node.first);
       }
     }
-    size_t n_good_deleted{}, n_questionable_deleted;
+    size_t n_good_deleted = 0, n_questionable_deleted = 0;
     if (n_non_bad > BucketMaxItems) {
       LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " non_bad count " << n_non_bad << " delete extra nodes";
       for (size_t i = 0; i < std::min(n_non_bad - BucketMaxItems, questionable_nodes.size()); i++) {

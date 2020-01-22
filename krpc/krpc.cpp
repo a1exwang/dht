@@ -92,6 +92,35 @@ uint8_t NodeID::bit(size_t r) const {
   size_t bit = r % 8;
   return (data_[index] >> bit) & 1u;
 }
+NodeID NodeID::decode(std::istream &is) {
+  if (is) {
+    NodeID ret{};
+    is.read((char*)ret.data_.data(), NodeIDLength);
+    if (is.good() && is.gcount() == NodeIDLength) {
+      return ret;
+    } else {
+      throw InvalidMessage("Cannot read NodeID from stream, bad stream when reading");
+    }
+  } else {
+    throw InvalidMessage("Cannot read NodeID from stream, bad stream");
+  }
+}
+NodeID NodeID::random_from_prefix(const NodeID &prefix, size_t prefix_length) {
+  // TODO: not tested
+  NodeID ret = random();
+  if (prefix_length == 0)
+    return ret;
+
+  // prefix_length >= 1
+  auto bytes = (prefix_length-1) / 8;
+  // 0 <= bytes < NodeIDLength
+  auto bits = 8 - prefix_length % 8;
+  std::copy(prefix.data_.begin(), std::next(prefix.data_.begin(), bytes), ret.data_.begin());
+  auto mask_low = ((1u << bits) - 1u);
+  auto mask_high = mask_low;
+  ret.data_[bytes] = (ret.data_[bytes] & mask_low) | (prefix.data_[bytes] & mask_high);
+  return ret;
+}
 
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
   dict["t"] = std::make_shared<bencoding::StringNode>(transaction_id_);
@@ -244,6 +273,26 @@ std::shared_ptr<Message> Response::decode(
   } else if (method_name == MethodNameAnnouncePeer) {
     // TODO
     LOG(warning) << "AnnouncePeer query received, ignored";
+  } else if (method_name == MethodNameSampleInfohashes) {
+    auto id_str = get_string_or_throw(r_dict, "id", "SampleInfohashes");
+    auto samples_str = get_string_or_throw(r_dict, "samples", "SampleInfohashes");
+    int64_t interval = 0;
+    size_t num = 0;
+    if (r_dict.find("interval") != r_dict.end()) {
+      interval = get_int64_or_throw(r_dict, "interval", "SampleInfohashes");
+    }
+    if (r_dict.find("num") != r_dict.end()) {
+      num = get_int64_or_throw(r_dict, "num", "SampleInfohashes");
+    }
+    std::stringstream ss(samples_str);
+    // the stream has at least 1 character
+    std::vector<NodeID> samples;
+    while (ss.peek() != EOF) {
+      samples.push_back(NodeID::decode(ss));
+    }
+    return std::make_shared<SampleInfohashesResponse>(
+        t, v, NodeID::from_string(id_str), interval, num, samples
+    );
   } else {
     throw InvalidMessage("Unknown response type: '" + method_name + "'");
   }

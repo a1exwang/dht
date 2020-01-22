@@ -36,23 +36,9 @@ class NodeID {
   static NodeID pow2m1(size_t r);
   static NodeID from_string(std::string s);
   void encode(std::ostream &os) const;
+  static NodeID decode(std::istream &is);
   static NodeID random();
-  static NodeID random_from_prefix(const NodeID &prefix, size_t prefix_length) {
-    // TODO: not tested
-    NodeID ret = random();
-    if (prefix_length == 0)
-      return ret;
-
-    // prefix_length >= 1
-    auto bytes = (prefix_length-1) / 8;
-    // 0 <= bytes < NodeIDLength
-    auto bits = 8 - prefix_length % 8;
-    std::copy(prefix.data_.begin(), std::next(prefix.data_.begin(), bytes), ret.data_.begin());
-    auto mask_low = ((1u << bits) - 1u);
-    auto mask_high = mask_low;
-    ret.data_[bytes] = (ret.data_[bytes] & mask_low) | (prefix.data_[bytes] & mask_high);
-    return ret;
-  }
+  static NodeID random_from_prefix(const NodeID &prefix, size_t prefix_length);
 
   std::string to_string() const;
 
@@ -209,11 +195,9 @@ class FindNodeQuery :public Query {
 class SampleInfohashesQuery :public Query {
  public:
   SampleInfohashesQuery(
-      std::string transaction_id,
-      std::string version,
       NodeID sender_id,
       NodeID target_id)
-      : Query(std::move(transaction_id), std::move(version), MethodNameSampleInfohashes),
+      : Query(MethodNameSampleInfohashes),
         sender_id_(sender_id), target_id_(target_id) {}
 
   const NodeID &sender_id() const { return sender_id_; }
@@ -353,15 +337,22 @@ class SampleInfohashesResponse :public Response {
       std::string transaction_id,
       std::string client_version,
       NodeID sender_id,
+      int64_t interval,
+      size_t num,
       std::vector<NodeID> samples)
-      : Response(std::move(transaction_id), std::move(client_version)), node_id_(sender_id), samples_(std::move(samples)) { }
+      : Response(std::move(transaction_id), std::move(client_version)),
+      node_id_(sender_id),
+      interval_(interval),
+      num_(num),
+      samples_(std::move(samples)) { }
   const std::vector<NodeID> &samples() const { return samples_; }
+  const NodeID sender_id() const { return node_id_; }
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override { return nullptr; }
  private:
   NodeID node_id_;
-  int64_t interval_;
-  size_t num_;
+  int64_t interval_{};
+  size_t num_{};
   std::vector<NodeID> samples_;
 };
 

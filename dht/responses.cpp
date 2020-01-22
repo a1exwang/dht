@@ -33,5 +33,20 @@ void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response) 
   this->dht_->routing_table.make_good_now(response.sender_id());
 }
 
+void DHTImpl::handle_sample_infohashes_response(
+    const krpc::SampleInfohashesResponse &response) {
+
+  for (auto &info_hash : response.samples()) {
+    dht_->got_info_hash(info_hash);
+  }
+  this->dht_->routing_table.add_node(
+      Entry{
+          response.sender_id(),
+          sender_endpoint.address().to_v4().to_uint(),
+          sender_endpoint.port()
+      });
+  this->dht_->routing_table.make_good_now(response.sender_id());
+}
+
 }
 

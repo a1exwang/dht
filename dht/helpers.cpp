@@ -1,5 +1,7 @@
 #include "dht_impl.hpp"
 
+#include <boost/bind.hpp>
+
 #include <dht/dht.hpp>
 #include <krpc/krpc.hpp>
 

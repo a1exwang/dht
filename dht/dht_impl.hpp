@@ -3,7 +3,6 @@
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
-#include <boost/bind.hpp>
 
 #include <utils/log.hpp>
 #include <utils/public_ip.hpp>
@@ -17,6 +16,8 @@ class error_code;
 namespace krpc {
 class PingResponse;
 class FindNodeResponse;
+class SampleInfohashesResponse;
+
 class PingQuery;
 class FindNodeQuery;
 class GetPeersQuery;
@@ -48,6 +49,8 @@ class DHTImpl {
 
   void handle_ping_response(const krpc::PingResponse &response);
   void handle_find_node_response(const krpc::FindNodeResponse &response);
+  void handle_sample_infohashes_response(const krpc::SampleInfohashesResponse &response);
+
   void handle_ping_query(const krpc::PingQuery &query);
   void handle_find_node_query(const krpc::FindNodeQuery &query);
   void handle_get_peers_query(const krpc::GetPeersQuery &query);

@@ -90,6 +90,15 @@ void DHTImpl::handle_refresh_nodes_timer(const boost::system::error_code &e) {
         LOG(error) << "Node gone when iterating " << node.to_string();
       }
       ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
+
+
+      // sample_infohashes
+      auto sample_infohashes_query = std::make_shared<krpc::SampleInfohashesQuery>(self(), self());
+      udp::endpoint ep{boost::asio::ip::make_address_v4(node.ip()), node.port()};
+      socket.async_send_to(
+          boost::asio::buffer(dht_->create_query(*sample_infohashes_query)),
+          ep,
+          default_handle_send());
     }
   });
 }
