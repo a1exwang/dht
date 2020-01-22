@@ -1,10 +1,11 @@
-#include "log.hpp"
-#include "krpc.hpp"
+#include <krpc/krpc.hpp>
 
 #include <algorithm>
 #include <utility>
 #include <sstream>
 #include <random>
+
+#include <utils/log.hpp>
 
 namespace krpc {
 
@@ -490,5 +491,19 @@ std::shared_ptr<bencoding::Node> GetPeersResponse::get_response_node() const {
 
   return std::make_shared<bencoding::DictNode>(response_dict);
 
+}
+std::shared_ptr<bencoding::Node> SampleInfohashesQuery::get_arguments_node() const {
+  std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
+  {
+    std::stringstream ss;
+    sender_id_.encode(ss);
+    arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  {
+    std::stringstream ss;
+    target_id_.encode(ss);
+    arguments_dict["target"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  return std::make_shared<bencoding::DictNode>(arguments_dict);
 }
 }

@@ -20,26 +20,20 @@ else()
     add_definitions(-DBOOST_LOG_DYN_LINK=1)
 endif()
 
+include_directories(include)
+
 find_package(Boost REQUIRED COMPONENTS system log)
-
-add_library(log STATIC log.cpp)
-target_link_libraries(log PUBLIC Boost::log)
-
-add_library(public_ip STATIC public_ip.cpp)
-
-add_library(bencoding STATIC bencoding.cpp)
-add_library(krpc STATIC krpc.cpp)
-target_link_libraries(krpc PUBLIC bencoding)
+add_subdirectory(utils)
+add_subdirectory(bencoding)
+add_subdirectory(krpc)
 add_library(transaction STATIC transaction.cpp)
 target_link_libraries(transaction PUBLIC krpc)
 add_library(routing_table STATIC routing_table.cpp)
 target_link_libraries(routing_table PUBLIC krpc)
 
-add_library(dht STATIC dht.cpp)
-target_link_libraries(dht PUBLIC krpc transaction routing_table bencoding public_ip log)
-target_include_directories(dht PUBLIC ${CMAKE_SOURCE_DIR})
+add_subdirectory(dht)
 
 add_executable(dht_client main.cpp)
 target_link_libraries(dht_client PRIVATE dht Boost::system pthread)
-add_executable(bencoding_test_echo bencoding_test_echo.cpp)
+add_executable(bencoding_test_echo bencoding/bencoding_test_echo.cpp)
 target_link_libraries(bencoding_test_echo PRIVATE bencoding)

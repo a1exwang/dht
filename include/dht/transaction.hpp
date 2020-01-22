@@ -1,7 +1,4 @@
 #pragma once
-
-#include "bencoding.hpp"
-
 #include <array>
 #include <string>
 #include <vector>
@@ -10,7 +7,9 @@
 #include <sstream>
 #include <exception>
 
-namespace transaction {
+#include <bencode/bencoding.hpp>
+
+namespace dht {
 
 
 struct Transaction {

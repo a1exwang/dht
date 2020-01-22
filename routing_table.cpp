@@ -1,5 +1,5 @@
-#include "routing_table.hpp"
-#include "log.hpp"
+#include "dht/routing_table.hpp"
+#include "utils/log.hpp"
 
 #include <random>
 #include <memory>

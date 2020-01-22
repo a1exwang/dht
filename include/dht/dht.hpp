@@ -1,9 +1,4 @@
 #pragma once
-
-#include <routing_table.hpp>
-#include <krpc.hpp>
-#include <transaction.hpp>
-
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +6,10 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <krpc/krpc.hpp>
+#include <dht/routing_table.hpp>
+#include <dht/transaction.hpp>
 
 namespace dht {
 
@@ -56,7 +55,7 @@ class DHT {
   // NOTE(aocheng) This must be place before routing_table
   krpc::NodeInfo self_info_;
 
-  transaction::TransactionManager transaction_manager;
+  dht::TransactionManager transaction_manager;
   dht::RoutingTable routing_table;
 
   /**

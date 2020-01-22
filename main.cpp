@@ -1,6 +1,5 @@
-#include "log.hpp"
-#include <dht.hpp>
-#include <krpc.hpp>
+#include <dht/dht.hpp>
+#include <utils/log.hpp>
 
 int main(int argc, char* argv[]) {
   dht::log::initialize_logger();

@@ -1,7 +1,4 @@
 #pragma once
-
-#include "bencoding.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -14,6 +11,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <bencode/bencoding.hpp>
 
 namespace krpc {
 constexpr const char *ClientVersion = "WTF0.0";
@@ -93,10 +92,12 @@ class NodeInfo {
 constexpr const char *MessageTypeQuery = "q";
 constexpr const char *MessageTypeResponse = "r";
 constexpr const char *MessageTypeError = "e";
+
 constexpr const char *MethodNamePing = "ping";
 constexpr const char *MethodNameFindNode = "find_node";
 constexpr const char *MethodNameGetPeers = "get_peers";
 constexpr const char *MethodNameAnnouncePeer = "announce_peer";
+constexpr const char *MethodNameSampleInfohashes = "sample_infohashes";
 
 constexpr int ErrorCodeGenericError = 201;
 constexpr int ErrorServerError = 202;
@@ -193,6 +194,27 @@ class FindNodeQuery :public Query {
       sender_id_(sender_id), target_id_(target_id) {}
   FindNodeQuery(NodeID sender_id, NodeID target_id)
       : Query(MethodNameFindNode), sender_id_(sender_id), target_id_(target_id) {}
+
+  const NodeID &sender_id() const { return sender_id_; }
+  const NodeID &target_id() const { return target_id_; }
+
+  std::shared_ptr<bencoding::Node> get_arguments_node() const override;
+
+ protected:
+ private:
+  NodeID sender_id_;
+  NodeID target_id_;
+};
+
+class SampleInfohashesQuery :public Query {
+ public:
+  SampleInfohashesQuery(
+      std::string transaction_id,
+      std::string version,
+      NodeID sender_id,
+      NodeID target_id)
+      : Query(std::move(transaction_id), std::move(version), MethodNameSampleInfohashes),
+        sender_id_(sender_id), target_id_(target_id) {}
 
   const NodeID &sender_id() const { return sender_id_; }
   const NodeID &target_id() const { return target_id_; }
@@ -323,6 +345,24 @@ class GetPeersResponse :public Response {
   std::string token_;
   std::vector<NodeInfo> nodes_;
   std::vector<std::tuple<uint32_t, uint16_t>> peers_;
+};
+
+class SampleInfohashesResponse :public Response {
+ public:
+  SampleInfohashesResponse(
+      std::string transaction_id,
+      std::string client_version,
+      NodeID sender_id,
+      std::vector<NodeID> samples)
+      : Response(std::move(transaction_id), std::move(client_version)), node_id_(sender_id), samples_(std::move(samples)) { }
+  const std::vector<NodeID> &samples() const { return samples_; }
+ protected:
+  std::shared_ptr<bencoding::Node> get_response_node() const override { return nullptr; }
+ private:
+  NodeID node_id_;
+  int64_t interval_;
+  size_t num_;
+  std::vector<NodeID> samples_;
 };
 
 }
