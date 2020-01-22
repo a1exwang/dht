@@ -37,7 +37,7 @@ class DHT {
   void bootstrap();
 
   std::string create_query(krpc::Query &query);
-  std::string create_response(krpc::Response &query);
+  std::string create_response(const krpc::Response &query);
   double get_current_time() const {
     return std::chrono::duration<double>(
         std::chrono::high_resolution_clock::now() - bootstrap_time_).count();
@@ -49,7 +49,7 @@ class DHT {
   Config config_;
 
   // NOTE(aocheng) This must be place before routing_table
-  krpc::NodeID self_node_id_;
+  krpc::NodeInfo self_info_;
 
   transaction::TransactionManager transaction_manager;
   dht::RoutingTable routing_table;
@@ -61,6 +61,8 @@ class DHT {
   size_t total_ping_query_received_{};
   size_t total_ping_query_sent_{};
   size_t total_ping_response_received_{};
+
+  std::map<std::string, size_t> message_counters_;
 
   // This must be placed last
   // Hide network IO implementation details

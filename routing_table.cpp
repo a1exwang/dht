@@ -420,7 +420,7 @@ void RoutingTable::encode(std::ostream &os) {
   os << "}" << std::endl;
 }
 void RoutingTable::stat(std::ostream &os) const {
-  os << "Routing Table: self: " << self_id_.to_string() << std::endl;
+  os << "Routing Table: " << std::endl;
   os << "  total entries: " << root_.total_known_node_count() << std::endl;
   os << "  total good entries: " << root_.total_good_node_count() << std::endl;
   root_.bfs([&os](const Bucket &bucket) {

@@ -92,7 +92,7 @@ uint8_t NodeID::bit(size_t r) const {
   return (data_[index] >> bit) & 1u;
 }
 
-void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) {
+void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
   dict["t"] = std::make_shared<bencoding::StringNode>(transaction_id_);
   dict["y"] = std::make_shared<bencoding::StringNode>(type_);
   dict["v"] = std::make_shared<bencoding::StringNode>(client_version_);
@@ -108,6 +108,20 @@ void krpc::Query::encode(std::ostream &os, bencoding::EncodeMode mode) {
   root.encode(os, mode);
 }
 
+static int64_t get_int64_or_throw(
+    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict,
+    const std::string &key,
+    const std::string &context) {
+  if (dict.find(key) == dict.end()) {
+    throw InvalidMessage(context + ", '" + key + "' not found");
+  }
+  auto node = std::dynamic_pointer_cast<bencoding::IntNode>(dict.at(key));
+  if (!node) {
+    throw InvalidMessage(context + ", '" + key + "' is not a string");
+  }
+  return *node;
+
+}
 static std::string get_string_or_throw(const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
   if (dict.find(key) == dict.end()) {
     throw InvalidMessage(context + ", '" + key + "' not found");
@@ -115,6 +129,16 @@ static std::string get_string_or_throw(const std::map<std::string, std::shared_p
   auto node = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at(key));
   if (!node) {
     throw InvalidMessage(context + ", '" + key + "' is not a string");
+  }
+  return *node;
+}
+static const bencoding::DictNode &get_dict_or_throw(const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
+  if (dict.find(key) == dict.end()) {
+    throw InvalidMessage(context + ", '" + key + "' not found");
+  }
+  auto node = std::dynamic_pointer_cast<bencoding::DictNode>(dict.at(key));
+  if (!node) {
+    throw InvalidMessage(context + ", '" + key + "' is not a dict");
   }
   return *node;
 }
@@ -136,24 +160,36 @@ std::shared_ptr<Message> krpc::Query::decode(
     const std::string& v
     ) {
   std::string q = get_string_or_throw(dict, "q", "Query");
+  auto a_dict = get_dict_or_throw(dict, "a", "Query");
   if (q == MethodNamePing) {
-    if (dict.find("a") == dict.end()) {
-      throw InvalidMessage("Query, 'a' not found");
-    }
-    auto a_node = std::dynamic_pointer_cast<bencoding::DictNode>(dict.at("a"));
-    if (!a_node) {
-      throw InvalidMessage("Query, 'a' is not a dict");
-    }
-    auto a_dict = a_node->dict();
-    auto node_id_string = get_string_or_throw(a_dict, "id", "Query");
-    auto node_id = NodeID::from_string(node_id_string);
+    auto node_id = NodeID::from_string(
+        get_string_or_throw(a_dict.dict(), "id", "Query"));
     return std::make_shared<PingQuery>(t, v, node_id);
   } else if (q == MethodNameFindNode) {
-    throw InvalidMessage("Query, FindNode method not implemented");
+    auto sender_id = get_string_or_throw(a_dict.dict(), "id", "FindNodeQuery");
+    auto target_id = get_string_or_throw(a_dict.dict(), "target", "FindNodeQuery");
+    return std::make_shared<FindNodeQuery>(t, v, NodeID::from_string(sender_id), NodeID::from_string(target_id));
   } else if (q == MethodNameGetPeers) {
-    throw InvalidMessage("Query, GetPeers method not implemented");
+    auto sender_id = get_string_or_throw(a_dict.dict(), "id", "GetPeersQuery");
+    auto info_hash = get_string_or_throw(a_dict.dict(), "info_hash", "GetPeersQuery");
+    return std::make_shared<GetPeersQuery>(t, v, NodeID::from_string(sender_id), NodeID::from_string(info_hash));
   } else if (q == MethodNameAnnouncePeer) {
-    throw InvalidMessage("Query, AnnouncePeer method not implemented");
+    auto sender_id = get_string_or_throw(a_dict.dict(), "id", "AnnouncePeerQuery");
+    bool implied_port = false;
+    if (auto map = a_dict.dict(); map.find("implied_port") != map.end()) {
+      implied_port = get_int64_or_throw(map, "implied_port", "AnnouncePeerQuery");
+    }
+    auto info_hash = get_string_or_throw(a_dict.dict(), "info_hash", "AnnouncePeerQuery");
+    auto port = get_int64_or_throw(a_dict.dict(), "port", "AnnouncePeerQuery");
+    auto token = get_string_or_throw(a_dict.dict(), "token", "AnnouncePeerQuery");
+    return std::make_shared<AnnouncePeerQuery>(
+        t,
+        v,
+        NodeID::from_string(sender_id),
+        implied_port,
+        NodeID::from_string(info_hash),
+        port,
+        token);
   } else {
     throw InvalidMessage("Query, Unknown method name '" + q + "'");
   }
@@ -166,7 +202,7 @@ std::shared_ptr<bencoding::Node> krpc::PingResponse::get_response_node() const {
   arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
   return std::make_shared<bencoding::DictNode>(arguments_dict);
 }
-void krpc::Response::encode(std::ostream &os, bencoding::EncodeMode mode) {
+void krpc::Response::encode(std::ostream &os, bencoding::EncodeMode mode) const {
   std::map<std::string, std::shared_ptr<bencoding::Node>> dict;
   dict["r"] = get_response_node();
 
@@ -389,5 +425,70 @@ std::shared_ptr<Message> Error::decode(const std::map<std::string, std::shared_p
   }
 
   return std::make_shared<Error>(error_code, message);
+}
+std::shared_ptr<bencoding::Node> GetPeersQuery::get_arguments_node() const {
+  std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
+  {
+    std::stringstream ss;
+    sender_id_.encode(ss);
+    arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  {
+    std::stringstream ss;
+    info_hash_.encode(ss);
+    arguments_dict["info_hash"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  return std::make_shared<bencoding::DictNode>(arguments_dict);
+
+}
+std::shared_ptr<bencoding::Node> AnnouncePeerQuery::get_arguments_node() const {
+  std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
+  {
+    std::stringstream ss;
+    sender_id_.encode(ss);
+    arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  arguments_dict["implied_port"] = std::make_shared<bencoding::IntNode>(implied_port_);
+  {
+    std::stringstream ss;
+    info_hash_.encode(ss);
+    arguments_dict["info_hash"] = std::make_shared<bencoding::StringNode>(ss.str());
+  }
+  arguments_dict["port"] = std::make_shared<bencoding::IntNode>(port_);
+  arguments_dict["token"] = std::make_shared<bencoding::StringNode>(token_);
+  return std::make_shared<bencoding::DictNode>(arguments_dict);
+}
+std::shared_ptr<bencoding::Node> GetPeersResponse::get_response_node() const {
+  std::map<std::string, std::shared_ptr<bencoding::Node>> response_dict;
+
+  std::stringstream ss;
+  node_id_.encode(ss);
+  response_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
+
+  response_dict["token"] = std::make_shared<bencoding::StringNode>(token_);
+  if (has_peers_) {
+    uint32_t ip{};
+    uint16_t port{};
+    std::vector<std::shared_ptr<bencoding::Node>> peers_list;
+    for (auto item : peers_) {
+      std::tie(ip, port) = item;
+      ip = host_to_network(ip);
+      port = host_to_network(port);
+      char tmp[sizeof(ip) + sizeof(port)];
+      memcpy(tmp, &ip, sizeof(ip));
+      memcpy(tmp + sizeof(ip), &port, sizeof(port));
+      peers_list.push_back(std::make_shared<bencoding::StringNode>(std::string(tmp, sizeof(tmp))));
+    }
+    response_dict["values"] = std::make_shared<bencoding::ListNode>(peers_list);
+  } else {
+    std::stringstream ss2;
+    for (auto node : nodes_) {
+      node.encode(ss2);
+    }
+    response_dict["nodes"] = std::make_shared<bencoding::StringNode>(ss2.str());
+  }
+
+  return std::make_shared<bencoding::DictNode>(response_dict);
+
 }
 }

@@ -194,6 +194,11 @@ class RoutingTable {
   void iterate_nodes(const std::function<void (const Entry &)> &callback);
   void gc() { root_.gc(); }
 
+  [[nodiscard]]
+  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const {
+    return root_.k_nearest_good_nodes(id, k);
+  }
+
  private:
   Bucket root_;
   krpc::NodeID self_id_;

@@ -82,6 +82,8 @@ class NodeInfo {
   NodeID id() const { return node_id_; }
   uint32_t ip() const { return ip_; }
   uint16_t port() const { return port_; }
+  void ip(uint32_t ip) { ip_ = ip; }
+  void port(uint16_t port) { port_ = port; }
  private:
   NodeID node_id_;
   uint32_t ip_{};
@@ -116,7 +118,7 @@ class Message {
       const bencoding::Node &node,
       const std::function<std::string (std::string)>& get_method_name
       );
-  void build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict);
+  void build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const;
 
   void set_transaction_id(std::string transaction_id) { this->transaction_id_ = std::move(transaction_id); }
   std::string transaction_id() const { return this->transaction_id_; }
@@ -186,16 +188,67 @@ class PingQuery :public Query {
 
 class FindNodeQuery :public Query {
  public:
+  FindNodeQuery(std::string transaction_id, std::string version, NodeID sender_id, NodeID target_id)
+      : Query(std::move(transaction_id), std::move(version), MethodNameFindNode),
+      sender_id_(sender_id), target_id_(target_id) {}
   FindNodeQuery(NodeID sender_id, NodeID target_id)
       : Query(MethodNameFindNode), sender_id_(sender_id), target_id_(target_id) {}
 
   const NodeID &sender_id() const { return sender_id_; }
+  const NodeID &target_id() const { return target_id_; }
+
+  std::shared_ptr<bencoding::Node> get_arguments_node() const override;
+
+ protected:
+ private:
+  NodeID sender_id_;
+  NodeID target_id_;
+};
+
+class GetPeersQuery :public Query {
+ public:
+  GetPeersQuery(std::string transaction_id, std::string version, NodeID sender_id, NodeID info_hash)
+      : Query(std::move(transaction_id), std::move(version), MethodNameGetPeers),
+        sender_id_(sender_id), info_hash_(info_hash) {}
+  GetPeersQuery(NodeID sender_id, NodeID info_hash)
+      : Query(MethodNameFindNode), sender_id_(sender_id), info_hash_(info_hash) {}
+
+  const NodeID &sender_id() const { return sender_id_; }
+  const NodeID &info_hash() const { return info_hash_; }
 
  protected:
   std::shared_ptr<bencoding::Node> get_arguments_node() const override;
  private:
   NodeID sender_id_;
-  NodeID target_id_;
+  NodeID info_hash_;
+};
+
+class AnnouncePeerQuery :public Query {
+ public:
+  AnnouncePeerQuery(
+      std::string transaction_id,
+      std::string version,
+      krpc::NodeID sender_id,
+      bool implied_port,
+      krpc::NodeID info_hash,
+      uint16_t port,
+      std::string token)
+      :Query(std::move(transaction_id), std::move(version), MethodNameAnnouncePeer),
+        sender_id_(sender_id), info_hash_(info_hash), implied_port_(implied_port),
+        port_(port), token_(token) {}
+
+  const NodeID &sender_id() const { return sender_id_; }
+  const NodeID &info_hash() const { return info_hash_; }
+
+ protected:
+  std::shared_ptr<bencoding::Node> get_arguments_node() const override;
+
+ private:
+  krpc::NodeID sender_id_;
+  bool implied_port_;
+  krpc::NodeID info_hash_;
+  uint16_t port_;
+  std::string token_;
 };
 
 class Response :public Message {
@@ -205,7 +258,7 @@ class Response :public Message {
   Response(std::string transaction_id, std::string client_version)
       :Message(std::move(transaction_id), MessageTypeResponse, std::move(client_version)) { }
 
-  void encode(std::ostream &os, bencoding::EncodeMode mode);
+  void encode(std::ostream &os, bencoding::EncodeMode mode) const ;
   static std::shared_ptr<Message> decode(const std::map<std::string, std::shared_ptr<bencoding::Node>> &, const std::string &t, const std::string &v, const std::string &method_name);
 
  protected:
@@ -229,17 +282,47 @@ class FindNodeResponse :public Response {
  public:
   FindNodeResponse(
       std::string transaction_id,
-      std::string client_version,
-      NodeID node_id,
+      NodeID sender_id,
       std::vector<NodeInfo> nodes)
-      :Response(std::move(transaction_id), std::move(client_version)), node_id_(node_id), nodes_(std::move(nodes)) { }
+      : Response(std::move(transaction_id)), node_id_(sender_id), nodes_(std::move(nodes)) { }
+  FindNodeResponse(
+      std::string transaction_id,
+      std::string client_version,
+      NodeID sender_id,
+      std::vector<NodeInfo> nodes)
+      : Response(std::move(transaction_id), std::move(client_version)), node_id_(sender_id), nodes_(std::move(nodes)) { }
   void print_nodes();
   const std::vector<NodeInfo> &nodes() const { return nodes_; }
+  const NodeID &sender_id() const { return node_id_; }
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:
   NodeID node_id_;
   std::vector<NodeInfo> nodes_;
+};
+
+class GetPeersResponse :public Response {
+ public:
+  GetPeersResponse(
+      std::string transaction_id,
+      std::string client_version,
+      NodeID sender_id,
+      std::string token,
+      std::vector<NodeInfo> nodes)
+      : Response(std::move(transaction_id), std::move(client_version)),
+      node_id_(sender_id),
+      token_(token),
+      has_peers_(false),
+      nodes_(std::move(nodes)) { }
+  const NodeID &sender_id() const { return node_id_; }
+ protected:
+  std::shared_ptr<bencoding::Node> get_response_node() const override;
+ private:
+  bool has_peers_;
+  NodeID node_id_;
+  std::string token_;
+  std::vector<NodeInfo> nodes_;
+  std::vector<std::tuple<uint32_t, uint16_t>> peers_;
 };
 
 }
