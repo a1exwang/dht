@@ -65,7 +65,7 @@ const size_t BucketMaxItems = 32;
 class Bucket {
  public:
   Bucket(krpc::NodeID self_id, Bucket *parent) :self_(self_id), parent_(parent) {}
-  void add_node(const Entry &entry);
+  bool add_node(const Entry &entry);
 
   bool self_in_bucket() const;
   bool in_bucket(krpc::NodeID id) const;
@@ -78,7 +78,7 @@ class Bucket {
   size_t good_node_count() const;
   size_t total_known_node_count() const;
   size_t known_node_count() const;
-  void gc();
+  std::tuple<size_t, size_t, size_t> gc();
 
   // search functions return a nullptr if not found.
   const Entry *search(uint32_t ip, uint16_t port) const;
@@ -176,13 +176,13 @@ class RoutingTable {
     return root_.total_known_node_count();
   }
 
-  void stat(std::ostream &os) const;
+  void stat() const;
   // encode to json
   void encode(std::ostream &os);
 
   std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
-  void add_node(Entry entry);
+  bool add_node(Entry entry);
   void remove_node(const krpc::NodeID &target);
   bool require_response_now(const krpc::NodeID &target) {
     return root_.require_response_now(target);
@@ -192,7 +192,7 @@ class RoutingTable {
   bool make_good_now(uint32_t ip, uint16_t port);
 
   void iterate_nodes(const std::function<void (const Entry &)> &callback);
-  void gc() { root_.gc(); }
+  void gc();
 
   [[nodiscard]]
   std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const {
@@ -202,6 +202,11 @@ class RoutingTable {
  private:
   Bucket root_;
   krpc::NodeID self_id_;
+
+  size_t total_node_added_{};
+  size_t total_bad_node_deleted_{};
+  size_t total_good_node_deleted_{};
+  size_t total_questionable_node_deleted_{};
 };
 
 }

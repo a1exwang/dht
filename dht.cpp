@@ -37,16 +37,20 @@ class DHTImpl {
   };
 
   void good_sender(const krpc::NodeID &sender_id) {
-    dht_->routing_table.add_node(
+    bool added = dht_->routing_table.add_node(
         Entry(
             sender_id,
             sender_endpoint.address().to_v4().to_uint(),
             sender_endpoint.port()));
-    dht_->routing_table.make_good_now(sender_id);
+    if (added) {
+      dht_->routing_table.make_good_now(sender_id);
+    } else {
+      LOG(error) << "Routing table full. Did not add new good sender";
+    }
   }
 
   void handle_ping_response(const krpc::PingResponse &response) {
-    LOG(debug) << "received ping response from '" << response.node_id().to_string() << "'";
+    LOG(trace) << "received ping response from '" << response.node_id().to_string() << "'";
     dht_->routing_table.add_node(Entry(response.node_id(), sender_endpoint.address().to_v4().to_uint(), sender_endpoint.port()));
     dht_->routing_table.make_good_now(response.node_id());
     dht_->total_ping_response_received_++;
@@ -98,27 +102,29 @@ class DHTImpl {
     /**
      * Currently we only return self as closer nodes
      */
-    std::vector<krpc::NodeInfo> nodes{dht_->self_info_};
-    std::string token = "hello, world";
-    krpc::GetPeersResponse response(
-        query.transaction_id(),
-        krpc::ClientVersion,
-        self(),
-        token,
-        nodes
-    );
-    socket.async_send_to(
-        boost::asio::buffer(dht_->create_response(response)),
-        sender_endpoint,
-        default_handle_send());
-    dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
+//    std::vector<krpc::NodeInfo> nodes{dht_->self_info_};
+//    std::string token = "hello, world";
+//    krpc::GetPeersResponse response(
+//        query.transaction_id(),
+//        krpc::ClientVersion,
+//        self(),
+//        token,
+//        nodes
+//    );
+//    socket.async_send_to(
+//        boost::asio::buffer(dht_->create_response(response)),
+//        sender_endpoint,
+//        default_handle_send());
+//    dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 
     LOG(warning) << "GetPeers Query ignored";
     good_sender(query.sender_id());
   }
   void handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {
     // TODO
-    LOG(warning) << "AnnouncePeer Query ignored" << std::endl;
+//    LOG(warning) << "AnnouncePeer Query ignored" << std::endl;
+    LOG(info) << "Received info_hash from '" << query.sender_id().to_string() << " " << sender_endpoint << "' ih='" << query.info_hash().to_string() << "'";
+    dht_->got_info_hash(query.info_hash());
     good_sender(query.sender_id());
   }
 
@@ -146,7 +152,7 @@ class DHTImpl {
       LOG(error) << "Invalid bencoding, e: '"<< e.what() << "', ignored";
 
     } catch (const krpc::InvalidMessage &e) {
-      LOG(error) << "InvalidMessage, e: '" << e.what() << ", ignored";
+      LOG(error) << "InvalidMessage, e: '" << e.what() << "', ignored";
       continue_receive();
       return;
     }
@@ -162,9 +168,7 @@ class DHTImpl {
         has_error = true;
       }
     } else if(auto query = std::dynamic_pointer_cast<krpc::Query>(message); query) {
-      if (auto find_node = std::dynamic_pointer_cast<krpc::FindNodeQuery>(query); find_node) {
-        handle_find_node_query(*find_node);
-      } else if (auto ping = std::dynamic_pointer_cast<krpc::PingQuery>(query); ping) {
+      if (auto ping = std::dynamic_pointer_cast<krpc::PingQuery>(query); ping) {
         handle_ping_query(*ping);
       } else if (auto find_node_query = std::dynamic_pointer_cast<krpc::FindNodeQuery>(query); find_node_query) {
         handle_find_node_query(*find_node_query);
@@ -343,9 +347,7 @@ class DHTImpl {
 //    LOG(info) << "routing table "
 //              << dht_->routing_table.good_node_count()
 //              << " " << dht_->routing_table.known_node_count();
-    std::stringstream ss;
-    dht_->routing_table.stat(ss);
-    LOG(info) << ss.str();
+    dht_->routing_table.stat();
     LOG(info) << "self NodeInfo " << dht_->self_info_.to_string();
     LOG(info) << "total ping query sent: " << dht_->total_ping_query_sent_;
     LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
@@ -424,12 +426,20 @@ class DHTImpl {
   boost::asio::steady_timer refresh_nodes_timer;
 };
 
+/**
+ * class dht::DHT
+ */
+
 DHT::DHT(const Config &config)
     :config_(config),
      self_info_(parse_node_id(config.self_node_id), 0, 0),
      transaction_manager(),
      routing_table(self_info_.id()),
+     info_hash_list_stream_(config.info_hash_save_path, std::fstream::app),
      impl_(std::make_unique<DHTImpl>(this)) {
+  if (!info_hash_list_stream_.is_open()) {
+    throw std::runtime_error("Failed to open info hash list file '" + config.info_hash_save_path + "'");
+  }
 }
 void DHT::loop() { impl_->loop(); }
 
@@ -460,6 +470,13 @@ std::string DHT::create_response(const krpc::Response &query) {
   std::stringstream ss;
   query.encode(ss, bencoding::EncodeMode::Bencoding);
   return ss.str();
+}
+void DHT::got_info_hash(const krpc::NodeID &info_hash) {
+  info_hash_list_stream_ << info_hash.to_string() << std::endl;
+  info_hash_list_stream_.flush();
+  if (!info_hash_list_stream_) {
+    LOG(error) << "Failed to write to info hash list file '" << config_.info_hash_save_path << "'";
+  }
 }
 
 }

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,6 +20,8 @@ struct Config {
 
   std::string self_node_id;
   std::vector<std::pair<std::string, std::string>> bootstrap_nodes;
+
+  std::string info_hash_save_path = "info_hash.txt";
 
   int discovery_interval_seconds = 5;
   int report_interval_seconds = 3;
@@ -43,6 +46,8 @@ class DHT {
         std::chrono::high_resolution_clock::now() - bootstrap_time_).count();
   }
 
+  void got_info_hash(const krpc::NodeID &info_hash);
+
  private:
 
   static krpc::NodeID parse_node_id(const std::string &s);
@@ -63,6 +68,7 @@ class DHT {
   size_t total_ping_response_received_{};
 
   std::map<std::string, size_t> message_counters_;
+  std::ofstream info_hash_list_stream_;
 
   // This must be placed last
   // Hide network IO implementation details

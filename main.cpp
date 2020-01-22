@@ -1,9 +1,10 @@
 #include "log.hpp"
-
 #include <dht.hpp>
 #include <krpc.hpp>
 
 int main(int argc, char* argv[]) {
+  dht::log::initialize_logger();
+
   dht::Config config;
   config.bind_ip = "0.0.0.0";
   config.bind_port = 16667;

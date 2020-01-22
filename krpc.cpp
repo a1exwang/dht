@@ -244,7 +244,7 @@ std::shared_ptr<Message> Response::decode(
     // TODO
     LOG(warning) << "AnnouncePeer query received, ignored";
   } else {
-    throw InvalidMessage("Unknown response type: " + method_name);
+    throw InvalidMessage("Unknown response type: '" + method_name + "'");
   }
   throw InvalidMessage("Response not implemented");
 }

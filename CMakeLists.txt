@@ -22,6 +22,9 @@ endif()
 
 find_package(Boost REQUIRED COMPONENTS system log)
 
+add_library(log STATIC log.cpp)
+target_link_libraries(log PUBLIC Boost::log)
+
 add_library(public_ip STATIC public_ip.cpp)
 
 add_library(bencoding STATIC bencoding.cpp)
@@ -33,10 +36,10 @@ add_library(routing_table STATIC routing_table.cpp)
 target_link_libraries(routing_table PUBLIC krpc)
 
 add_library(dht STATIC dht.cpp)
-target_link_libraries(dht PUBLIC krpc transaction routing_table bencoding public_ip)
+target_link_libraries(dht PUBLIC krpc transaction routing_table bencoding public_ip log)
 target_include_directories(dht PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_executable(dht_client main.cpp)
-target_link_libraries(dht_client PRIVATE dht Boost::log Boost::system pthread)
+target_link_libraries(dht_client PRIVATE dht Boost::system pthread)
 add_executable(bencoding_test_echo bencoding_test_echo.cpp)
 target_link_libraries(bencoding_test_echo PRIVATE bencoding)

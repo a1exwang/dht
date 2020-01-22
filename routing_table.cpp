@@ -40,19 +40,22 @@ void dht::Bucket::split_if_required() {
 }
 
 
-void Bucket::add_node(const Entry &entry) {
+bool Bucket::add_node(const Entry &entry) {
   assert(in_bucket(entry.id()));
   if (is_leaf()) {
-    if (self_in_bucket() || good_node_count() < BucketMaxGoodItems) {
+    bool added = false;
+//    if (self_in_bucket() || good_node_count() < BucketMaxGoodItems) {
       known_nodes_.insert(std::make_pair(entry.id(), entry));
-    }
+      added = true;
+//    }
     split_if_required();
+    return added;
   } else {
     if (left_->in_bucket(entry.id())) {
-      left_->add_node(entry);
+      return left_->add_node(entry);
     } else {
       assert(right_->in_bucket(entry.id()));
-      right_->add_node(entry);
+      return right_->add_node(entry);
     }
   }
 }
@@ -361,15 +364,16 @@ Entry *Bucket::search(const krpc::NodeID &id) {
   return ret;
 
 }
-void Bucket::gc() {
+std::tuple<size_t, size_t, size_t> Bucket::gc() {
   if (is_leaf()) {
     std::list<krpc::NodeID> nodes_to_delete;
     std::vector<krpc::NodeID> questionable_nodes, good_nodes;
-    size_t n_good = 0, n_non_bad = 0;
+    size_t n_good = 0, n_non_bad = 0, n_bad = 0;
     for (auto &node : known_nodes_) {
       if (node.second.is_bad()) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete bad node " << node.second.to_string();
         nodes_to_delete.push_back(node.first);
+        n_bad++;
       } else if (node.second.is_good()) {
         n_good++;
         n_non_bad++;
@@ -379,11 +383,13 @@ void Bucket::gc() {
         questionable_nodes.push_back(node.first);
       }
     }
+    size_t n_good_deleted{}, n_questionable_deleted;
     if (n_non_bad > BucketMaxItems) {
       LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " non_bad count " << n_non_bad << " delete extra nodes";
       for (size_t i = 0; i < std::min(n_non_bad - BucketMaxItems, questionable_nodes.size()); i++) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete questionable node " << questionable_nodes[i].to_string();
         nodes_to_delete.push_back(questionable_nodes[i]);
+        n_questionable_deleted++;
       }
     }
     if (n_good > BucketMaxGoodItems) {
@@ -391,14 +397,18 @@ void Bucket::gc() {
       for (size_t i = 0; i < good_nodes.size() - BucketMaxGoodItems; i++) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete good node " << good_nodes[i].to_string();
         nodes_to_delete.push_back(good_nodes[i]);
+        n_good_deleted++;
       }
     }
     for (auto &id : nodes_to_delete) {
       known_nodes_.erase(id);
     }
+    return {n_good_deleted, n_questionable_deleted, n_bad};
   } else {
-    left_->gc();
-    right_->gc();
+    size_t a1, a2, b1, b2, c1, c2;
+    std::tie(a1, b1, c1) = right_->gc();
+    std::tie(a2, b2, c2) = left_->gc();
+    return {a1 + a2, b1 + b2, c1 + c2};
   }
 }
 
@@ -419,16 +429,19 @@ void RoutingTable::encode(std::ostream &os) {
   root_.encode(os);
   os << "}" << std::endl;
 }
-void RoutingTable::stat(std::ostream &os) const {
-  os << "Routing Table: " << std::endl;
-  os << "  total entries: " << root_.total_known_node_count() << std::endl;
-  os << "  total good entries: " << root_.total_good_node_count() << std::endl;
-  root_.bfs([&os](const Bucket &bucket) {
+void RoutingTable::stat() const {
+  LOG(info) << "Routing Table: ";
+  LOG(info) << "  total entries: " << root_.total_known_node_count();
+  LOG(info) << "  total good entries: " << root_.total_good_node_count();
+  LOG(info) << "  total node added: " << total_node_added_;
+  LOG(info) << "  total good deleted: " << total_good_node_deleted_;
+  LOG(info) << "  total questionable deleted: " << total_questionable_node_deleted_;
+  LOG(info) << "  total bad deleted: " << total_bad_node_deleted_;
+  root_.bfs([](const Bucket &bucket) {
     if (bucket.is_leaf()) {
       if (bucket.known_node_count() > 0) {
-        os << "  p=" << bucket.prefix().to_string()
-           << ", len(p)=" << bucket.prefix_length()
-           << ", good " << bucket.good_node_count() << ", n " << bucket.known_node_count() << std::endl;
+        LOG(debug) << "  len(p)=" << bucket.prefix_length()
+           << ", good " << bucket.good_node_count() << ", n " << bucket.known_node_count();
       }
     }
   });
@@ -436,8 +449,13 @@ void RoutingTable::stat(std::ostream &os) const {
 bool RoutingTable::make_good_now(const krpc::NodeID &id) {
   return root_.make_good_now(id);
 }
-void RoutingTable::add_node(Entry entry) {
-  root_.add_node(entry);
+bool RoutingTable::add_node(Entry entry) {
+  if (root_.add_node(entry)) {
+    total_node_added_++;
+    return true;
+  } else {
+    return false;
+  }
 }
 bool RoutingTable::make_good_now(uint32_t ip, uint16_t port) {
   return root_.make_good_now(ip, port);
@@ -451,6 +469,13 @@ void RoutingTable::iterate_nodes(const std::function<void(const Entry &)> &callb
 }
 void RoutingTable::remove_node(const krpc::NodeID &target) {
   root_.remove(target);
+}
+void RoutingTable::gc() {
+  size_t bad{}, good{}, quest;
+  std::tie(good, quest, bad) = root_.gc();
+  total_good_node_deleted_ += good;
+  total_questionable_node_deleted_ += quest;
+  total_bad_node_deleted_ += bad;
 }
 
 void Entry::make_good_now() {
@@ -468,7 +493,7 @@ void Entry::require_response_now() {
   if (!response_required) {
     response_required = true;
     this->last_require_response_ = std::chrono::high_resolution_clock::now();
-    LOG(debug) << "require response " << to_string();
+    LOG(trace) << "require response " << to_string();
   }
 }
 bool Entry::is_bad() const {
