@@ -16,6 +16,7 @@ class error_code;
 namespace krpc {
 class PingResponse;
 class FindNodeResponse;
+class GetPeersResponse;
 class SampleInfohashesResponse;
 
 class PingQuery;
@@ -30,6 +31,11 @@ namespace dht {
 using namespace std::string_literals;
 
 class DHT;
+namespace get_peers {
+class GetPeersManager;
+}
+class Transaction;
+
 class DHTImpl {
  public:
   /**
@@ -49,6 +55,9 @@ class DHTImpl {
 
   void handle_ping_response(const krpc::PingResponse &response);
   void handle_find_node_response(const krpc::FindNodeResponse &response);
+  void handle_get_peers_response(
+      const krpc::GetPeersResponse &response,
+      const dht::Transaction &transaction);
   void handle_sample_infohashes_response(const krpc::SampleInfohashesResponse &response);
 
   void handle_ping_query(const krpc::PingQuery &query);
@@ -87,6 +96,7 @@ class DHTImpl {
   void handle_refresh_nodes_timer(const boost::system::error_code &e);
  private:
   DHT *dht_;
+
   boost::asio::io_service io{};
 
   std::array<char, 65536> receive_buffer{};

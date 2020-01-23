@@ -9,13 +9,14 @@
  */
 
 namespace dht {
-std::string DHT::create_query(krpc::Query &query) {
+std::string DHT::create_query(std::shared_ptr<krpc::Query> query) {
   transaction_manager.start([&query, this](Transaction &transaction) {
-    transaction.method_name_ = query.method_name();
-    query.set_transaction_id(transaction.id_);
+    transaction.method_name_ = query->method_name();
+    transaction.query_node_ = query;
+    query->set_transaction_id(transaction.id_);
   });
   std::stringstream ss;
-  query.encode(ss, bencoding::EncodeMode::Bencoding);
+  query->encode(ss, bencoding::EncodeMode::Bencoding);
   return ss.str();
 }
 krpc::NodeID DHT::parse_node_id(const std::string &s) {

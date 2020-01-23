@@ -6,3 +6,4 @@
   In this way, we can save the bandwidth of the public VPS,
   and have a public IP for DHT.
   
+- Store info hash in a file and prevent duplicates

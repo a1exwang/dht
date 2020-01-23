@@ -12,6 +12,9 @@
 #include <dht/transaction.hpp>
 
 namespace dht {
+namespace get_peers {
+  class GetPeersManager;
+};
 
 struct Config {
   std::string bind_ip;
@@ -38,7 +41,7 @@ class DHT {
   void loop();
   void bootstrap();
 
-  std::string create_query(krpc::Query &query);
+  std::string create_query(std::shared_ptr<krpc::Query> query);
   std::string create_response(const krpc::Response &query);
   double get_current_time() const {
     return std::chrono::duration<double>(
@@ -48,7 +51,6 @@ class DHT {
   void got_info_hash(const krpc::NodeID &info_hash);
 
  private:
-
   static krpc::NodeID parse_node_id(const std::string &s);
   Config config_;
 
@@ -57,6 +59,7 @@ class DHT {
 
   dht::TransactionManager transaction_manager;
   dht::RoutingTable routing_table;
+  std::unique_ptr<get_peers::GetPeersManager> get_peers_manager_;
 
   /**
    * Stats

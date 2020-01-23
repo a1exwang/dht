@@ -5,8 +5,10 @@
 #include <boost/bind.hpp>
 
 #include <dht/dht.hpp>
+#include <dht/transaction.hpp>
 #include <krpc/krpc.hpp>
 #include <utils/log.hpp>
+#include "get_peers.hpp"
 
 namespace dht {
 
@@ -32,6 +34,7 @@ void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response) 
       });
   this->dht_->routing_table.make_good_now(response.sender_id());
 }
+
 
 void DHTImpl::handle_sample_infohashes_response(
     const krpc::SampleInfohashesResponse &response) {

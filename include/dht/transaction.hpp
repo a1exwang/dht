@@ -9,13 +9,15 @@
 
 #include <bencode/bencoding.hpp>
 
+namespace krpc {
+class Query;
+}
+
 namespace dht {
-
-
 struct Transaction {
   std::string id_;
   std::string method_name_;
-//  std::shared_ptr<bencoding::Node> query_node_;
+  std::shared_ptr<krpc::Query> query_node_;
 };
 
 class TransactionError : std::runtime_error {

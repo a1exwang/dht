@@ -10,6 +10,8 @@
 #include <utils/log.hpp>
 #include <utils/public_ip.hpp>
 
+#include "get_peers.hpp"
+
 using boost::asio::ip::udp;
 
 namespace dht {
@@ -26,6 +28,80 @@ DHTImpl::DHTImpl(DHT *dht)
       expand_route_timer(io, boost::asio::chrono::seconds(dht->config_.discovery_interval_seconds)),
       report_stat_timer(io, boost::asio::chrono::seconds(dht->config_.report_interval_seconds)),
       refresh_nodes_timer(io, boost::asio::chrono::seconds(dht->config_.refresh_nodes_check_interval_seconds)) {}
+
+
+void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::size_t bytes_transferred) {
+  if (error || bytes_transferred <= 0) {
+    LOG(error) << "receive failed: " << error.message();
+    return;
+  }
+
+  // parse receive data into a Message
+  std::stringstream ss(std::string(receive_buffer.data(), bytes_transferred));
+  std::shared_ptr<krpc::Message> message;
+  try {
+    auto node = bencoding::Node::decode(ss);
+    message = krpc::Message::decode(*node, [this](std::string id) -> std::string {
+      std::string method_name{};
+      if (dht_->transaction_manager.has_transaction(id)) {
+        this->dht_->transaction_manager.end(id, [&method_name](const dht::Transaction &transaction) {
+          method_name = transaction.method_name_;
+        });
+      }
+      return method_name;
+    });
+  } catch (const bencoding::InvalidBencoding &e) {
+    LOG(error) << "Invalid bencoding, e: '" << e.what() << "', ignored";
+  } catch (const krpc::InvalidMessage &e) {
+    LOG(error) << "InvalidMessage, e: '" << e.what() << "', ignored";
+    continue_receive();
+    return;
+  }
+
+  bool has_error = false;
+  if (auto response = std::dynamic_pointer_cast<krpc::Response>(message); response) {
+    if (auto find_node_response = std::dynamic_pointer_cast<krpc::FindNodeResponse>(response); find_node_response) {
+      handle_find_node_response(*find_node_response);
+    } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
+      handle_ping_response(*ping_response);
+    } else if (auto sample_infohashes_res = std::dynamic_pointer_cast<krpc::SampleInfohashesResponse>(response); sample_infohashes_res) {
+      handle_sample_infohashes_response(*sample_infohashes_res);
+    } else {
+      LOG(error) << "Warning! response type not supported";
+      has_error = true;
+    }
+  } else if (auto query = std::dynamic_pointer_cast<krpc::Query>(message); query) {
+    if (auto ping = std::dynamic_pointer_cast<krpc::PingQuery>(query); ping) {
+      handle_ping_query(*ping);
+    } else if (auto find_node_query = std::dynamic_pointer_cast<krpc::FindNodeQuery>(query); find_node_query) {
+      handle_find_node_query(*find_node_query);
+    } else if (auto get_peers_query = std::dynamic_pointer_cast<krpc::GetPeersQuery>(query); get_peers_query) {
+      handle_get_peers_query(*get_peers_query);
+    } else if (auto announce_peer_query = std::dynamic_pointer_cast<krpc::AnnouncePeerQuery>(query); announce_peer_query) {
+      handle_announce_peer_query(*announce_peer_query);
+    } else {
+      LOG(error) << "Warning! query type not supported";
+      has_error = true;
+    }
+  } else if (auto dht_error = std::dynamic_pointer_cast<krpc::Error>(message); dht_error) {
+    LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "'";
+  } else {
+    LOG(error) << "Unknown message type";
+    has_error = true;
+  }
+
+  // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
+  if (!has_error) {
+    bool found = dht_->routing_table.make_good_now(
+        sender_endpoint.address().to_v4().to_uint(),
+        sender_endpoint.port()
+    );
+    if (!found) {
+      LOG(debug) << "A stranger has sent us a message, not updating routing table";
+    }
+  }
+  continue_receive();
+}
 
 
 void DHTImpl::bootstrap() {
@@ -97,6 +173,7 @@ DHT::DHT(const Config &config)
     :config_(config),
      self_info_(parse_node_id(config.self_node_id), 0, 0),
      transaction_manager(),
+     get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>()),
      routing_table(self_info_.id()),
      info_hash_list_stream_(config.info_hash_save_path, std::fstream::app),
      impl_(std::make_unique<DHTImpl>(this)) {

@@ -69,6 +69,7 @@ class NodeInfo {
   uint16_t port() const { return port_; }
   void ip(uint32_t ip) { ip_ = ip; }
   void port(uint16_t port) { port_ = port; }
+  bool operator<(const NodeInfo &rhs) const { return this->node_id_ < rhs.node_id_; }
  private:
   NodeID node_id_;
   uint32_t ip_{};
@@ -321,6 +322,9 @@ class GetPeersResponse :public Response {
       has_peers_(false),
       nodes_(std::move(nodes)) { }
   const NodeID &sender_id() const { return node_id_; }
+  bool has_peers() const { return has_peers_; }
+  std::vector<NodeInfo> nodes() const { return nodes_; };
+  std::vector<std::tuple<uint32_t, uint16_t>> peers() const { return peers_; };
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:

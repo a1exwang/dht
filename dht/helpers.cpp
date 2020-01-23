@@ -51,7 +51,7 @@ void DHTImpl::ping(const krpc::NodeInfo &target) {
   auto ping_query = std::make_shared<krpc::PingQuery>(self());
   udp::endpoint ep{boost::asio::ip::make_address_v4(target.ip()), target.port()};
   socket.async_send_to(
-      boost::asio::buffer(dht_->create_query(*ping_query)),
+      boost::asio::buffer(dht_->create_query(ping_query)),
       ep,
       default_handle_send());
   dht_->total_ping_query_sent_++;
@@ -62,7 +62,7 @@ void DHTImpl::find_self(const udp::endpoint &ep) {
   auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), self());
   socket.async_send_to(
       boost::asio::buffer(
-          dht_->create_query(*find_node_query)
+          dht_->create_query(find_node_query)
       ),
       ep,
       boost::bind(
