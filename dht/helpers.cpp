@@ -1,9 +1,12 @@
 #include "dht_impl.hpp"
 
 #include <boost/bind.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <dht/dht.hpp>
 #include <krpc/krpc.hpp>
+#include "get_peers.hpp"
+
 
 namespace dht {
 
@@ -88,6 +91,94 @@ void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
   } else {
     LOG(error) << "Routing table full. Did not add new good sender";
   }
+}
+void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::NodeInfo &receiver) {
+  dht_->get_peers_manager_->add_node(info_hash, receiver.id());
+  auto query = std::make_shared<krpc::GetPeersQuery>(
+      self(),
+      info_hash
+  );
+  udp::endpoint ep{boost::asio::ip::make_address_v4(receiver.ip()), receiver.port()};
+  socket.async_send_to(
+      boost::asio::buffer(dht_->create_query(query)),
+      ep,
+      default_handle_send());
+}
+void DHTImpl::handle_read_input(
+    const boost::system::error_code &error,
+    std::size_t bytes_transferred) {
+
+  if (!error) {
+    this->dht_get_peers(krpc::NodeID::from_hex("1E7EDFD3F7808CAF0825FE1C649DE0B10B561231"));
+
+    std::vector<char> data(input_buffer_.size());
+    input_buffer_.sgetn(data.data(), data.size());
+    input_buffer_.consume(input_buffer_.size());
+    input_ss_.write(data.data(), data.size());
+
+    std::string command_line = input_ss_.str();
+    std::vector<std::string> cmd;
+    boost::split(cmd, command_line, boost::is_any_of("\t "));
+
+    if (cmd.size() == 2) {
+      auto function_name = cmd[0];
+      if (function_name == "get-peers") {
+        auto info_hash = cmd[1];
+        this->dht_get_peers(krpc::NodeID::from_hex(info_hash));
+      } else {
+        LOG(error) << "Unknown function name " << function_name;
+      }
+    } else {
+      LOG(error) << "Invalid command size " << cmd.size();
+    }
+
+  } else if (error == boost::asio::error::not_found) {
+    std::vector<char> data(input_buffer_.size());
+    input_buffer_.sgetn(data.data(), data.size());
+    input_buffer_.consume(input_buffer_.size());
+    input_ss_.write(data.data(), data.size());
+    /* ignore if new line not reached */
+  } else {
+    LOG(error) << "Failed to read from stdin " << error.message();
+  }
+
+  boost::asio::async_read_until(
+      input_,
+      input_buffer_,
+      '\n',
+      boost::bind(
+          &DHTImpl::handle_read_input,
+          this,
+          boost::asio::placeholders::error,
+          boost::asio::placeholders::bytes_transferred)
+  );
+
+}
+void DHTImpl::dht_get_peers(const krpc::NodeID &info_hash) {
+
+  auto targets = dht_->routing_table.k_nearest_good_nodes(info_hash, 200);
+  dht_->get_peers_manager_->create_request(info_hash, [&info_hash](
+      krpc::NodeID target,
+      const std::set<std::tuple<uint32_t, uint16_t>> &result) {
+    std::stringstream lines;
+    uint32_t ip;
+    uint16_t port;
+    for (auto &item : result) {
+      std::tie(ip, port) = item;
+      lines << "  " << boost::asio::ip::address_v4(ip) << ":" << port << std::endl;
+    }
+    LOG(info) << "DHT get_peers(" << info_hash.to_string() << ") = " << std::endl << lines.str();
+  });
+  int sent = 0;
+  for (auto &entry : targets) {
+    auto receiver = entry.node_info();
+    if (!dht_->get_peers_manager_->has_node(info_hash, receiver.id())) {
+      send_get_peers_query(info_hash, receiver);
+      sent++;
+    }
+  }
+
+  LOG(info) << "dht_get_peers " << sent << " sent";
 }
 
 }

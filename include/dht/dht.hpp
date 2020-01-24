@@ -28,6 +28,8 @@ struct Config {
   int discovery_interval_seconds = 5;
   int report_interval_seconds = 3;
   int refresh_nodes_check_interval_seconds = 5;
+  int get_peers_refresh_interval_seconds = 1;
+  int get_peers_request_expiration_seconds = 300;
 };
 
 class DHTImpl;

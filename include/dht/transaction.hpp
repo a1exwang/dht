@@ -34,7 +34,7 @@ class TransactionManager {
   }
  private:
   std::map<std::string, Transaction> transactions_;
-  int64_t transaction_counter_;
+  uint64_t transaction_counter_;
   std::mutex lock_;
 };
 

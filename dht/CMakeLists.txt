@@ -7,5 +7,5 @@ add_library(dht STATIC
         timer_handlers.cpp
         get_peers.cpp
         )
-target_link_libraries(dht PUBLIC krpc transaction routing_table bencoding public_ip log)
+target_link_libraries(dht PUBLIC krpc transaction routing_table bencoding public_ip log utils)
 

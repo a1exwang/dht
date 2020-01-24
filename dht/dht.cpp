@@ -10,7 +10,7 @@
 
 namespace dht {
 std::string DHT::create_query(std::shared_ptr<krpc::Query> query) {
-  transaction_manager.start([&query, this](Transaction &transaction) {
+  transaction_manager.start([query, this](Transaction &transaction) {
     transaction.method_name_ = query->method_name();
     transaction.query_node_ = query;
     query->set_transaction_id(transaction.id_);

@@ -1,5 +1,8 @@
 #include "bencode/bencoding.hpp"
 
+#include <utils/log.hpp>
+#include <iomanip>
+
 namespace bencoding {
 
 static std::string read_string(std::istream &is) {
@@ -82,7 +85,7 @@ std::shared_ptr<Node> Node::decode(std::istream &is) {
   }
 }
 
-static std::string json_string(std::string s) {
+static std::string json_string(const std::string& s) {
   std::stringstream ss;
   ss << '"';
   for (char c : s) {
@@ -90,7 +93,13 @@ static std::string json_string(std::string s) {
       // this works for utf-8 string
       ss << "\\\"";
     } else {
-      ss.put(c);
+      if (std::isprint(c)) {
+        ss.put(c);
+      } else {
+        std::stringstream ss2;
+        ss2 << std::hex << std::setfill('0') << std::setw(2) << (uint32_t)(uint8_t)c;
+        ss << "\\x" << ss2.str();
+      }
     }
   }
   ss << '"';
@@ -126,7 +135,7 @@ void ListNode::encode(std::ostream &os, EncodeMode mode) const {
 void DictNode::encode(std::ostream &os, EncodeMode mode) const {
   if (mode == EncodeMode::Bencoding) {
     os << 'd';
-    for (auto item : dict_) {
+    for (const auto& item : dict_) {
       os << item.first.size() << ":" << item.first;
       item.second->encode(os, mode);
     }

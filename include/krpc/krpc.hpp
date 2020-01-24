@@ -35,6 +35,7 @@ class NodeID {
   static NodeID pow2(size_t r);
   static NodeID pow2m1(size_t r);
   static NodeID from_string(std::string s);
+  static NodeID from_hex(const std::string &s);
   void encode(std::ostream &os) const;
   static NodeID decode(std::istream &is);
   static NodeID random();
@@ -50,6 +51,7 @@ class NodeID {
   NodeID operator^(const NodeID &rhs) const;
   uint8_t bit(size_t r) const;
   NodeID distance(const NodeID &rhs) const { return *this ^ rhs; }
+
 
  private:
   // network byte order
@@ -218,7 +220,7 @@ class GetPeersQuery :public Query {
       : Query(std::move(transaction_id), std::move(version), MethodNameGetPeers),
         sender_id_(sender_id), info_hash_(info_hash) {}
   GetPeersQuery(NodeID sender_id, NodeID info_hash)
-      : Query(MethodNameFindNode), sender_id_(sender_id), info_hash_(info_hash) {}
+      : Query(MethodNameGetPeers), sender_id_(sender_id), info_hash_(info_hash) {}
 
   const NodeID &sender_id() const { return sender_id_; }
   const NodeID &info_hash() const { return info_hash_; }
@@ -317,11 +319,22 @@ class GetPeersResponse :public Response {
       std::string token,
       std::vector<NodeInfo> nodes)
       : Response(std::move(transaction_id), std::move(client_version)),
-      node_id_(sender_id),
-      token_(token),
-      has_peers_(false),
-      nodes_(std::move(nodes)) { }
-  const NodeID &sender_id() const { return node_id_; }
+        sender_id_(sender_id),
+        token_(std::move(std::move(token))),
+        has_peers_(false),
+        nodes_(std::move(nodes)) { }
+  GetPeersResponse(
+      std::string transaction_id,
+      std::string client_version,
+      NodeID sender_id,
+      std::string token,
+      std::vector<std::tuple<uint32_t, uint16_t>> peers)
+      : Response(std::move(transaction_id), std::move(client_version)),
+        sender_id_(sender_id),
+        token_(std::move(token)),
+        has_peers_(true),
+        peers_(std::move(peers)) { }
+  const NodeID &sender_id() const { return sender_id_; }
   bool has_peers() const { return has_peers_; }
   std::vector<NodeInfo> nodes() const { return nodes_; };
   std::vector<std::tuple<uint32_t, uint16_t>> peers() const { return peers_; };
@@ -329,7 +342,7 @@ class GetPeersResponse :public Response {
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:
   bool has_peers_;
-  NodeID node_id_;
+  NodeID sender_id_;
   std::string token_;
   std::vector<NodeInfo> nodes_;
   std::vector<std::tuple<uint32_t, uint16_t>> peers_;

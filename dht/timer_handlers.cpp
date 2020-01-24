@@ -24,19 +24,23 @@ void DHTImpl::handle_report_stat_timer(const boost::system::error_code &e) {
           this,
           boost::asio::placeholders::error));
 
-//    LOG(info) << "routing table "
-//              << dht_->routing_table.good_node_count()
-//              << " " << dht_->routing_table.known_node_count();
-  dht_->routing_table.stat();
-  LOG(info) << "self NodeInfo " << dht_->self_info_.to_string();
-  LOG(info) << "total ping query sent: " << dht_->total_ping_query_sent_;
-  LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
-  LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
+  bool simple = true;
+  if (simple) {
+    LOG(info) << "routing table "
+              << dht_->routing_table.max_prefix_length() << " "
+              << dht_->routing_table.good_node_count() << " "
+              << dht_->routing_table.known_node_count();
+  } else {
+    dht_->routing_table.stat();
+    LOG(info) << "self NodeInfo " << dht_->self_info_.to_string();
+    LOG(info) << "total ping query sent: " << dht_->total_ping_query_sent_;
+    LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
+    LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
+  }
 }
 void DHTImpl::handle_expand_route_timer(const boost::system::error_code &e) {
   if (e) {
-    LOG(error) << "Timer error: " << e.message();
-    return;
+    throw std::runtime_error("expand route timer error: " + e.message());
   }
 
   expand_route_timer.expires_at(expand_route_timer.expiry() +
@@ -68,8 +72,7 @@ void DHTImpl::handle_expand_route_timer(const boost::system::error_code &e) {
 }
 void DHTImpl::handle_refresh_nodes_timer(const boost::system::error_code &e) {
   if (e) {
-    LOG(error) << "refresh nodes timer error: " << e.message();
-    return;
+    throw std::runtime_error("refresh nodes timer error: " + e.message());
   }
 
   refresh_nodes_timer.expires_at(refresh_nodes_timer.expiry() +
@@ -93,12 +96,12 @@ void DHTImpl::handle_refresh_nodes_timer(const boost::system::error_code &e) {
 
 
       // sample_infohashes
-      auto sample_infohashes_query = std::make_shared<krpc::SampleInfohashesQuery>(self(), self());
-      udp::endpoint ep{boost::asio::ip::make_address_v4(node.ip()), node.port()};
-      socket.async_send_to(
-          boost::asio::buffer(dht_->create_query(sample_infohashes_query)),
-          ep,
-          default_handle_send());
+//      auto sample_infohashes_query = std::make_shared<krpc::SampleInfohashesQuery>(self(), self());
+//      udp::endpoint ep{boost::asio::ip::make_address_v4(node.ip()), node.port()};
+//      socket.async_send_to(
+//          boost::asio::buffer(dht_->create_query(sample_infohashes_query)),
+//          ep,
+//          default_handle_send());
     }
   });
 }

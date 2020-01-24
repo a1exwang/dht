@@ -3,3 +3,5 @@ target_link_libraries(log PUBLIC Boost::log)
 
 add_library(public_ip STATIC public_ip.cpp)
 
+
+add_library(utils STATIC utils.cpp)

@@ -48,22 +48,23 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   /**
    * Currently we only return self as closer nodes
    */
-//    std::vector<krpc::NodeInfo> nodes{dht_->self_info_};
-//    std::string token = "hello, world";
-//    krpc::GetPeersResponse response(
-//        query.transaction_id(),
-//        krpc::ClientVersion,
-//        self(),
-//        token,
-//        nodes
-//    );
-//    socket.async_send_to(
-//        boost::asio::buffer(dht_->create_response(response)),
-//        sender_endpoint,
-//        default_handle_send());
-//    dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
+//  std::vector<krpc::NodeInfo> nodes{dht_->self_info_};
+  std::vector<krpc::NodeInfo> nodes;
+  std::string token = "hello, world";
+  krpc::GetPeersResponse response(
+      query.transaction_id(),
+      krpc::ClientVersion,
+      self(),
+      token,
+      nodes
+  );
+  socket.async_send_to(
+      boost::asio::buffer(dht_->create_response(response)),
+      sender_endpoint,
+      default_handle_send());
+  dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 
-  LOG(warning) << "GetPeers Query ignored";
+//  LOG(warning) << "GetPeers Query ignored";
   good_sender(query.sender_id());
 }
 void DHTImpl::handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {

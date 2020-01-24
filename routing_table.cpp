@@ -441,7 +441,7 @@ void RoutingTable::stat() const {
     if (bucket.is_leaf()) {
       if (bucket.known_node_count() > 0) {
         LOG(debug) << "  len(p)=" << bucket.prefix_length()
-           << ", good " << bucket.good_node_count() << ", n " << bucket.known_node_count();
+                   << ", good " << bucket.good_node_count() << ", n " << bucket.known_node_count();
       }
     }
   });

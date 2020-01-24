@@ -37,3 +37,4 @@ add_executable(dht_client main.cpp)
 target_link_libraries(dht_client PRIVATE dht Boost::system pthread)
 add_executable(bencoding_test_echo bencoding/bencoding_test_echo.cpp)
 target_link_libraries(bencoding_test_echo PRIVATE bencoding)
+

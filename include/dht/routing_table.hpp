@@ -172,6 +172,17 @@ class RoutingTable {
   }
 
   [[nodiscard]]
+  size_t max_prefix_length() const {
+    size_t length = 0;
+    root_.dfs([&length](const Bucket &bucket) {
+      if (bucket.prefix_length() > length) {
+        length = bucket.prefix_length();
+      }
+    });
+    return length;
+  }
+
+  [[nodiscard]]
   size_t known_node_count() const {
     return root_.total_known_node_count();
   }

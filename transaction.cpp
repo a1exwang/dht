@@ -19,9 +19,13 @@ void TransactionManager::start(const std::function<void(Transaction &transaction
   transaction.id_ = transaction_id;
 
   callback(transaction);
-//    if (!transaction.query_node_) {
-//      throw TransactionError("Transaction invalid start callback, query_node not set");
-//    }
+  if (transaction.method_name_.empty()) {
+    throw TransactionError("Transaction invalid start callback, method_name not set");
+  }
+
+  if (!transaction.query_node_) {
+    throw TransactionError("Transaction invalid start callback, query_node not set");
+  }
 
   transactions_[transaction_id] = transaction;
 }

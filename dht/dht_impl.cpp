@@ -9,6 +9,7 @@
 #include <dht/dht.hpp>
 #include <utils/log.hpp>
 #include <utils/public_ip.hpp>
+#include <utils/utils.hpp>
 
 #include "get_peers.hpp"
 
@@ -27,7 +28,9 @@ DHTImpl::DHTImpl(DHT *dht)
                  dht->config_.bind_port)),
       expand_route_timer(io, boost::asio::chrono::seconds(dht->config_.discovery_interval_seconds)),
       report_stat_timer(io, boost::asio::chrono::seconds(dht->config_.report_interval_seconds)),
-      refresh_nodes_timer(io, boost::asio::chrono::seconds(dht->config_.refresh_nodes_check_interval_seconds)) {}
+      refresh_nodes_timer(io, boost::asio::chrono::seconds(dht->config_.refresh_nodes_check_interval_seconds)),
+      get_peers_timer(io, boost::asio::chrono::seconds(dht->config_.get_peers_refresh_interval_seconds)),
+      input_(io, ::dup(STDIN_FILENO)) { }
 
 
 void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::size_t bytes_transferred) {
@@ -39,21 +42,36 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
   // parse receive data into a Message
   std::stringstream ss(std::string(receive_buffer.data(), bytes_transferred));
   std::shared_ptr<krpc::Message> message;
+  std::shared_ptr<krpc::Query> query_node;
+  std::shared_ptr<bencoding::Node> node;
   try {
-    auto node = bencoding::Node::decode(ss);
-    message = krpc::Message::decode(*node, [this](std::string id) -> std::string {
+    node = bencoding::Node::decode(ss);
+  } catch (const bencoding::InvalidBencoding &e) {
+    LOG(error) << "Invalid bencoding, e: '" << e.what() << "', ignored " << std::endl
+               << dht::utils::hexdump(receive_buffer.data(), bytes_transferred, true);
+    continue_receive();
+    return;
+  }
+  try {
+    message = krpc::Message::decode(*node, [this, &query_node, &node](std::string id) -> std::string {
       std::string method_name{};
       if (dht_->transaction_manager.has_transaction(id)) {
-        this->dht_->transaction_manager.end(id, [&method_name](const dht::Transaction &transaction) {
+        this->dht_->transaction_manager.end(id, [&method_name, &query_node](const dht::Transaction &transaction) {
           method_name = transaction.method_name_;
+          query_node = transaction.query_node_;
         });
+      } else {
+        std::stringstream ss;
+        node->encode(ss, bencoding::EncodeMode::JSON);
+        LOG(warning) << "Invalid message, transaction not found, transaction_id: '"
+                     << dht::utils::hexdump(id.data(), id.size(), false) << "', bencoding: " << ss.str();
       }
       return method_name;
     });
-  } catch (const bencoding::InvalidBencoding &e) {
-    LOG(error) << "Invalid bencoding, e: '" << e.what() << "', ignored";
   } catch (const krpc::InvalidMessage &e) {
-    LOG(error) << "InvalidMessage, e: '" << e.what() << "', ignored";
+    std::stringstream ss;
+    node->encode(ss, bencoding::EncodeMode::JSON);
+    LOG(error) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
     continue_receive();
     return;
   }
@@ -64,6 +82,12 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       handle_find_node_response(*find_node_response);
     } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
       handle_ping_response(*ping_response);
+    } else if (auto get_peers_response = std::dynamic_pointer_cast<krpc::GetPeersResponse>(response); get_peers_response) {
+      if (auto q = std::dynamic_pointer_cast<krpc::GetPeersQuery>(query_node); q) {
+        handle_get_peers_response(*get_peers_response, *q);
+      } else {
+        LOG(error) << "Invalid get_peers response, Query type not get_peers";
+      }
     } else if (auto sample_infohashes_res = std::dynamic_pointer_cast<krpc::SampleInfohashesResponse>(response); sample_infohashes_res) {
       handle_sample_infohashes_response(*sample_infohashes_res);
     } else {
@@ -151,6 +175,22 @@ void DHTImpl::bootstrap() {
           &DHTImpl::handle_refresh_nodes_timer,
           this,
           boost::asio::placeholders::error));
+  get_peers_timer.async_wait(
+      boost::bind(
+          &DHTImpl::handle_get_peers_timer,
+          this,
+          boost::asio::placeholders::error));
+
+  boost::asio::async_read_until(
+      input_,
+      input_buffer_,
+      '\n',
+      boost::bind(
+          &DHTImpl::handle_read_input,
+          this,
+          boost::asio::placeholders::error,
+          boost::asio::placeholders::bytes_transferred)
+  );
 }
 
 void DHTImpl::loop() {
@@ -173,7 +213,7 @@ DHT::DHT(const Config &config)
     :config_(config),
      self_info_(parse_node_id(config.self_node_id), 0, 0),
      transaction_manager(),
-     get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>()),
+     get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config.get_peers_request_expiration_seconds)),
      routing_table(self_info_.id()),
      info_hash_list_stream_(config.info_hash_save_path, std::fstream::app),
      impl_(std::make_unique<DHTImpl>(this)) {

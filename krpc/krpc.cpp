@@ -6,8 +6,39 @@
 #include <random>
 
 #include <utils/log.hpp>
+#include <utils/utils.hpp>
 
 namespace krpc {
+
+namespace {
+template <typename T>
+T host_to_network(T input);
+
+template <typename T>
+T network_to_host(T input) {
+  return host_to_network(input);
+}
+
+template <>
+uint32_t host_to_network<uint32_t>(uint32_t input) {
+  uint64_t rval;
+  auto *data = (uint8_t *)&rval;
+  data[0] = input >> 24U;
+  data[1] = input >> 16U;
+  data[2] = input >> 8U;
+  data[3] = input >> 0U;
+  return rval;
+}
+
+template <>
+uint16_t host_to_network<uint16_t>(uint16_t input) {
+  uint64_t rval;
+  auto *data = (uint8_t *)&rval;
+  data[0] = input >> 8U;
+  data[1] = input >> 0U;
+  return rval;
+}
+}
 
 NodeID NodeID::random() {
   std::random_device device;
@@ -119,6 +150,15 @@ NodeID NodeID::random_from_prefix(const NodeID &prefix, size_t prefix_length) {
   auto mask_low = ((1u << bits) - 1u);
   auto mask_high = mask_low;
   ret.data_[bytes] = (ret.data_[bytes] & mask_low) | (prefix.data_[bytes] & mask_high);
+  return ret;
+}
+NodeID NodeID::from_hex(const std::string &s) {
+  NodeID ret;
+  for (int i = 0; i < krpc::NodeIDLength; i++) {
+    std::string part(s.data() + i * 2, 2);
+    uint8_t b = std::stoi(part, nullptr, 16);
+    ret.data_[i] = b;
+  }
   return ret;
 }
 
@@ -241,6 +281,7 @@ void krpc::Response::encode(std::ostream &os, bencoding::EncodeMode mode) const 
   auto root = bencoding::DictNode(dict);
   root.encode(os, mode);
 }
+
 std::shared_ptr<Message> Response::decode(
     const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict,
     const std::string &t,
@@ -268,11 +309,47 @@ std::shared_ptr<Message> Response::decode(
     }
     return std::make_shared<FindNodeResponse>(t, v, NodeID::from_string(id_str), nodes);
   } else if (method_name == MethodNameGetPeers) {
-    // TODO
-    LOG(warning) << "GetPeers query received, ignored";
+
+    auto id_str = get_string_or_throw(r_dict, "id", "GetPeersRespone");
+    auto token = get_string_or_throw(r_dict, "token", "GetPeersResponse");
+    auto sender_id = krpc::NodeID::from_string(id_str);
+    if (r_dict.find("nodes") != r_dict.end()) {
+      auto nodes_str = get_string_or_throw(r_dict, "nodes", "GetPeersResponse");
+      std::stringstream ss_nodes(nodes_str);
+      // the stream has at least 1 character
+      std::vector<NodeInfo> nodes;
+      while (ss_nodes.peek() != EOF) {
+        nodes.push_back(NodeInfo::decode(ss_nodes));
+      }
+      return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, nodes);
+    } else {
+      if (r_dict.find("values") == r_dict.end()) {
+        throw InvalidMessage("Invalid GetPeers response, neither 'nodes' nor 'values' is found");
+      } else {
+        auto values_list = std::dynamic_pointer_cast<bencoding::ListNode>(r_dict.at("values"));
+        std::vector<std::tuple<uint32_t, uint16_t>> values;
+        for (int i = 0; i < values_list->size(); i++) {
+          auto peer_info = (*values_list)[i];
+          if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(peer_info); s) {
+            std::string peer = *s;
+            uint32_t ip;
+            uint16_t port;
+            memcpy(&ip, peer.data(), sizeof(ip));
+            ip = network_to_host(ip);
+            memcpy(&port, peer.data() + sizeof(ip), sizeof(port));
+            port = network_to_host(port);
+            values.emplace_back(ip, port);
+          } else {
+            LOG(warning) << "Invalid GetPeers response, response.values[" << i << "] is not a string";
+          }
+        }
+        return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, values);
+      }
+    }
+
   } else if (method_name == MethodNameAnnouncePeer) {
     // TODO
-    LOG(warning) << "AnnouncePeer query received, ignored";
+    LOG(warning) << "AnnouncePeer response received, ignored";
   } else if (method_name == MethodNameSampleInfohashes) {
     auto id_str = get_string_or_throw(r_dict, "id", "SampleInfohashes");
     auto samples_str = get_string_or_throw(r_dict, "samples", "SampleInfohashes");
@@ -328,37 +405,6 @@ std::shared_ptr<bencoding::Node> krpc::PingQuery::get_arguments_node() const {
   sender_id_.encode(ss);
   arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
   return std::make_shared<bencoding::DictNode>(arguments_dict);
-}
-
-
-namespace {
-template <typename T>
-T host_to_network(T input);
-
-template <typename T>
-T network_to_host(T input) {
-  return host_to_network(input);
-}
-
-template <>
-uint32_t host_to_network<uint32_t>(uint32_t input) {
-  uint64_t rval;
-  auto *data = (uint8_t *)&rval;
-  data[0] = input >> 24U;
-  data[1] = input >> 16U;
-  data[2] = input >> 8U;
-  data[3] = input >> 0U;
-  return rval;
-}
-
-template <>
-uint16_t host_to_network<uint16_t>(uint16_t input) {
-  uint64_t rval;
-  auto *data = (uint8_t *)&rval;
-  data[0] = input >> 8U;
-  data[1] = input >> 0U;
-  return rval;
-}
 }
 
 NodeInfo NodeInfo::decode(std::istream &is) {
@@ -512,7 +558,7 @@ std::shared_ptr<bencoding::Node> GetPeersResponse::get_response_node() const {
   std::map<std::string, std::shared_ptr<bencoding::Node>> response_dict;
 
   std::stringstream ss;
-  node_id_.encode(ss);
+  sender_id_.encode(ss);
   response_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
 
   response_dict["token"] = std::make_shared<bencoding::StringNode>(token_);

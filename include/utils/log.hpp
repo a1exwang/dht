@@ -5,6 +5,6 @@
 
 namespace dht::log {
 
-void initialize_logger();
+void initialize_logger(bool debug);
 
 }

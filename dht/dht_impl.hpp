@@ -57,7 +57,7 @@ class DHTImpl {
   void handle_find_node_response(const krpc::FindNodeResponse &response);
   void handle_get_peers_response(
       const krpc::GetPeersResponse &response,
-      const dht::Transaction &transaction);
+      const krpc::GetPeersQuery &query);
   void handle_sample_infohashes_response(const krpc::SampleInfohashesResponse &response);
 
   void handle_ping_query(const krpc::PingQuery &query);
@@ -74,6 +74,10 @@ class DHTImpl {
   std::function<void(const boost::system::error_code &, size_t)>
   default_handle_send();
 
+  void handle_read_input(
+      const boost::system::error_code &error,
+      std::size_t bytes_transferred);
+
   void find_self(const udp::endpoint &ep);
   void ping(const krpc::NodeInfo &target);
 
@@ -84,6 +88,10 @@ class DHTImpl {
       const std::string &transaction_id,
       const krpc::NodeInfo &receiver,
       const std::vector<krpc::NodeInfo> &nodes);
+  void send_get_peers_query(
+      const krpc::NodeID &info_hash,
+      const krpc::NodeInfo &receiver
+      );
 
   void handle_send(const boost::system::error_code &error, std::size_t bytes_transferred);
   void good_sender(const krpc::NodeID &sender_id);
@@ -94,6 +102,9 @@ class DHTImpl {
   void handle_report_stat_timer(const boost::system::error_code &e);
   void handle_expand_route_timer(const boost::system::error_code &e);
   void handle_refresh_nodes_timer(const boost::system::error_code &e);
+  void handle_get_peers_timer(const boost::system::error_code &e);
+
+  void dht_get_peers(const krpc::NodeID &info_hash);
  private:
   DHT *dht_;
 
@@ -106,5 +117,10 @@ class DHTImpl {
   boost::asio::steady_timer expand_route_timer;
   boost::asio::steady_timer report_stat_timer;
   boost::asio::steady_timer refresh_nodes_timer;
+  boost::asio::steady_timer get_peers_timer;
+
+  boost::asio::posix::stream_descriptor input_;
+  boost::asio::streambuf input_buffer_;
+  std::stringstream input_ss_;
 };
 }
