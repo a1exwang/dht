@@ -4,6 +4,7 @@
 #include <boost/bind.hpp>
 
 #include <dht/dht.hpp>
+#include <bt/peer_connection.hpp>
 
 
 namespace dht {
@@ -25,13 +26,20 @@ void DHTImpl::handle_get_peers_response(
           std::tie(ip, port) = item;
           dht_->get_peers_manager_->add_peer(info_hash, ip, port);
         }
-//        dht_->get_peers_manager_->done(info_hash);
       } else {
+        auto old_prefix = krpc::NodeID::common_prefix_length(info_hash, sender_id);
         dht_->get_peers_manager_->set_node_traversed(info_hash, sender_id);
-        LOG(info) << "Node traversed '" << sender_id.to_string() << "'";
+        LOG(info) << "Node traversed prefix " << old_prefix << " '"
+                  << sender_id.to_string() << "'";
         for (auto &node : response.nodes()) {
           if (!dht_->get_peers_manager_->has_node_traversed(info_hash, node.id())) {
-            send_get_peers_query(info_hash, node);
+            auto new_prefix = krpc::NodeID::common_prefix_length(info_hash, node.id());
+            if (new_prefix >= old_prefix) {
+              LOG(info) << "Node to traverse prefix " << new_prefix << " " << node.id().to_string();
+              send_get_peers_query(info_hash, node);
+            } else {
+              LOG(debug) << "Node ignored new prefix length(" << new_prefix << ") shorter than old(" << old_prefix << ")";
+            }
           }
         }
       }
@@ -111,10 +119,10 @@ bool get_peers::GetPeersManager::has_node_traversed(const krpc::NodeID &id, cons
 bool get_peers::GetPeersManager::has_request(const krpc::NodeID &id) const {
   return requests_.find(id) != requests_.end();
 }
-void get_peers::GetPeersManager::cleanup_expired() {
+void get_peers::GetPeersManager::gc() {
   std::list<krpc::NodeID> to_delete;
   for (auto &item : requests_) {
-    if (item.second.expired()) {
+    if (item.second.peers().size() > 0) {
       item.second.callback();
       to_delete.push_back(item.first);
     } else {
@@ -150,7 +158,45 @@ void DHTImpl::handle_get_peers_timer(const boost::system::error_code &e) {
           this,
           boost::asio::placeholders::error));
 
-  dht_->get_peers_manager_->cleanup_expired();
+  dht_->get_peers_manager_->gc();
+}
+
+void DHTImpl::dht_get_peers(const krpc::NodeID &info_hash) {
+
+  std::list<Entry> targets;
+//  auto targets = dht_->routing_table.k_nearest_good_nodes(info_hash, 200);
+  dht_->routing_table.iterate_nodes([&targets](const Entry &entry) {
+    targets.push_back(entry);
+  });
+  dht_->get_peers_manager_->create_request(info_hash, [info_hash, this](
+      krpc::NodeID target,
+      const std::set<std::tuple<uint32_t, uint16_t>> &result) {
+    std::stringstream lines;
+    uint32_t ip;
+    uint16_t port;
+    for (auto &item : result) {
+      std::tie(ip, port) = item;
+      dht_->peer_connections_.emplace_back(
+          io,
+          self(),
+          target,
+          ip,
+          port);
+      dht_->peer_connections_.back().connect();
+      lines << "  " << boost::asio::ip::address_v4(ip) << ":" << port << std::endl;
+    }
+    LOG(info) << "DHT get_peers(" << info_hash.to_string() << ") = " << std::endl << lines.str();
+  });
+  int sent = 0;
+  for (auto &entry : targets) {
+    auto receiver = entry.node_info();
+    if (!dht_->get_peers_manager_->has_node(info_hash, receiver.id())) {
+      send_get_peers_query(info_hash, receiver);
+      sent++;
+    }
+  }
+
+  LOG(info) << "dht_get_peers " << sent << " sent";
 }
 
 }

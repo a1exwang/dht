@@ -10,36 +10,6 @@
 
 namespace krpc {
 
-namespace {
-template <typename T>
-T host_to_network(T input);
-
-template <typename T>
-T network_to_host(T input) {
-  return host_to_network(input);
-}
-
-template <>
-uint32_t host_to_network<uint32_t>(uint32_t input) {
-  uint64_t rval;
-  auto *data = (uint8_t *)&rval;
-  data[0] = input >> 24U;
-  data[1] = input >> 16U;
-  data[2] = input >> 8U;
-  data[3] = input >> 0U;
-  return rval;
-}
-
-template <>
-uint16_t host_to_network<uint16_t>(uint16_t input) {
-  uint64_t rval;
-  auto *data = (uint8_t *)&rval;
-  data[0] = input >> 8U;
-  data[1] = input >> 0U;
-  return rval;
-}
-}
-
 NodeID NodeID::random() {
   std::random_device device;
   std::mt19937 rng{std::random_device()()};
@@ -160,6 +130,15 @@ NodeID NodeID::from_hex(const std::string &s) {
     ret.data_[i] = b;
   }
   return ret;
+}
+size_t NodeID::common_prefix_length(const NodeID &lhs, const NodeID &rhs) {
+  for (size_t i = 0; i < NodeIDBits; i++) {
+    size_t b = NodeIDBits - i - 1;
+    if (lhs.bit(b) != rhs.bit(b)) {
+      return i;
+    }
+  }
+  return NodeIDBits;
 }
 
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
@@ -327,23 +306,27 @@ std::shared_ptr<Message> Response::decode(
         throw InvalidMessage("Invalid GetPeers response, neither 'nodes' nor 'values' is found");
       } else {
         auto values_list = std::dynamic_pointer_cast<bencoding::ListNode>(r_dict.at("values"));
-        std::vector<std::tuple<uint32_t, uint16_t>> values;
-        for (int i = 0; i < values_list->size(); i++) {
-          auto peer_info = (*values_list)[i];
-          if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(peer_info); s) {
-            std::string peer = *s;
-            uint32_t ip;
-            uint16_t port;
-            memcpy(&ip, peer.data(), sizeof(ip));
-            ip = network_to_host(ip);
-            memcpy(&port, peer.data() + sizeof(ip), sizeof(port));
-            port = network_to_host(port);
-            values.emplace_back(ip, port);
-          } else {
-            LOG(warning) << "Invalid GetPeers response, response.values[" << i << "] is not a string";
+        if (values_list) {
+          std::vector<std::tuple<uint32_t, uint16_t>> values;
+          for (int i = 0; i < values_list->size(); i++) {
+            auto peer_info = (*values_list)[i];
+            if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(peer_info); s) {
+              std::string peer = *s;
+              uint32_t ip;
+              uint16_t port;
+              memcpy(&ip, peer.data(), sizeof(ip));
+              ip = dht::utils::network_to_host(ip);
+              memcpy(&port, peer.data() + sizeof(ip), sizeof(port));
+              port = dht::utils::network_to_host(port);
+              values.emplace_back(ip, port);
+            } else {
+              LOG(warning) << "Invalid GetPeers response, response.values[" << i << "] is not a string";
+            }
           }
+          return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, values);
+        } else {
+          throw InvalidMessage("Invalid GetPeers response, values is not list");
         }
-        return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, values);
       }
     }
 
@@ -419,9 +402,9 @@ NodeInfo NodeInfo::decode(std::istream &is) {
   uint32_t ip;
   uint16_t port;
   is.read(reinterpret_cast<char*>(&ip), sizeof(ip));
-  ip = network_to_host(ip);
+  ip = dht::utils::network_to_host(ip);
   is.read(reinterpret_cast<char*>(&port), sizeof(port));
-  port = network_to_host(port);
+  port = dht::utils::network_to_host(port);
 
   NodeInfo info{node_id, ip, port};
   return info;
@@ -429,10 +412,10 @@ NodeInfo NodeInfo::decode(std::istream &is) {
 
 void NodeInfo::encode(std::ostream &os) const {
   node_id_.encode(os);
-  auto ip = host_to_network(ip_);
+  auto ip = dht::utils::host_to_network(ip_);
   os.write((const char*)&ip, sizeof(ip));
 
-  auto port = host_to_network(port_);
+  auto port = dht::utils::host_to_network(port_);
   os.write((const char*)&port, sizeof(port));
 }
 std::string NodeInfo::to_string() const {
@@ -568,8 +551,8 @@ std::shared_ptr<bencoding::Node> GetPeersResponse::get_response_node() const {
     std::vector<std::shared_ptr<bencoding::Node>> peers_list;
     for (auto item : peers_) {
       std::tie(ip, port) = item;
-      ip = host_to_network(ip);
-      port = host_to_network(port);
+      ip = dht::utils::host_to_network(ip);
+      port = dht::utils::host_to_network(port);
       char tmp[sizeof(ip) + sizeof(port)];
       memcpy(tmp, &ip, sizeof(ip));
       memcpy(tmp + sizeof(ip), &port, sizeof(port));
@@ -602,3 +585,4 @@ std::shared_ptr<bencoding::Node> SampleInfohashesQuery::get_arguments_node() con
   return std::make_shared<bencoding::DictNode>(arguments_dict);
 }
 }
+

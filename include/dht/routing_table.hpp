@@ -162,30 +162,16 @@ class RoutingTable {
   explicit RoutingTable(krpc::NodeID self_id) :root_(self_id, nullptr), self_id_(self_id) {}
 
   [[nodiscard]]
-  bool is_full() const {
-    return root_.is_full();
-  }
+  bool is_full() const;
 
   [[nodiscard]]
-  size_t good_node_count() const {
-    return root_.total_good_node_count();
-  }
+  size_t good_node_count() const;
 
   [[nodiscard]]
-  size_t max_prefix_length() const {
-    size_t length = 0;
-    root_.dfs([&length](const Bucket &bucket) {
-      if (bucket.prefix_length() > length) {
-        length = bucket.prefix_length();
-      }
-    });
-    return length;
-  }
+  size_t max_prefix_length() const;
 
   [[nodiscard]]
-  size_t known_node_count() const {
-    return root_.total_known_node_count();
-  }
+  size_t known_node_count() const;
 
   void stat() const;
   // encode to json
@@ -195,9 +181,7 @@ class RoutingTable {
 
   bool add_node(Entry entry);
   void remove_node(const krpc::NodeID &target);
-  bool require_response_now(const krpc::NodeID &target) {
-    return root_.require_response_now(target);
-  }
+  bool require_response_now(const krpc::NodeID &target);
 
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
@@ -206,9 +190,7 @@ class RoutingTable {
   void gc();
 
   [[nodiscard]]
-  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const {
-    return root_.k_nearest_good_nodes(id, k);
-  }
+  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
 
  private:
   Bucket root_;

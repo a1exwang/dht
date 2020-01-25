@@ -477,6 +477,30 @@ void RoutingTable::gc() {
   total_questionable_node_deleted_ += quest;
   total_bad_node_deleted_ += bad;
 }
+size_t RoutingTable::max_prefix_length() const {
+  size_t length = 0;
+  root_.dfs([&length](const Bucket &bucket) {
+    if (bucket.prefix_length() > length) {
+      length = bucket.prefix_length();
+    }
+  });
+  return length;
+}
+size_t RoutingTable::known_node_count() const {
+  return root_.total_known_node_count();
+}
+size_t RoutingTable::good_node_count() const {
+  return root_.total_good_node_count();
+}
+bool RoutingTable::is_full() const {
+  return root_.is_full();
+}
+bool RoutingTable::require_response_now(const krpc::NodeID &target) {
+  return root_.require_response_now(target);
+}
+std::list<Entry> RoutingTable::k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const {
+  return root_.k_nearest_good_nodes(id, k);
+}
 
 void Entry::make_good_now() {
   this->last_seen_ = std::chrono::high_resolution_clock::now();

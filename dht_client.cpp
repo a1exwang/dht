@@ -21,8 +21,8 @@ int main(int argc, char* argv[]) {
       {"dht.aelitis.com", "6881"},
   };
   std::stringstream ss;
-  //krpc::NodeID::from_hex("C8DB9C5B37C71D0F3B28788B94B8EFA5D2D92731").encode(ss);
-  //config.self_node_id = ss.str();
+  krpc::NodeID::from_hex("c8db9c5b37c71d0f3b28788b94b8efa5d2d92731").encode(ss);
+  config.self_node_id = ss.str();
 
   auto dht = dht::DHT::make(config);
   dht->bootstrap();

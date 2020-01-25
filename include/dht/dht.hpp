@@ -10,6 +10,8 @@
 #include <krpc/krpc.hpp>
 #include <dht/routing_table.hpp>
 #include <dht/transaction.hpp>
+#include <bt/peer_connection.hpp>
+
 
 namespace dht {
 namespace get_peers {
@@ -26,10 +28,10 @@ struct Config {
   std::string info_hash_save_path = "info_hash.txt";
 
   int discovery_interval_seconds = 5;
-  int report_interval_seconds = 3;
+  int report_interval_seconds = 10;
   int refresh_nodes_check_interval_seconds = 5;
-  int get_peers_refresh_interval_seconds = 1;
-  int get_peers_request_expiration_seconds = 300;
+  int get_peers_refresh_interval_seconds = 2;
+  int get_peers_request_expiration_seconds = 30;
 };
 
 class DHTImpl;
@@ -62,6 +64,8 @@ class DHT {
   dht::TransactionManager transaction_manager;
   dht::RoutingTable routing_table;
   std::unique_ptr<get_peers::GetPeersManager> get_peers_manager_;
+
+  std::list<bt::peer::PeerConnection> peer_connections_;
 
   /**
    * Stats

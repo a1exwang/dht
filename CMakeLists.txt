@@ -32,9 +32,14 @@ add_library(routing_table STATIC routing_table.cpp)
 target_link_libraries(routing_table PUBLIC krpc)
 
 add_subdirectory(dht)
+add_subdirectory(bt)
 
-add_executable(dht_client main.cpp)
-target_link_libraries(dht_client PRIVATE dht Boost::system pthread)
+add_executable(dht_client dht_client.cpp)
+target_link_libraries(dht_client PRIVATE dht bt Boost::system)
+
 add_executable(bencoding_test_echo bencoding/bencoding_test_echo.cpp)
 target_link_libraries(bencoding_test_echo PRIVATE bencoding)
+
+add_executable(bt_peer bt.cpp)
+target_link_libraries(bt_peer PRIVATE dht bt)
 

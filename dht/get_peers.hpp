@@ -76,7 +76,7 @@ class GetPeersManager {
           const std::set<std::tuple<uint32_t, uint16_t>> &result
       )> callback);
 
-  void cleanup_expired();
+  void gc();
  private:
   std::map<krpc::NodeID, GetPeersRequest> requests_;
   std::chrono::seconds expiration_;

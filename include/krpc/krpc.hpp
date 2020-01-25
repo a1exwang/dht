@@ -40,6 +40,7 @@ class NodeID {
   static NodeID decode(std::istream &is);
   static NodeID random();
   static NodeID random_from_prefix(const NodeID &prefix, size_t prefix_length);
+  static size_t common_prefix_length(const NodeID &lhs, const NodeID &rhs);
 
   std::string to_string() const;
 

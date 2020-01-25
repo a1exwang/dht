@@ -109,7 +109,7 @@ void DHTImpl::handle_read_input(
     std::size_t bytes_transferred) {
 
   if (!error) {
-    this->dht_get_peers(krpc::NodeID::from_hex("1E7EDFD3F7808CAF0825FE1C649DE0B10B561231"));
+    this->dht_get_peers(krpc::NodeID::from_hex("C8DB9C5B37C71D0F3B28788B94B8EFA5D2D92731"));
 
     std::vector<char> data(input_buffer_.size());
     input_buffer_.sgetn(data.data(), data.size());
@@ -153,32 +153,6 @@ void DHTImpl::handle_read_input(
           boost::asio::placeholders::bytes_transferred)
   );
 
-}
-void DHTImpl::dht_get_peers(const krpc::NodeID &info_hash) {
-
-  auto targets = dht_->routing_table.k_nearest_good_nodes(info_hash, 200);
-  dht_->get_peers_manager_->create_request(info_hash, [&info_hash](
-      krpc::NodeID target,
-      const std::set<std::tuple<uint32_t, uint16_t>> &result) {
-    std::stringstream lines;
-    uint32_t ip;
-    uint16_t port;
-    for (auto &item : result) {
-      std::tie(ip, port) = item;
-      lines << "  " << boost::asio::ip::address_v4(ip) << ":" << port << std::endl;
-    }
-    LOG(info) << "DHT get_peers(" << info_hash.to_string() << ") = " << std::endl << lines.str();
-  });
-  int sent = 0;
-  for (auto &entry : targets) {
-    auto receiver = entry.node_info();
-    if (!dht_->get_peers_manager_->has_node(info_hash, receiver.id())) {
-      send_get_peers_query(info_hash, receiver);
-      sent++;
-    }
-  }
-
-  LOG(info) << "dht_get_peers " << sent << " sent";
 }
 
 }
