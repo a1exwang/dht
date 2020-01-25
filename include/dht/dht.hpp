@@ -26,6 +26,7 @@ struct Config {
   std::vector<std::pair<std::string, std::string>> bootstrap_nodes;
 
   std::string info_hash_save_path = "info_hash.txt";
+  std::string routing_table_save_path = "route.txt";
 
   int discovery_interval_seconds = 5;
   int report_interval_seconds = 10;
@@ -62,7 +63,7 @@ class DHT {
   krpc::NodeInfo self_info_;
 
   dht::TransactionManager transaction_manager;
-  dht::RoutingTable routing_table;
+  std::unique_ptr<dht::RoutingTable> routing_table;
   std::unique_ptr<get_peers::GetPeersManager> get_peers_manager_;
 
   std::list<bt::peer::PeerConnection> peer_connections_;

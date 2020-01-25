@@ -44,19 +44,19 @@ void DHTImpl::handle_get_peers_response(
         }
       }
     } else {
-      LOG(error) << "GetPeersManager info_hash: '" << info_hash.to_string() << "' "
+      LOG(debug) << "GetPeersManager info_hash: '" << info_hash.to_string() << "' "
                  << "unknown node sent us a request. node: " << sender_id.to_string();
     }
   } else {
-    LOG(error) << "GetPeersRequest manager failed, info_hash not found";
+    LOG(debug) << "GetPeersRequest manager failed, info_hash not found";
   }
-  this->dht_->routing_table.add_node(
+  dht_->routing_table->add_node(
       Entry{
           response.sender_id(),
           sender_endpoint.address().to_v4().to_uint(),
           sender_endpoint.port()
       });
-  this->dht_->routing_table.make_good_now(response.sender_id());
+  dht_->routing_table->make_good_now(response.sender_id());
 }
 
 void get_peers::GetPeersRequest::delete_node(const krpc::NodeID &id) {
@@ -165,7 +165,7 @@ void DHTImpl::dht_get_peers(const krpc::NodeID &info_hash) {
 
   std::list<Entry> targets;
 //  auto targets = dht_->routing_table.k_nearest_good_nodes(info_hash, 200);
-  dht_->routing_table.iterate_nodes([&targets](const Entry &entry) {
+  dht_->routing_table->iterate_nodes([&targets](const Entry &entry) {
     targets.push_back(entry);
   });
   dht_->get_peers_manager_->create_request(info_hash, [info_hash, this](

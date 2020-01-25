@@ -26,10 +26,11 @@ DHTImpl::DHTImpl(DHT *dht)
              udp::endpoint(
                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
                  dht->config_.bind_port)),
-      expand_route_timer(io, boost::asio::chrono::seconds(dht->config_.discovery_interval_seconds)),
-      report_stat_timer(io, boost::asio::chrono::seconds(dht->config_.report_interval_seconds)),
-      refresh_nodes_timer(io, boost::asio::chrono::seconds(dht->config_.refresh_nodes_check_interval_seconds)),
-      get_peers_timer(io, boost::asio::chrono::seconds(dht->config_.get_peers_refresh_interval_seconds)),
+      signals_(io, SIGINT),
+      expand_route_timer(io, boost::asio::chrono::seconds(0)),
+      report_stat_timer(io, boost::asio::chrono::seconds(0)),
+      refresh_nodes_timer(io, boost::asio::chrono::seconds(0)),
+      get_peers_timer(io, boost::asio::chrono::seconds(0)),
       input_(io, ::dup(STDIN_FILENO)) { }
 
 
@@ -116,7 +117,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
 
   // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
   if (!has_error) {
-    bool found = dht_->routing_table.make_good_now(
+    bool found = dht_->routing_table->make_good_now(
         sender_endpoint.address().to_v4().to_uint(),
         sender_endpoint.port()
     );
@@ -129,6 +130,19 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
 
 
 void DHTImpl::bootstrap() {
+
+  // Start an asynchronous wait for one of the signals to occur.
+  signals_.async_wait([this](const boost::system::error_code& error, int signal_number) {
+    if (error) {
+      LOG(error) << "Failed to async wait signals '" << error.message() << "'";
+      return;
+    }
+    LOG(info) << "Exiting due to signal " << signal_number;
+    io.stop();
+  });
+
+
+
   dht_->self_info_.ip(public_ip::my_v4());
   dht_->self_info_.port(dht_->config_.bind_port);
 
@@ -214,9 +228,26 @@ DHT::DHT(const Config &config)
      self_info_(parse_node_id(config.self_node_id), 0, 0),
      transaction_manager(),
      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config.get_peers_request_expiration_seconds)),
-     routing_table(self_info_.id()),
+     routing_table(nullptr),
      info_hash_list_stream_(config.info_hash_save_path, std::fstream::app),
      impl_(std::make_unique<DHTImpl>(this)) {
+  std::ifstream ifs(config.routing_table_save_path);
+  if (ifs) {
+    LOG(info) << "Loading routing table from '" << config.routing_table_save_path << "'";
+    try {
+      routing_table = dht::RoutingTable::deserialize(ifs, config.routing_table_save_path);
+    } catch (const std::exception &e) {
+      LOG(info) << "Fail to load routing table, '" << e.what() << "', Creating empty routing table";
+      routing_table = std::make_unique<dht::RoutingTable>(
+          parse_node_id(config.self_node_id),
+          config.routing_table_save_path);
+    }
+  } else {
+    LOG(info) << "Creating empty routing table";
+    routing_table = std::make_unique<dht::RoutingTable>(
+        parse_node_id(config.self_node_id),
+        config.routing_table_save_path);
+  }
   if (!info_hash_list_stream_.is_open()) {
     throw std::runtime_error("Failed to open info hash list file '" + config.info_hash_save_path + "'");
   }

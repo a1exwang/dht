@@ -27,11 +27,11 @@ void DHTImpl::handle_report_stat_timer(const boost::system::error_code &e) {
   bool simple = true;
   if (simple) {
     LOG(info) << "routing table "
-              << dht_->routing_table.max_prefix_length() << " "
-              << dht_->routing_table.good_node_count() << " "
-              << dht_->routing_table.known_node_count();
+              << dht_->routing_table->max_prefix_length() << " "
+              << dht_->routing_table->good_node_count() << " "
+              << dht_->routing_table->known_node_count();
   } else {
-    dht_->routing_table.stat();
+    dht_->routing_table->stat();
     LOG(info) << "self NodeInfo " << dht_->self_info_.to_string();
     LOG(info) << "total ping query sent: " << dht_->total_ping_query_sent_;
     LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
@@ -52,9 +52,9 @@ void DHTImpl::handle_expand_route_timer(const boost::system::error_code &e) {
           this,
           boost::asio::placeholders::error));
 
-  if (!dht_->routing_table.is_full()) {
+  if (!dht_->routing_table->is_full()) {
     LOG(debug) << "sending find node query and find_self()...";
-    auto targets = dht_->routing_table.select_expand_route_targets();
+    auto targets = dht_->routing_table->select_expand_route_targets();
     Entry node;
     krpc::NodeID target_id;
     for (auto &item : targets) {
@@ -84,12 +84,12 @@ void DHTImpl::handle_refresh_nodes_timer(const boost::system::error_code &e) {
           this,
           boost::asio::placeholders::error));
 
-  dht_->routing_table.gc();
+  dht_->routing_table->gc();
 
   // try refreshing questionable nodes
-  dht_->routing_table.iterate_nodes([this](const Entry &node) {
+  dht_->routing_table->iterate_nodes([this](const Entry &node) {
     if (!node.is_good()) {
-      if (!dht_->routing_table.require_response_now(node.id())) {
+      if (!dht_->routing_table->require_response_now(node.id())) {
         LOG(error) << "Node gone when iterating " << node.to_string();
       }
       ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});

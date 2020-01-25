@@ -10,6 +10,8 @@
 #include <map>
 #include <string>
 
+#include <boost/asio/ip/address_v4.hpp>
+
 namespace dht {
 
 const int MaxGoodNodeAliveMinutes = 15;
@@ -159,7 +161,9 @@ class Bucket {
 
 class RoutingTable {
  public:
-  explicit RoutingTable(krpc::NodeID self_id) :root_(self_id, nullptr), self_id_(self_id) {}
+  explicit RoutingTable(krpc::NodeID self_id, const std::string &save_path)
+      :root_(self_id, nullptr), self_id_(self_id), save_path_(save_path) {}
+  ~RoutingTable();
 
   [[nodiscard]]
   bool is_full() const;
@@ -177,6 +181,9 @@ class RoutingTable {
   // encode to json
   void encode(std::ostream &os);
 
+  void serialize(std::ostream &os) const;
+  static std::unique_ptr<RoutingTable> deserialize(std::istream &is, const std::string &save_path);
+
   std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
   bool add_node(Entry entry);
@@ -186,7 +193,7 @@ class RoutingTable {
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
 
-  void iterate_nodes(const std::function<void (const Entry &)> &callback);
+  void iterate_nodes(const std::function<void (const Entry &)> &callback) const;
   void gc();
 
   [[nodiscard]]
@@ -195,6 +202,7 @@ class RoutingTable {
  private:
   Bucket root_;
   krpc::NodeID self_id_;
+  std::string save_path_;
 
   size_t total_node_added_{};
   size_t total_bad_node_deleted_{};

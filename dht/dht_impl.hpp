@@ -113,6 +113,7 @@ class DHTImpl {
   std::array<char, 65536> receive_buffer{};
   udp::socket socket;
   udp::endpoint sender_endpoint{};
+  boost::asio::signal_set signals_;
 
   boost::asio::steady_timer expand_route_timer;
   boost::asio::steady_timer report_stat_timer;

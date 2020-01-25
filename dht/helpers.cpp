@@ -81,13 +81,13 @@ void DHTImpl::handle_send(const boost::system::error_code &error, std::size_t by
   }
 }
 void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
-  bool added = dht_->routing_table.add_node(
+  bool added = dht_->routing_table->add_node(
       Entry(
           sender_id,
           sender_endpoint.address().to_v4().to_uint(),
           sender_endpoint.port()));
   if (added) {
-    dht_->routing_table.make_good_now(sender_id);
+    dht_->routing_table->make_good_now(sender_id);
   } else {
     LOG(error) << "Routing table full. Did not add new good sender";
   }

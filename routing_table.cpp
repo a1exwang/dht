@@ -3,13 +3,16 @@
 
 #include <random>
 #include <memory>
+#include <fstream>
+
+#include <boost/asio/ip/address_v4.hpp>
 
 namespace dht {
 
 void dht::Bucket::split_if_required() {
   if (!(is_leaf() &&
       self_in_bucket() &&
-      good_node_count() > BucketMaxGoodItems)){
+      known_node_count() > BucketMaxGoodItems)){
     return;
   }
   // ref:
@@ -460,7 +463,7 @@ bool RoutingTable::add_node(Entry entry) {
 bool RoutingTable::make_good_now(uint32_t ip, uint16_t port) {
   return root_.make_good_now(ip, port);
 }
-void RoutingTable::iterate_nodes(const std::function<void(const Entry &)> &callback) {
+void RoutingTable::iterate_nodes(const std::function<void(const Entry &)> &callback) const {
   root_.dfs([&callback](const Bucket &bucket) {
     if (bucket.is_leaf()) {
       bucket.iterate_entries(callback);
@@ -492,14 +495,45 @@ size_t RoutingTable::known_node_count() const {
 size_t RoutingTable::good_node_count() const {
   return root_.total_good_node_count();
 }
+
 bool RoutingTable::is_full() const {
   return root_.is_full();
 }
+
 bool RoutingTable::require_response_now(const krpc::NodeID &target) {
   return root_.require_response_now(target);
 }
+
 std::list<Entry> RoutingTable::k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const {
   return root_.k_nearest_good_nodes(id, k);
+}
+
+void RoutingTable::serialize(std::ostream &os) const {
+  iterate_nodes([&os](const Entry &entry) {
+    os << entry.id().to_string() << " "
+       << boost::asio::ip::address_v4(entry.ip()) << " "
+       << entry.port() << std::endl;
+  });
+}
+
+std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, const std::string &save_path) {
+  std::string node_id;
+  std::string ip;
+  uint16_t port;
+  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), save_path);
+  while (is) {
+    is >> node_id >> ip >> port;
+    auto node = krpc::NodeID::from_hex(node_id);
+    auto ip_address = boost::asio::ip::address_v4::from_string(ip);
+    ret->add_node(Entry{krpc::NodeInfo{node, ip_address.to_uint(), port}});
+  }
+  return std::move(ret);
+}
+
+RoutingTable::~RoutingTable() {
+  LOG(info) << "Saving routing table to file '" << save_path_  << "'";
+  std::ofstream save_file(save_path_);
+  serialize(save_file);
 }
 
 void Entry::make_good_now() {

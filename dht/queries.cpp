@@ -25,7 +25,7 @@ void DHTImpl::handle_ping_query(const krpc::PingQuery &query) {
 }
 
 void DHTImpl::handle_find_node_query(const krpc::FindNodeQuery &query) {
-  auto nodes = dht_->routing_table.k_nearest_good_nodes(query.target_id(), BucketMaxGoodItems);
+  auto nodes = dht_->routing_table->k_nearest_good_nodes(query.target_id(), BucketMaxGoodItems);
   std::vector<krpc::NodeInfo> info;
   for (auto &node : nodes) {
     info.push_back(node.node_info());
