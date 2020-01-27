@@ -11,20 +11,7 @@
 
 namespace albert::dht {
 
-void DHTImpl::handle_report_stat_timer(const boost::system::error_code &e) {
-  if (e) {
-    LOG(error) << "report stat timer error: " << e.message();
-    return;
-  }
-  report_stat_timer.expires_at(
-      report_stat_timer.expiry() +
-          boost::asio::chrono::seconds(dht_->config_.report_interval_seconds));
-  report_stat_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_report_stat_timer,
-          this,
-          boost::asio::placeholders::error));
-
+void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
   bool simple = true;
   if (simple) {
     LOG(info) << "routing table "
@@ -39,20 +26,7 @@ void DHTImpl::handle_report_stat_timer(const boost::system::error_code &e) {
     LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
   }
 }
-void DHTImpl::handle_expand_route_timer(const boost::system::error_code &e) {
-  if (e) {
-    throw std::runtime_error("expand route timer error: " + e.message());
-  }
-
-  expand_route_timer.expires_at(expand_route_timer.expiry() +
-      boost::asio::chrono::seconds(dht_->config_.discovery_interval_seconds));
-
-  expand_route_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_expand_route_timer,
-          this,
-          boost::asio::placeholders::error));
-
+void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
   if (!dht_->routing_table->is_full()) {
     LOG(debug) << "sending find node query and find_self()...";
     auto targets = dht_->routing_table->select_expand_route_targets();
@@ -71,20 +45,7 @@ void DHTImpl::handle_expand_route_timer(const boost::system::error_code &e) {
     }
   }
 }
-void DHTImpl::handle_refresh_nodes_timer(const boost::system::error_code &e) {
-  if (e) {
-    throw std::runtime_error("refresh nodes timer error: " + e.message());
-  }
-
-  refresh_nodes_timer.expires_at(refresh_nodes_timer.expiry() +
-      boost::asio::chrono::seconds(dht_->config_.refresh_nodes_check_interval_seconds));
-
-  refresh_nodes_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_refresh_nodes_timer,
-          this,
-          boost::asio::placeholders::error));
-
+void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
   dht_->routing_table->gc();
 
   // try refreshing questionable nodes

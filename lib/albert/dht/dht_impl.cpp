@@ -28,11 +28,18 @@ DHTImpl::DHTImpl(DHT *dht)
                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
                  dht->config_.bind_port)),
       signals_(io, SIGINT),
-      expand_route_timer(io, boost::asio::chrono::seconds(0)),
-      report_stat_timer(io, boost::asio::chrono::seconds(0)),
-      refresh_nodes_timer(io, boost::asio::chrono::seconds(0)),
-      get_peers_timer(io, boost::asio::chrono::seconds(0)),
-      input_(io, ::dup(STDIN_FILENO)) { }
+      input_(io, ::dup(STDIN_FILENO)) {
+
+  timers_.emplace_back(*this, "expand-route", &DHTImpl::handle_expand_route_timer,
+                       dht_->config_.discovery_interval_seconds);
+  timers_.emplace_back(*this, "report-stat", &DHTImpl::handle_report_stat_timer,
+                       dht_->config_.report_interval_seconds);
+  timers_.emplace_back(*this, "refresh-nodes",&DHTImpl::handle_refresh_nodes_timer,
+                       dht_->config_.refresh_nodes_check_interval_seconds);
+  timers_.emplace_back(*this, "get-peers",&DHTImpl::handle_get_peers_timer,
+                       dht_->config_.get_peers_refresh_interval_seconds);
+
+}
 
 
 void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::size_t bytes_transferred) {
@@ -142,11 +149,7 @@ void DHTImpl::bootstrap() {
     io.stop();
   });
 
-
-
-  dht_->self_info_.ip(albert::public_ip::my_v4());
-  dht_->self_info_.port(dht_->config_.bind_port);
-
+  // register receive_from handler
   socket.async_receive_from(
       boost::asio::buffer(receive_buffer),
       sender_endpoint,
@@ -154,6 +157,7 @@ void DHTImpl::bootstrap() {
                   boost::asio::placeholders::error,
                   boost::asio::placeholders::bytes_transferred));
 
+  // send bootstrap message to bootstrap nodes
   for (const auto &item : this->dht_->config_.bootstrap_nodes) {
     std::string node_host{}, node_port{};
     std::tie(node_host, node_port) = item;
@@ -161,41 +165,21 @@ void DHTImpl::bootstrap() {
     udp::resolver resolver(io);
     udp::endpoint ep;
     try {
-      for (auto &item : resolver.resolve(udp::resolver::query(node_host, node_port))) {
-        if (item.endpoint().protocol() == udp::v4()) {
-          ep = item.endpoint();
+      for (auto &host : resolver.resolve(udp::resolver::query(node_host, node_port))) {
+        if (host.endpoint().protocol() == udp::v4()) {
+          ep = host.endpoint();
           break;
         }
       }
     } catch (std::exception &e) {
-      LOG(error) << "failed to resolve '" << node_host << ":" << node_port << ", skipping, reason: " << e.what();
+      LOG(error) << "DHTImpl::bootstrap(), failed to resolve '" << node_host << ":" << node_port << ", skipping, reason: " << e.what();
       break;
     }
 
     find_self(ep);
   }
-  expand_route_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_expand_route_timer,
-          this,
-          boost::asio::placeholders::error));
 
-  expand_route_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_report_stat_timer,
-          this,
-          boost::asio::placeholders::error));
-  refresh_nodes_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_refresh_nodes_timer,
-          this,
-          boost::asio::placeholders::error));
-  get_peers_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_get_peers_timer,
-          this,
-          boost::asio::placeholders::error));
-
+  // set stdin read handler
   boost::asio::async_read_until(
       input_,
       input_buffer_,
@@ -206,6 +190,11 @@ void DHTImpl::bootstrap() {
           boost::asio::placeholders::error,
           boost::asio::placeholders::bytes_transferred)
   );
+
+  // start all timers
+  for (auto &timer : timers_) {
+    timer.fire_immediately();
+  }
 }
 
 void DHTImpl::loop() {
@@ -226,7 +215,7 @@ void DHT::loop() { impl_->loop(); }
 void DHT::bootstrap() { impl_->bootstrap(); }
 DHT::DHT(Config config)
     :config_(std::move(config)),
-     self_info_(parse_node_id(config_.self_node_id), 0, 0),
+     self_info_(parse_node_id(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
      transaction_manager(),
      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
      routing_table(nullptr),
@@ -255,5 +244,44 @@ DHT::DHT(Config config)
 }
 DHT::~DHT() {}
 
+void Timer::handler_timer(const boost::system::error_code &error) {
+  if (error) {
+    LOG(error) << "DHTImpl::Timer(" + name_ + ") error: " << error.message();
+    return;
+  }
+  bool canceled = false;
+  auto cancel = [&]() { canceled = true; };
+  (that_.*handler_)(cancel);
+  if (!canceled) {
+    fire();
+  }
+}
+void Timer::fire() {
+  timer_.expires_at(boost::asio::chrono::steady_clock::now() + boost::asio::chrono::seconds(seconds_));
+  timer_.async_wait(
+      boost::bind(
+          &Timer::handler_timer,
+          this,
+          boost::asio::placeholders::error));
+}
+void Timer::fire_immediately() {
+  timer_.expires_at(boost::asio::chrono::steady_clock::now());
+  timer_.async_wait(
+      boost::bind(
+          &Timer::handler_timer,
+          this,
+          boost::asio::placeholders::error));
+}
+Timer::Timer(
+    DHTImpl &that,
+    std::string name,
+    TimerHandler handler,
+    int seconds)
+    :that_(that),
+    name_(std::move(name)),
+    handler_(handler),
+    timer_(that_.io, boost::asio::chrono::seconds(seconds)),
+    seconds_(seconds) {
+}
 }
 

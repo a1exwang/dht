@@ -1,11 +1,15 @@
 #pragma once
 #include <array>
+#include <functional>
+#include <type_traits>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
+#include <boost/bind.hpp>
 
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
+#include <utility>
 
 using boost::asio::ip::udp;
 
@@ -36,6 +40,23 @@ class GetPeersManager;
 }
 class Transaction;
 
+class DHTImpl;
+class Timer {
+ public:
+  typedef std::function<void()> Cancel;
+  typedef void (DHTImpl::*TimerHandler)(const Cancel &);
+  Timer(DHTImpl &that, std::string name, TimerHandler handler, int seconds);
+  void fire();
+  void fire_immediately();
+  void handler_timer(const boost::system::error_code &error);;
+ private:
+  DHTImpl &that_;
+  std::string name_;
+  TimerHandler handler_;
+  boost::asio::steady_timer timer_;
+  int seconds_;
+};
+
 class DHTImpl {
  public:
   /**
@@ -48,6 +69,7 @@ class DHTImpl {
 
  private:
   friend class DHT;
+  friend class Timer;
 
   /**
    * DHT Message handlers
@@ -98,11 +120,15 @@ class DHTImpl {
 
   /**
    * Timer Handlers
+   *
+   * How to Write a new timer:
+   * 1. Add a timer handler member function who has the signature `void handler(const Timer::Cancel&)`;
+   * 2. Add `timers_.emplace_back(*this, "timer name", &DHTImpl::handler, interval);` in DHTImpl's constructor.
    */
-  void handle_report_stat_timer(const boost::system::error_code &e);
-  void handle_expand_route_timer(const boost::system::error_code &e);
-  void handle_refresh_nodes_timer(const boost::system::error_code &e);
-  void handle_get_peers_timer(const boost::system::error_code &e);
+  void handle_report_stat_timer(const Timer::Cancel &cancel);
+  void handle_expand_route_timer(const Timer::Cancel &cancel);
+  void handle_refresh_nodes_timer(const Timer::Cancel &cancel);
+  void handle_get_peers_timer(const Timer::Cancel &cancel);
 
   void dht_get_peers(const krpc::NodeID &info_hash);
  private:
@@ -115,10 +141,7 @@ class DHTImpl {
   udp::endpoint sender_endpoint{};
   boost::asio::signal_set signals_;
 
-  boost::asio::steady_timer expand_route_timer;
-  boost::asio::steady_timer report_stat_timer;
-  boost::asio::steady_timer refresh_nodes_timer;
-  boost::asio::steady_timer get_peers_timer;
+  std::vector<Timer> timers_;
 
   boost::asio::posix::stream_descriptor input_;
   boost::asio::streambuf input_buffer_;

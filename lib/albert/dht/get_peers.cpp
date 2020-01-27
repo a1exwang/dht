@@ -146,19 +146,7 @@ void get_peers::GetPeersManager::gc() {
   }
 }
 
-void DHTImpl::handle_get_peers_timer(const boost::system::error_code &e) {
-  if (e) {
-    throw std::runtime_error("get_peers timer error: " + e.message());
-  }
-  get_peers_timer.expires_at(refresh_nodes_timer.expiry() +
-      boost::asio::chrono::seconds(dht_->config_.get_peers_refresh_interval_seconds));
-
-  get_peers_timer.async_wait(
-      boost::bind(
-          &DHTImpl::handle_get_peers_timer,
-          this,
-          boost::asio::placeholders::error));
-
+void DHTImpl::handle_get_peers_timer(const std::function<void()> &cancel) {
   dht_->get_peers_manager_->gc();
 }
 
