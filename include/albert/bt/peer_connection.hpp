@@ -27,6 +27,10 @@ class InvalidPeerMessage :public std::runtime_error {
  public:
   InvalidPeerMessage(const std::string &s) :runtime_error(s) { }
 };
+class InvalidStatus :public std::runtime_error {
+ public:
+  InvalidStatus(const std::string &s) :runtime_error(s) { }
+};
 
 #pragma pack(1)
 struct Handshake {
@@ -41,6 +45,8 @@ struct Handshake {
   uint8_t sender_id[20]{};
 };
 #pragma pack()
+
+constexpr const char *MetadataMessage = "ut_metadata";
 
 class PeerConnection {
  public:
@@ -72,6 +78,11 @@ class PeerConnection {
 
   void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
 
+  uint8_t has_peer_extended_message(const std::string &message_name) const {
+    return extended_handshake_->dict().find(message_name) == extended_handshake_->dict().end();
+  }
+  uint8_t get_peer_extended_message_id(const std::string &message_name);
+
  private:
   // boost asio stuff
   boost::asio::ip::tcp::socket socket_;
@@ -90,7 +101,7 @@ class PeerConnection {
   std::unique_ptr<Peer> peer_;
   bool connected_ = false;
   bool handshake_completed_ = false;
-  bool in_message_completed_ = true;
+  bool message_segmented = false;
 
   bool peer_interested_ = false;
   bool peer_choke_ = true;
@@ -100,7 +111,10 @@ class PeerConnection {
 
   std::stringstream pieces_stream_;
   std::shared_ptr<bencoding::DictNode> extended_handshake_;
-  std::map<uint8_t, std::string> extended_message_id_;
+  std::map<std::string, std::shared_ptr<bencoding::Node>> m_dict_;
+  std::map<uint8_t, std::string> extended_message_id_ = {
+      {2, MetadataMessage}
+  };
 };
 
 }

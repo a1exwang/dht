@@ -133,17 +133,18 @@ void PeerConnection::send_handshake() {
         if (err) {
           throw std::runtime_error("Failed to write to socket " + err.message());
         }
-        LOG(info) << "written " << bytes_transferred;
       });
 
+
+  auto m = bdict();
+  for (auto &item : extended_message_id_) {
+    m[item.second] = std::make_shared<bencoding::IntNode>(item.first);
+  }
   // extended handshake
   bencoding::DictNode node(
       bdict({
                 {
-                    "m",
-                    newdict(bdict({
-                      {"ut_metadata", newint(2)},
-                    })),
+                    "m", newdict(m)
                 },
                 {"p", newint(6881)},
                 {"reqq", newint(500)},
@@ -156,7 +157,6 @@ void PeerConnection::send_handshake() {
         if (err) {
           throw std::runtime_error("Failed to write to socket " + err.message());
         }
-        LOG(info) << "written " << bytes_transferred;
       });
 
   // send interested
@@ -235,6 +235,17 @@ static int64_t get_int64_or_throw(
   }
   return *node;
 }
+static std::map<std::string, std::shared_ptr<bencoding::Node>> get_dict_or_throw(
+    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
+  if (dict.find(key) == dict.end()) {
+    throw InvalidPeerMessage(context + ", '" + key + "' not found");
+  }
+  auto node = std::dynamic_pointer_cast<bencoding::DictNode>(dict.at(key));
+  if (!node) {
+    throw InvalidPeerMessage(context + ", '" + key + "' is not a int");
+  }
+  return node->dict();
+}
 void PeerConnection::handle_extended_message(
     uint8_t extended_id,
     std::shared_ptr<bencoding::DictNode> msg,
@@ -245,27 +256,21 @@ void PeerConnection::handle_extended_message(
     // extended handshake
     std::stringstream ss;
     msg->encode(ss, bencoding::EncodeMode::JSON);
-    LOG(info) << "Extended handshake: "
-              << "data: " << ss.str();
     extended_handshake_ = msg;
 
-    auto record_extended_id = [&dict, this](std::string name) {
-      if (dict.find(name) != dict.end()) {
-        if (auto int_node = std::dynamic_pointer_cast<bencoding::IntNode>(dict.at(name)); int_node) {
-          extended_message_id_[*int_node] = name;
-        }
-      }
-    };
-    record_extended_id("ut_metadata");
     auto total_size = get_int64_or_throw(dict, "metadata_size", "ut_metadata");
+    m_dict_ = get_dict_or_throw(dict, "m", "ut_metadata");
     piece_count_ = ceil(double(total_size) / MetadataPieceSize);
+
+    LOG(info) << "Extended handshake: from " << peer_->to_string() << std::endl
+              << "total pieces: " << piece_count_
+              << "data: " << ss.str();
 
     // start metadata transfer
     for (int i = 0; i < piece_count_; i++) {
       send_metadata_request(i);
     }
   } else {
-    LOG(info) << "extended id " << extended_id;
     if (extended_message_id_.find(extended_id) == extended_message_id_.end()) {
       LOG(error) << "Invalid extended message, unknown exteneded id " << extended_id;
     } else {
@@ -295,9 +300,12 @@ void PeerConnection::handle_extended_message(
 void PeerConnection::handle_receive(const boost::system::error_code &err, size_t bytes_transferred) {
 
   if (err == boost::asio::error::eof) {
-    LOG(error) << "eof " << bytes_transferred << " from " << peer_id_.to_string();
+    connected_ = false;
+  } else if (err == boost::asio::error::connection_reset) {
+    LOG(warning) << "Peer reset the connection " << peer_->to_string() << ", id " << peer_id_.to_string();
+    connected_ = false;
   } else if (err) {
-    throw std::runtime_error("Failed to from socket " + err.message());
+    throw std::runtime_error("Unhandled error when reading to from socket " + err.message());
   } else {
     try {
       read_ring_.reserve(read_ring_.size() + bytes_transferred);
@@ -305,15 +313,17 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
         read_ring_.push_back(read_buffer_[i]);
       }
       while (true) {
-        if (!in_message_completed_) {
+        if (message_segmented) {
           auto message_size = last_message_size_;
           if (has_data(message_size + sizeof(uint8_t))) {
             uint8_t message_id;
             pop_data(&message_id, 1);
             std::vector<uint8_t> data(message_size-1);
             pop_data(data.data(), message_size-1);
+            message_segmented = false;
             handle_message(message_size-1, message_id, data);
           } else {
+            LOG(debug) << "message content not complete, segmented again " << peer_->to_string();
             break;
           }
         } else if (handshake_completed_) {
@@ -327,13 +337,16 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
               handle_message(message_size-1, message_type, data);
             } else {
               last_message_size_ = message_size;
-              in_message_completed_ = false;
+              message_segmented = true;
+              LOG(debug) << "message content not complete, segmented " << peer_->to_string();
               break;
             }
           } else {
+            LOG(debug) << "message size not complete, segmented " << peer_->to_string();
             break;
           }
         } else {
+          // Not segmented && no handshake
           if (has_data(sizeof(Handshake))) {
             // pop front sizeof(Handshake)
             pop_data(&received_handshake_, sizeof(Handshake));
@@ -343,6 +356,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             peer_id_ = krpc::NodeID::decode(ss);
             handshake_completed_ = true;
           } else {
+            LOG(info) << "handshake not complete, segmented " << peer_->to_string();
             break;
           }
         }
@@ -362,32 +376,44 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             this,
             boost::asio::placeholders::error,
             boost::asio::placeholders::bytes_transferred));
+
   }
 }
 void PeerConnection::send_metadata_request(int64_t piece) {
-  // extended message
-  bencoding::DictNode node(
-      bdict({
-                {
-                    "msg_type",
-                    newint(ExtendedMessageTypeRequest),
-                },
-                {
-                    "piece",
-                    newint(piece),
-                }
-            }));
-  socket_.async_send(
-      boost::asio::buffer(make_extended(node, 2)),
-      0,
-      [](const boost::system::error_code &err, size_t bytes_transferred) {
-        if (err) {
-          throw std::runtime_error("Failed to write to socket " + err.message());
-        }
-        LOG(info) << "written " << bytes_transferred;
-      });
-
+  if (!extended_handshake_) {
+    throw InvalidStatus("Cannot send metadata request before receiving extended handshake");
+  } else {
+    if (!has_peer_extended_message(MetadataMessage)) {
+      throw InvalidStatus("Peer(" + peer_->to_string() + ") does not support metadata message");
+    } else {
+      auto extended_id = get_peer_extended_message_id(MetadataMessage);
+      // extended message
+      bencoding::DictNode node(
+          bdict({
+                    {
+                        "msg_type",
+                        newint(ExtendedMessageTypeRequest),
+                    },
+                    {
+                        "piece",
+                        newint(piece),
+                    }
+                }));
+      socket_.async_send(
+          boost::asio::buffer(make_extended(node, extended_id)),
+          0,
+          [](const boost::system::error_code &err, size_t bytes_transferred) {
+            if (err) {
+              throw std::runtime_error("Failed to write to socket " + err.message());
+            }
+            LOG(info) << "written " << bytes_transferred;
+          });
+    }
+  }
 }
 PeerConnection::~PeerConnection() {}
+uint8_t PeerConnection::get_peer_extended_message_id(const std::string &message_name) {
+  return get_int64_or_throw(m_dict_, message_name, "PeerConenction::get_peer_extended_message_id");
+}
 
 }

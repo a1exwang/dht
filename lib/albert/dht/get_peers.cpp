@@ -30,13 +30,13 @@ void DHTImpl::handle_get_peers_response(
       } else {
         auto old_prefix = krpc::NodeID::common_prefix_length(info_hash, sender_id);
         dht_->get_peers_manager_->set_node_traversed(info_hash, sender_id);
-        LOG(info) << "Node traversed prefix " << old_prefix << " '"
+        LOG(debug) << "Node traversed prefix " << old_prefix << " '"
                   << sender_id.to_string() << "'";
         for (auto &node : response.nodes()) {
           if (!dht_->get_peers_manager_->has_node_traversed(info_hash, node.id())) {
             auto new_prefix = krpc::NodeID::common_prefix_length(info_hash, node.id());
             if (new_prefix >= old_prefix) {
-              LOG(info) << "Node to traverse prefix " << new_prefix << " " << node.id().to_string();
+              LOG(debug) << "Node to traverse prefix " << new_prefix << " " << node.id().to_string();
               send_get_peers_query(info_hash, node);
             } else {
               LOG(debug) << "Node ignored new prefix length(" << new_prefix << ") shorter than old(" << old_prefix << ")";
@@ -80,9 +80,12 @@ bool get_peers::GetPeersRequest::has_node_traversed(const krpc::NodeID &id) cons
   }
 }
 void get_peers::GetPeersRequest::add_peer(uint32_t ip, uint16_t port) {
-  peers_.insert({ip, port});
-  for (auto &callback : callbacks_) {
-    callback(ip, port);
+  auto result = peers_.insert({ip, port});
+  // Call the add-peer-callback only when the peer is first added
+  if (result.second) {
+    for (auto &callback : callbacks_) {
+      callback(ip, port);
+    }
   }
 }
 void get_peers::GetPeersRequest::set_node_traversed(const krpc::NodeID &id) {
@@ -122,7 +125,7 @@ bool get_peers::GetPeersManager::has_request(const krpc::NodeID &id) const {
 void get_peers::GetPeersManager::gc() {
   std::list<krpc::NodeID> to_delete;
   for (auto &item : requests_) {
-    if (item.second.peers().size() > 0) {
+    if (item.second.expired() > 0) {
       to_delete.push_back(item.first);
     } else {
       int64_t traversed = 0;
@@ -141,6 +144,7 @@ void get_peers::GetPeersManager::gc() {
   }
   for (auto &item : to_delete) {
     requests_.erase(item);
+    LOG(info) << "Deleting expired get peers request " << item.to_string();
   }
 }
 void get_peers::GetPeersManager::add_callback(

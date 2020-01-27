@@ -201,6 +201,7 @@ DHT::DHT(Config config)
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
     try {
       routing_table = dht::RoutingTable::deserialize(ifs, config_.routing_table_save_path);
+      LOG(info) << "Routing table size " << routing_table->known_node_count();
     } catch (const std::exception &e) {
       LOG(info) << "Fail to load routing table, '" << e.what() << "', Creating empty routing table";
       routing_table = std::make_unique<dht::RoutingTable>(

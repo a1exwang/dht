@@ -7,3 +7,7 @@
   and have a public IP for DHT.
   
 - Store info hash in a file and prevent duplicates
+
+- Enable clang-tidy. Check for bugprone-use-after-move
+
+- Save torrent file to disk

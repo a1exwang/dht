@@ -13,6 +13,7 @@ int main(int argc, char* argv[]) {
 
   auto config = albert::dht::Config::from_command_line(argc, argv);
   albert::log::initialize_logger(config.debug);
+  auto info_hash = config.resolve_torrent_info_hash;
 
   std::stringstream ss;
   config.serialize(ss);
@@ -28,20 +29,15 @@ int main(int argc, char* argv[]) {
   albert::bt::BT bt(io_service, bt_id);
   bt.start();
 
-  auto info_hash = config.resolve_torrent_info_hash;
   albert::cui::CommandLineUI cui(info_hash, io_service, dht, bt);
   cui.start();
 
-  try {
+//  try {
     io_service.run();
-  } catch (const std::exception &e) {
-    LOG(error) << "io_service Failure: \"" << e.what() << '"';
-    exit(1);
-  }
-
-  (void)bt;
-  (void)cui;
-  (void)dht;
+//  } catch (const std::exception &e) {
+//    LOG(error) << "io_service Failure: \"" << e.what() << '"';
+//    exit(1);
+//  }
 
   return 0;
 }

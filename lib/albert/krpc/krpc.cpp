@@ -123,6 +123,9 @@ NodeID NodeID::random_from_prefix(const NodeID &prefix, size_t prefix_length) {
   return ret;
 }
 NodeID NodeID::from_hex(const std::string &s) {
+  if (s.size() < krpc::NodeIDLength * 2) {
+    throw InvalidMessage("NodeID hex not long enough, expected " + std::to_string(krpc::NodeIDLength*2) + ", got " + std::to_string(s.size()));
+  }
   NodeID ret;
   for (int i = 0; i < krpc::NodeIDLength; i++) {
     std::string part(s.data() + i * 2, 2);
