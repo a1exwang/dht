@@ -1,2 +1,2 @@
-add_subdirectory(dht_client)
+add_subdirectory(magnet_to_torrent)
 add_subdirectory(bt_peer)

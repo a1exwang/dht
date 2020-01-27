@@ -11,6 +11,17 @@
 #include <albert/krpc/krpc.hpp>
 
 namespace albert::bt::peer {
+class Peer;
+
+constexpr uint8_t MessageTypeChoke = 0;
+constexpr uint8_t MessageTypeUnchoke = 1;
+constexpr uint8_t MessageTypeInterested = 2;
+constexpr uint8_t MessageTypeNotInterested = 3;
+constexpr uint8_t MessageTypeExtended = 20;
+constexpr uint8_t ExtendedMessageTypeRequest = 0;
+constexpr uint8_t ExtendedMessageTypeData = 1;
+constexpr uint8_t ExtendedMessageTypeReject = 2;
+constexpr size_t MetadataPieceSize = 16 * 1024;
 
 class InvalidPeerMessage :public std::runtime_error {
  public:
@@ -39,6 +50,7 @@ class PeerConnection {
       const krpc::NodeID &target,
       uint32_t ip,
       uint16_t port);
+  ~PeerConnection();
   void connect();
   bool is_connected() const { return connected_; };
 

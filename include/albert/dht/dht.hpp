@@ -14,6 +14,12 @@
 #include <albert/bt/peer_connection.hpp>
 
 
+namespace boost::asio {
+class io_context;
+typedef io_context io_service;
+}
+
+
 namespace albert::dht {
 namespace get_peers {
   class GetPeersManager;
@@ -27,9 +33,6 @@ class DHT {
   static std::unique_ptr<DHT> make(Config config);
   explicit DHT(Config config);
   ~DHT();
-
-  void loop();
-  void bootstrap();
 
   std::string create_query(std::shared_ptr<krpc::Query> query);
   std::string create_response(const krpc::Response &query);
@@ -51,8 +54,6 @@ class DHT {
   std::unique_ptr<dht::RoutingTable> routing_table;
   std::unique_ptr<get_peers::GetPeersManager> get_peers_manager_;
 
-  std::list<bt::peer::PeerConnection> peer_connections_;
-
   /**
    * Stats
    */
@@ -67,6 +68,17 @@ class DHT {
   // This must be placed last
   // Hide network IO implementation details
   friend class DHTImpl;
+//  std::unique_ptr<DHTImpl> impl_;
+};
+
+class DHTInterface {
+ public:
+  DHTInterface(Config config, boost::asio::io_service &io_service);
+  ~DHTInterface();
+  void start();
+  void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
+ private:
+  std::unique_ptr<DHT> dht_;
   std::unique_ptr<DHTImpl> impl_;
 };
 

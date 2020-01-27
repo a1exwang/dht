@@ -126,7 +126,11 @@ NodeID NodeID::from_hex(const std::string &s) {
   NodeID ret;
   for (int i = 0; i < krpc::NodeIDLength; i++) {
     std::string part(s.data() + i * 2, 2);
-    uint8_t b = std::stoi(part, nullptr, 16);
+    size_t end_index = 0;
+    uint8_t b = std::stoi(part, &end_index, 16);
+    if (end_index == 0) {
+      throw InvalidMessage("Missing hex number at index " + std::to_string(i));
+    }
     ret.data_[i] = b;
   }
   return ret;

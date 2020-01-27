@@ -25,12 +25,13 @@ struct Config {
   std::string routing_table_save_path = "route.txt";
 
   int discovery_interval_seconds = 5;
-  int report_interval_seconds = 10;
+  int report_interval_seconds = 5;
   int refresh_nodes_check_interval_seconds = 5;
   int get_peers_refresh_interval_seconds = 2;
   int get_peers_request_expiration_seconds = 30;
 
   bool debug = false;
+  std::string resolve_torrent_info_hash;
 };
 
 

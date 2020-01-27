@@ -1,10 +1,10 @@
 #pragma once
+#include <functional>
 #include <list>
+#include <set>
+#include <tuple>
 #include <utility>
 #include <vector>
-#include <functional>
-#include <tuple>
-#include <set>
 
 #include <albert/krpc/krpc.hpp>
 
@@ -19,20 +19,15 @@ class GetPeersRequest {
  public:
   GetPeersRequest(
       albert::krpc::NodeID target,
-      std::chrono::high_resolution_clock::time_point expiration_time,
-      std::function<void (
-          krpc::NodeID target,
-          const std::set<std::tuple<uint32_t, uint16_t>> &result
-      )> callback)
-      :callback_(std::move(callback)),
-       target_info_hash_(target),
-       expiration_time_(expiration_time)
-       {
-  }
+      std::chrono::high_resolution_clock::time_point expiration_time)
+      :target_info_hash_(target),
+       expiration_time_(expiration_time) {}
 
   void add_peer(uint32_t ip, uint16_t port);
   [[nodiscard]]
   std::set<std::tuple<uint32_t, uint16_t>> peers() const;
+
+  void add_callback(std::function<void(uint32_t, uint16_t)> callback);
 
   bool expired() const;
 
@@ -45,12 +40,8 @@ class GetPeersRequest {
   bool has_node_traversed(const krpc::NodeID &id) const;
   void set_node_traversed(const krpc::NodeID &id);
 
-  void callback();
 // private:
-  std::function<void (
-      albert::krpc::NodeID target,
-      const std::set<std::tuple<uint32_t, uint16_t>> &result
-      )> callback_;
+  std::list<std::function<void (uint32_t, uint16_t)>> callbacks_;
   albert::krpc::NodeID target_info_hash_;
   std::map<albert::krpc::NodeID, NodeStatus> nodes_;
   std::set<std::tuple<uint32_t, uint16_t>> peers_;
@@ -63,6 +54,7 @@ class GetPeersManager {
   void add_peer(const krpc::NodeID &id, uint32_t ip, uint16_t port);
   [[nodiscard]]
   bool has_request(const krpc::NodeID &id) const;
+  void add_callback(const krpc::NodeID &id, const std::function<void (uint32_t, uint16_t)> &callback);
   void add_node(const krpc::NodeID &id, const krpc::NodeID &node);
   [[nodiscard]]
   bool has_node_traversed(const krpc::NodeID &id, const krpc::NodeID &node) const;
@@ -70,11 +62,7 @@ class GetPeersManager {
   bool has_node(const krpc::NodeID &id, const krpc::NodeID &node) const;
   void set_node_traversed(const krpc::NodeID &id, const krpc::NodeID &node);
   void create_request(
-      const krpc::NodeID &info_hash,
-      std::function<void (
-          krpc::NodeID target,
-          const std::set<std::tuple<uint32_t, uint16_t>> &result
-      )> callback);
+      const krpc::NodeID &info_hash);
 
   void gc();
  private:

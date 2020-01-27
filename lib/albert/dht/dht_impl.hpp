@@ -63,9 +63,9 @@ class DHTImpl {
    * Interface functions
    */
 
-  explicit DHTImpl(DHT *dht);
+  explicit DHTImpl(DHT *dht, boost::asio::io_service &io);
   void bootstrap();
-  void loop();
+  void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
 
  private:
   friend class DHT;
@@ -95,10 +95,6 @@ class DHTImpl {
   void continue_receive();
   std::function<void(const boost::system::error_code &, size_t)>
   default_handle_send();
-
-  void handle_read_input(
-      const boost::system::error_code &error,
-      std::size_t bytes_transferred);
 
   void find_self(const udp::endpoint &ep);
   void ping(const krpc::NodeInfo &target);
@@ -130,11 +126,10 @@ class DHTImpl {
   void handle_refresh_nodes_timer(const Timer::Cancel &cancel);
   void handle_get_peers_timer(const Timer::Cancel &cancel);
 
-  void dht_get_peers(const krpc::NodeID &info_hash);
  private:
   DHT *dht_;
 
-  boost::asio::io_service io{};
+  boost::asio::io_service &io;
 
   std::array<char, 65536> receive_buffer{};
   udp::socket socket;
@@ -142,9 +137,5 @@ class DHTImpl {
   boost::asio::signal_set signals_;
 
   std::vector<Timer> timers_;
-
-  boost::asio::posix::stream_descriptor input_;
-  boost::asio::streambuf input_buffer_;
-  std::stringstream input_ss_;
 };
 }

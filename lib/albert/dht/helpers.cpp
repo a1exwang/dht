@@ -104,55 +104,5 @@ void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::No
       ep,
       default_handle_send());
 }
-void DHTImpl::handle_read_input(
-    const boost::system::error_code &error,
-    std::size_t bytes_transferred) {
-
-  if (!error) {
-    this->dht_get_peers(krpc::NodeID::from_hex("c8db9c5b37c71d0f3b28788b94b8efa5d2d92731"));
-
-    std::vector<char> data(input_buffer_.size());
-    input_buffer_.sgetn(data.data(), data.size());
-    input_buffer_.consume(input_buffer_.size());
-    input_ss_.write(data.data(), data.size());
-
-    std::string command_line = input_ss_.str();
-    std::vector<std::string> cmd;
-    boost::split(cmd, command_line, boost::is_any_of("\t "));
-
-    if (cmd.size() == 2) {
-      auto function_name = cmd[0];
-      if (function_name == "get-peers") {
-        auto info_hash = cmd[1];
-        this->dht_get_peers(krpc::NodeID::from_hex(info_hash));
-      } else {
-        LOG(error) << "Unknown function name " << function_name;
-      }
-    } else {
-      LOG(error) << "Invalid command size " << cmd.size();
-    }
-
-  } else if (error == boost::asio::error::not_found) {
-    std::vector<char> data(input_buffer_.size());
-    input_buffer_.sgetn(data.data(), data.size());
-    input_buffer_.consume(input_buffer_.size());
-    input_ss_.write(data.data(), data.size());
-    /* ignore if new line not reached */
-  } else {
-    LOG(error) << "Failed to read from stdin " << error.message();
-  }
-
-  boost::asio::async_read_until(
-      input_,
-      input_buffer_,
-      '\n',
-      boost::bind(
-          &DHTImpl::handle_read_input,
-          this,
-          boost::asio::placeholders::error,
-          boost::asio::placeholders::bytes_transferred)
-  );
-
-}
 
 }

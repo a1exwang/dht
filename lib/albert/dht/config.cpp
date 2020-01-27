@@ -47,6 +47,7 @@ class Options {
         ("refresh-nodes-check-interval", po::value(&c.refresh_nodes_check_interval_seconds), "")
         ("get-peers-refresh-interval", po::value(&c.get_peers_refresh_interval_seconds), "")
         ("get-peers-reqeust-expiration", po::value(&c.get_peers_request_expiration_seconds), "")
+        ("resolve-torrent-info-hash", po::value(&c.resolve_torrent_info_hash), "")
         ;
 
     po::options_description all_options;
@@ -216,6 +217,7 @@ void Config::serialize(std::ostream &os) const {
   os << "get_peers_refresh_interval_seconds = " << get_peers_refresh_interval_seconds << std::endl;
   os << "get_peers_request_expiration_seconds = " << get_peers_request_expiration_seconds << std::endl;
   os << "debug = " << debug << std::endl;
+  os << "resolve_torrent_info_hash = " << resolve_torrent_info_hash << std::endl;
   os << "# end of config." << std::endl;
 }
 

@@ -8,8 +8,9 @@
 #include <boost/asio/placeholders.hpp>
 #include <boost/bind.hpp>
 
-#include <albert/bt/bt.hpp>
 #include <albert/bencode/bencoding.hpp>
+#include <albert/bt/bt.hpp>
+#include <albert/bt/peer.hpp>
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
 
@@ -387,5 +388,6 @@ void PeerConnection::send_metadata_request(int64_t piece) {
       });
 
 }
+PeerConnection::~PeerConnection() {}
 
 }

@@ -66,9 +66,6 @@ void get_peers::GetPeersRequest::delete_node(const krpc::NodeID &id) {
 void get_peers::GetPeersRequest::add_node(const krpc::NodeID &node) {
   nodes_.insert(std::make_pair(node, NodeStatus()));
 }
-void get_peers::GetPeersRequest::callback() {
-  callback_(target_info_hash_, peers_);
-}
 bool get_peers::GetPeersRequest::has_node(const krpc::NodeID &id) const {
   return nodes_.find(id) != nodes_.end();
 }
@@ -84,6 +81,9 @@ bool get_peers::GetPeersRequest::has_node_traversed(const krpc::NodeID &id) cons
 }
 void get_peers::GetPeersRequest::add_peer(uint32_t ip, uint16_t port) {
   peers_.insert({ip, port});
+  for (auto &callback : callbacks_) {
+    callback(ip, port);
+  }
 }
 void get_peers::GetPeersRequest::set_node_traversed(const krpc::NodeID &id) {
   nodes_.at(id).traversed = true;
@@ -91,6 +91,7 @@ void get_peers::GetPeersRequest::set_node_traversed(const krpc::NodeID &id) {
 bool get_peers::GetPeersRequest::expired() const {
   return std::chrono::high_resolution_clock::now() > expiration_time_;
 }
+void get_peers::GetPeersRequest::add_callback(std::function<void(uint32_t, uint16_t)> callback) { this->callbacks_.emplace_back(std::move(callback)); }
 
 bool get_peers::GetPeersManager::has_node(const krpc::NodeID &id, const krpc::NodeID &node) const {
   return requests_.at(id).has_node(node);
@@ -99,14 +100,12 @@ void get_peers::GetPeersManager::set_node_traversed(const krpc::NodeID &id, cons
   requests_.at(id).set_node_traversed(node);
 }
 void get_peers::GetPeersManager::create_request(
-    const krpc::NodeID &info_hash,
-    std::function<void(krpc::NodeID target, const std::set<std::tuple<uint32_t, uint16_t>> &result )> callback) {
+    const krpc::NodeID &info_hash) {
   requests_.emplace(
       info_hash,
       GetPeersRequest(
           info_hash,
-          std::chrono::high_resolution_clock::now() + expiration_,
-          std::move(callback)));
+          std::chrono::high_resolution_clock::now() + expiration_));
 }
 void get_peers::GetPeersManager::add_peer(const krpc::NodeID &id, uint32_t ip, uint16_t port) {
   requests_.at(id).add_peer(ip, port);
@@ -124,7 +123,6 @@ void get_peers::GetPeersManager::gc() {
   std::list<krpc::NodeID> to_delete;
   for (auto &item : requests_) {
     if (item.second.peers().size() > 0) {
-      item.second.callback();
       to_delete.push_back(item.first);
     } else {
       int64_t traversed = 0;
@@ -145,37 +143,35 @@ void get_peers::GetPeersManager::gc() {
     requests_.erase(item);
   }
 }
+void get_peers::GetPeersManager::add_callback(
+    const krpc::NodeID &id,
+    const std::function<void(uint32_t, uint16_t)> &callback) {
+  requests_.at(id).add_callback(callback);
+}
 
 void DHTImpl::handle_get_peers_timer(const std::function<void()> &cancel) {
   dht_->get_peers_manager_->gc();
 }
 
-void DHTImpl::dht_get_peers(const krpc::NodeID &info_hash) {
+void DHTImpl::get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) {
+
+  if (!dht_->get_peers_manager_->has_request(info_hash)) {
+    dht_->get_peers_manager_->create_request(info_hash);
+
+//  auto targets = dht_->routing_table.k_nearest_good_nodes(info_hash, 200);
+    // use the whole routing table
+
+  } else {
+    LOG(debug) << "get_peers() already searched for " << info_hash.to_string();
+  }
+
+  dht_->get_peers_manager_->add_callback(info_hash, callback);
 
   std::list<Entry> targets;
-//  auto targets = dht_->routing_table.k_nearest_good_nodes(info_hash, 200);
   dht_->routing_table->iterate_nodes([&targets](const Entry &entry) {
     targets.push_back(entry);
   });
-  dht_->get_peers_manager_->create_request(info_hash, [info_hash, this](
-      krpc::NodeID target,
-      const std::set<std::tuple<uint32_t, uint16_t>> &result) {
-    std::stringstream lines;
-    uint32_t ip;
-    uint16_t port;
-    for (auto &item : result) {
-      std::tie(ip, port) = item;
-      dht_->peer_connections_.emplace_back(
-          io,
-          self(),
-          target,
-          ip,
-          port);
-      dht_->peer_connections_.back().connect();
-      lines << "  " << boost::asio::ip::address_v4(ip) << ":" << port << std::endl;
-    }
-    LOG(info) << "DHT get_peers(" << info_hash.to_string() << ") = " << std::endl << lines.str();
-  });
+
   int sent = 0;
   for (auto &entry : targets) {
     auto receiver = entry.node_info();
@@ -184,7 +180,6 @@ void DHTImpl::dht_get_peers(const krpc::NodeID &info_hash) {
       sent++;
     }
   }
-
   LOG(info) << "dht_get_peers " << sent << " sent";
 }
 

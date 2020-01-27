@@ -20,15 +20,15 @@ namespace albert::dht {
 
 using namespace std::string_literals;
 
-DHTImpl::DHTImpl(DHT *dht)
+DHTImpl::DHTImpl(DHT *dht, boost::asio::io_service &io)
     : dht_(dht),
-      io(),
+      io(io),
       socket(io,
              udp::endpoint(
                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
                  dht->config_.bind_port)),
-      signals_(io, SIGINT),
-      input_(io, ::dup(STDIN_FILENO)) {
+      signals_(io, SIGINT)
+       {
 
   timers_.emplace_back(*this, "expand-route", &DHTImpl::handle_expand_route_timer,
                        dht_->config_.discovery_interval_seconds);
@@ -38,7 +38,6 @@ DHTImpl::DHTImpl(DHT *dht)
                        dht_->config_.refresh_nodes_check_interval_seconds);
   timers_.emplace_back(*this, "get-peers",&DHTImpl::handle_get_peers_timer,
                        dht_->config_.get_peers_refresh_interval_seconds);
-
 }
 
 
@@ -179,48 +178,24 @@ void DHTImpl::bootstrap() {
     find_self(ep);
   }
 
-  // set stdin read handler
-  boost::asio::async_read_until(
-      input_,
-      input_buffer_,
-      '\n',
-      boost::bind(
-          &DHTImpl::handle_read_input,
-          this,
-          boost::asio::placeholders::error,
-          boost::asio::placeholders::bytes_transferred)
-  );
-
   // start all timers
   for (auto &timer : timers_) {
     timer.fire_immediately();
   }
 }
 
-void DHTImpl::loop() {
-  try {
-    io.run();
-    LOG(info) << "Successfully end";
-  } catch (std::exception &e) {
-    LOG(error) << "Exception: " << e.what();
-    std::exit(EXIT_FAILURE);
-  }
-}
+/**
+ * class albert::dht::DHT
+ */
 
-
-std::unique_ptr<DHT> DHT::make(Config config) {
-  return std::make_unique<DHT>(std::move(config));
-}
-void DHT::loop() { impl_->loop(); }
-void DHT::bootstrap() { impl_->bootstrap(); }
 DHT::DHT(Config config)
     :config_(std::move(config)),
      self_info_(parse_node_id(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
      transaction_manager(),
      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
      routing_table(nullptr),
-     info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app),
-     impl_(std::make_unique<DHTImpl>(this)) {
+     info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app)
+      {
   std::ifstream ifs(config_.routing_table_save_path);
   if (ifs) {
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
@@ -242,12 +217,24 @@ DHT::DHT(Config config)
     throw std::runtime_error("Failed to open info hash list file '" + config_.info_hash_save_path + "'");
   }
 }
+
 DHT::~DHT() {}
+
+DHTInterface::DHTInterface(Config config, boost::asio::io_service &io_service)
+    :dht_(std::make_unique<DHT>(std::move(config))), impl_() {
+  impl_ = std::make_unique<DHTImpl>(dht_.get(), io_service);
+}
+
+DHTInterface::~DHTInterface() {}
+
+void DHTInterface::start() {
+  impl_->bootstrap();
+}
+void DHTInterface::get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) { impl_->get_peers(info_hash, callback); }
 
 void Timer::handler_timer(const boost::system::error_code &error) {
   if (error) {
-    LOG(error) << "DHTImpl::Timer(" + name_ + ") error: " << error.message();
-    return;
+    throw std::runtime_error("DHTImpl::Timer(" + name_ + ") error: " + error.message());
   }
   bool canceled = false;
   auto cancel = [&]() { canceled = true; };
@@ -283,5 +270,6 @@ Timer::Timer(
     timer_(that_.io, boost::asio::chrono::seconds(seconds)),
     seconds_(seconds) {
 }
+
 }
 

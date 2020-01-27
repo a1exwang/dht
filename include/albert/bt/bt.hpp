@@ -1,36 +1,25 @@
 #pragma once
+#include <memory>
 
-#include <cstdint>
-#include <cstddef>
+#include <albert/krpc/krpc.hpp>
 
-#include <string>
+namespace boost::asio {
+class io_context;
+typedef io_context io_service;
+}
 
-namespace albert::bt::peer {
+namespace albert::bt {
+class TorrentResolver;
 
-constexpr uint8_t MessageTypeChoke = 0;
-constexpr uint8_t MessageTypeUnchoke = 1;
-constexpr uint8_t MessageTypeInterested = 2;
-constexpr uint8_t MessageTypeNotInterested = 3;
-constexpr uint8_t MessageTypeExtended = 20;
-constexpr uint8_t ExtendedMessageTypeRequest = 0;
-constexpr uint8_t ExtendedMessageTypeData = 1;
-constexpr uint8_t ExtendedMessageTypeReject = 2;
-constexpr size_t MetadataPieceSize = 16 * 1024;
-
-class Peer {
+class BT {
  public:
-  Peer(uint32_t ip, uint16_t port) :ip_(ip), port_(port) {}
-
-  void connect();
-
-  uint32_t ip() const { return ip_; }
-  uint16_t port() const { return port_;}
-
-  std::string to_string() const;
-
+  BT(boost::asio::io_service &io, krpc::NodeID self);
+  std::weak_ptr<TorrentResolver> resolve_torrent(const krpc::NodeID &info_hash);
+  void start() {}
  private:
-  uint32_t ip_;
-  uint16_t port_;
+  boost::asio::io_service &io_;
+  krpc::NodeID self_;
+  std::map<albert::krpc::NodeID, std::shared_ptr<TorrentResolver>> resolvers_;
 };
 
 }
