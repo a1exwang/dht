@@ -1,8 +1,9 @@
 #include <albert/dht/dht.hpp>
 
+#include <albert/dht/config.hpp>
+#include <albert/dht/transaction.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
-#include <albert/dht/transaction.hpp>
 
 /**
  * class dht::DHT
@@ -20,11 +21,7 @@ std::string DHT::create_query(std::shared_ptr<krpc::Query> query) {
   return ss.str();
 }
 krpc::NodeID DHT::parse_node_id(const std::string &s) {
-  if (s.empty()) {
-    return krpc::NodeID::random();
-  } else {
-    return krpc::NodeID::from_string(s);
-  }
+  return krpc::NodeID::from_hex(s);
 }
 std::string DHT::create_response(const krpc::Response &query) {
   std::stringstream ss;

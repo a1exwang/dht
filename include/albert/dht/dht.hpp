@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <albert/krpc/krpc.hpp>
+#include <albert/dht/config.hpp>
 #include <albert/dht/routing_table.hpp>
 #include <albert/dht/transaction.hpp>
 #include <albert/bt/peer_connection.hpp>
@@ -18,29 +19,13 @@ namespace get_peers {
   class GetPeersManager;
 };
 
-struct Config {
-  std::string bind_ip;
-  uint16_t bind_port = 0;
-
-  std::string self_node_id;
-  std::vector<std::pair<std::string, std::string>> bootstrap_nodes;
-
-  std::string info_hash_save_path = "info_hash.txt";
-  std::string routing_table_save_path = "route.txt";
-
-  int discovery_interval_seconds = 5;
-  int report_interval_seconds = 10;
-  int refresh_nodes_check_interval_seconds = 5;
-  int get_peers_refresh_interval_seconds = 2;
-  int get_peers_request_expiration_seconds = 30;
-};
-
 class DHTImpl;
+class Config;
 
 class DHT {
  public:
-  static std::unique_ptr<DHT> make(const Config &config);
-  explicit DHT(const Config &config);
+  static std::unique_ptr<DHT> make(Config config);
+  explicit DHT(Config config);
   ~DHT();
 
   void loop();

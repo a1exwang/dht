@@ -1,10 +1,11 @@
 #include "dht_impl.hpp"
 
 
-#include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
+#include <boost/asio/io_service.hpp>
 #include <boost/bind.hpp>
 
+#include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
 

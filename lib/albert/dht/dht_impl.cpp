@@ -6,6 +6,7 @@
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 
+#include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
@@ -218,38 +219,38 @@ void DHTImpl::loop() {
 }
 
 
-std::unique_ptr<DHT> DHT::make(const Config &config) {
-  return std::make_unique<DHT>(config);
+std::unique_ptr<DHT> DHT::make(Config config) {
+  return std::make_unique<DHT>(std::move(config));
 }
 void DHT::loop() { impl_->loop(); }
 void DHT::bootstrap() { impl_->bootstrap(); }
-DHT::DHT(const Config &config)
-    :config_(config),
-     self_info_(parse_node_id(config.self_node_id), 0, 0),
+DHT::DHT(Config config)
+    :config_(std::move(config)),
+     self_info_(parse_node_id(config_.self_node_id), 0, 0),
      transaction_manager(),
-     get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config.get_peers_request_expiration_seconds)),
+     get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
      routing_table(nullptr),
-     info_hash_list_stream_(config.info_hash_save_path, std::fstream::app),
+     info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app),
      impl_(std::make_unique<DHTImpl>(this)) {
-  std::ifstream ifs(config.routing_table_save_path);
+  std::ifstream ifs(config_.routing_table_save_path);
   if (ifs) {
-    LOG(info) << "Loading routing table from '" << config.routing_table_save_path << "'";
+    LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
     try {
-      routing_table = dht::RoutingTable::deserialize(ifs, config.routing_table_save_path);
+      routing_table = dht::RoutingTable::deserialize(ifs, config_.routing_table_save_path);
     } catch (const std::exception &e) {
       LOG(info) << "Fail to load routing table, '" << e.what() << "', Creating empty routing table";
       routing_table = std::make_unique<dht::RoutingTable>(
-          parse_node_id(config.self_node_id),
-          config.routing_table_save_path);
+          parse_node_id(config_.self_node_id),
+          config_.routing_table_save_path);
     }
   } else {
     LOG(info) << "Creating empty routing table";
     routing_table = std::make_unique<dht::RoutingTable>(
-        parse_node_id(config.self_node_id),
-        config.routing_table_save_path);
+        parse_node_id(config_.self_node_id),
+        config_.routing_table_save_path);
   }
   if (!info_hash_list_stream_.is_open()) {
-    throw std::runtime_error("Failed to open info hash list file '" + config.info_hash_save_path + "'");
+    throw std::runtime_error("Failed to open info hash list file '" + config_.info_hash_save_path + "'");
   }
 }
 DHT::~DHT() {}

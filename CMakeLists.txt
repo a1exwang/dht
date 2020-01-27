@@ -22,7 +22,7 @@ endif()
 
 include_directories(include)
 
-find_package(Boost REQUIRED COMPONENTS system log)
+find_package(Boost REQUIRED COMPONENTS system log program_options)
 add_subdirectory(3rdparty/yaml-cpp)
 
 add_subdirectory(lib/albert)

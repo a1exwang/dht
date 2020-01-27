@@ -3,6 +3,7 @@
 
 #include <boost/bind.hpp>
 
+#include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/bt/peer_connection.hpp>
 

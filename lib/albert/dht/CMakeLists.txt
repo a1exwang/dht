@@ -13,9 +13,11 @@ add_library(
         responses.cpp
         timer_handlers.cpp
         get_peers.cpp
+        config.cpp
 )
 target_link_libraries(
         dht PUBLIC
         krpc transaction routing_table bencoding public_ip log utils
+        Boost::program_options
 )
 
