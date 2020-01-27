@@ -1,0 +1,2 @@
+add_subdirectory(dht_client)
+add_subdirectory(bt_peer)

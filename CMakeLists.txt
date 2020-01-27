@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project(dht)
+project(albert)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -23,23 +23,9 @@ endif()
 include_directories(include)
 
 find_package(Boost REQUIRED COMPONENTS system log)
-add_subdirectory(utils)
-add_subdirectory(bencoding)
-add_subdirectory(krpc)
-add_library(transaction STATIC transaction.cpp)
-target_link_libraries(transaction PUBLIC krpc)
-add_library(routing_table STATIC routing_table.cpp)
-target_link_libraries(routing_table PUBLIC krpc)
+add_subdirectory(3rdparty/yaml-cpp)
 
-add_subdirectory(dht)
-add_subdirectory(bt)
+add_subdirectory(lib/albert)
 
-add_executable(dht_client dht_client.cpp)
-target_link_libraries(dht_client PRIVATE dht bt Boost::system)
-
-add_executable(bencoding_test_echo bencoding/bencoding_test_echo.cpp)
-target_link_libraries(bencoding_test_echo PRIVATE bencoding)
-
-add_executable(bt_peer bt.cpp)
-target_link_libraries(bt_peer PRIVATE dht bt)
+add_subdirectory(programs)
 
