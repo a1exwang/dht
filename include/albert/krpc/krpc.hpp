@@ -41,6 +41,7 @@ class NodeID {
   static NodeID random();
   static NodeID random_from_prefix(const NodeID &prefix, size_t prefix_length);
   static size_t common_prefix_length(const NodeID &lhs, const NodeID &rhs);
+  static NodeID hash(const uint8_t *data, size_t size);
 
   std::string to_string() const;
 
@@ -78,6 +79,8 @@ class NodeInfo {
   uint32_t ip_{};
   uint16_t port_{};
 };
+
+std::string format_ep(uint32_t ip, uint16_t port);
 
 constexpr const char *MessageTypeQuery = "q";
 constexpr const char *MessageTypeResponse = "r";

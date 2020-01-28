@@ -8,10 +8,26 @@
 
 namespace albert::dht::utils {
 
+/**
+ * NOTE:
+ * This is a workaround for glibc 2.29 static link symbol. log@GLIBC_2.29.
+ */
+int fastlog2(size_t length) {
+  if (length == 0) {
+    throw std::invalid_argument("log(x) x cannot be zero");
+  }
+  int ret = 0;
+  while (length != 0) {
+    length >>= 1;
+    ret++;
+  }
+  return ret;
+}
+
 std::string hexdump(const void *ptr, size_t length, bool verbose) {
   std::stringstream ss;
   auto p = static_cast<const uint8_t *>(ptr);
-  auto hex_digits = size_t(ceil(log(length) / log(16)));
+  auto hex_digits = size_t(ceil((double)fastlog2(length) / 4));
   const size_t column_width = 16;
   std::stringstream line;
   size_t i = 0;

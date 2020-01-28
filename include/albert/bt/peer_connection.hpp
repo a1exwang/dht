@@ -48,6 +48,11 @@ struct Handshake {
 
 constexpr const char *MetadataMessage = "ut_metadata";
 
+enum class ConnectionStatus {
+  Connecting,
+  Connected,
+  Disconnected
+};
 class PeerConnection {
  public:
   PeerConnection(
@@ -58,7 +63,11 @@ class PeerConnection {
       uint16_t port);
   ~PeerConnection();
   void connect();
-  bool is_connected() const { return connected_; };
+  ConnectionStatus status() const { return connection_status_; }
+  void close();
+
+  void set_piece_data_handler(std::function<void(int, const std::vector<uint8_t> &)> handler);
+  void set_metadata_handshake_handler(std::function<void(int, size_t)> handler);
 
  private:
   void handle_connect(
@@ -99,7 +108,7 @@ class PeerConnection {
   std::array<uint8_t, 65536> write_buffer_;
 
   std::unique_ptr<Peer> peer_;
-  bool connected_ = false;
+  ConnectionStatus connection_status_ = ConnectionStatus::Connecting;
   bool handshake_completed_ = false;
   bool message_segmented = false;
 
@@ -109,12 +118,17 @@ class PeerConnection {
   uint32_t last_message_size_ = 0;
   size_t piece_count_;
 
-  std::stringstream pieces_stream_;
   std::shared_ptr<bencoding::DictNode> extended_handshake_;
   std::map<std::string, std::shared_ptr<bencoding::Node>> m_dict_;
   std::map<uint8_t, std::string> extended_message_id_ = {
       {2, MetadataMessage}
   };
+
+  std::function<void(
+      int piece,
+      const std::vector<uint8_t> &piece_data
+  )> piece_data_handler_;
+  std::function<void(int total_pieces, size_t total_size)> metadata_handshake_handler_;
 };
 
 }

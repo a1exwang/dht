@@ -20,7 +20,7 @@ void DHTImpl::handle_get_peers_response(
   if (dht_->get_peers_manager_->has_request(info_hash)) {
     if (dht_->get_peers_manager_->has_node(info_hash, sender_id)) {
       if (response.has_peers()) {
-        LOG(info) << "handle get_peers from " << sender_id.to_string() << " got " << response.peers().size() << " peers";
+        LOG(debug) << "handle get_peers from " << sender_id.to_string() << " got " << response.peers().size() << " peers";
         uint32_t ip;
         uint16_t port;
         for (auto item : response.peers()) {

@@ -14,7 +14,7 @@ class TorrentResolver;
 class BT {
  public:
   BT(boost::asio::io_service &io, krpc::NodeID self);
-  std::weak_ptr<TorrentResolver> resolve_torrent(const krpc::NodeID &info_hash);
+  std::weak_ptr<TorrentResolver> resolve_torrent(const krpc::NodeID &info_hash, std::function<void(const bencoding::DictNode &)> handler);
   void start() {}
  private:
   boost::asio::io_service &io_;

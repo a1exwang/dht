@@ -15,7 +15,7 @@ if(CMAKE_BUILD_TYPE STREQUAL Release)
     endif()
     set(Boost_USE_STATIC_LIBS ON)
     set(BUILD_SHARED_LIBS OFF)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+#    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 else()
     add_definitions(-DBOOST_LOG_DYN_LINK=1)
 endif()
@@ -23,6 +23,7 @@ endif()
 include_directories(include)
 
 find_package(Boost REQUIRED COMPONENTS system log program_options)
+find_package(OpenSSL REQUIRED)
 
 add_subdirectory(lib/albert)
 

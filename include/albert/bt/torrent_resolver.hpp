@@ -14,8 +14,25 @@ class TorrentResolver {
   TorrentResolver(boost::asio::io_service &io, krpc::NodeID info_hash, krpc::NodeID self);
   void add_peer(uint32_t ip, uint16_t port);
 
+  [[nodiscard]]
+  bool finished() const;
+
   [[nodiscard]] krpc::NodeID self() const;
+
+  void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
  private:
+  void piece_handler(int piece, const std::vector<uint8_t> &data);
+  void handshake_handler(int total_pieces, size_t metdata_size);
+
+  [[nodiscard]]
+  std::vector<uint8_t> merged_pieces() const;
+
+ private:
+  std::vector<std::vector<uint8_t>> pieces_;
+  size_t metadata_size_;
+
+  std::function<void(const bencoding::DictNode &torrent)> torrent_handler_;
+
   boost::asio::io_service &io_;
   krpc::NodeID info_hash_;
   krpc::NodeID self_;

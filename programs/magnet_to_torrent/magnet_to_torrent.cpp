@@ -1,7 +1,8 @@
+#include <albert/bt/bt.hpp>
+#include <albert/cui/cui.hpp>
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
-#include <albert/cui/cui.hpp>
 
 #include <exception>
 #include <sstream>
@@ -32,12 +33,16 @@ int main(int argc, char* argv[]) {
   albert::cui::CommandLineUI cui(info_hash, io_service, dht, bt);
   cui.start();
 
-//  try {
+#ifdef NDEBUG
+    try {
+#endif
     io_service.run();
-//  } catch (const std::exception &e) {
-//    LOG(error) << "io_service Failure: \"" << e.what() << '"';
-//    exit(1);
-//  }
+#ifdef NDEBUG
+  } catch (const std::exception &e) {
+    LOG(error) << "io_service Failure: \"" << e.what() << '"';
+    exit(1);
+  }
+#endif
 
   return 0;
 }

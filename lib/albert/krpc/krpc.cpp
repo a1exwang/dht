@@ -5,6 +5,8 @@
 #include <sstream>
 #include <random>
 
+#include <openssl/sha.h>
+
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
 
@@ -146,6 +148,11 @@ size_t NodeID::common_prefix_length(const NodeID &lhs, const NodeID &rhs) {
     }
   }
   return NodeIDBits;
+}
+NodeID NodeID::hash(const uint8_t *data, size_t size) {
+  NodeID ret;
+  SHA1(data, size, ret.data_.data());
+  return ret;
 }
 
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
@@ -426,24 +433,7 @@ void NodeInfo::encode(std::ostream &os) const {
   os.write((const char*)&port, sizeof(port));
 }
 std::string NodeInfo::to_string() const {
-  std::string ip, port;
-  {
-    uint32_t t1, t2, t3, t4;
-    std::stringstream ss;
-    t1 = (ip_ >> 24u) & 0xffu;
-    t2 = (ip_ >> 16u) & 0xffu;
-    t3 = (ip_ >> 8u) & 0xffu;
-    t4 = (ip_ >> 0u) & 0xffu;
-    ss << t1 << "." << t2 << "." << t3 << "." << t4;
-    ip = ss.str();
-  }
-
-  {
-    std::stringstream ss;
-    ss << port_;
-    ss >> port;
-  }
-  return "NodeID: '" + node_id_.to_string() + "' endpoint: '" + ip + ":" + port + "'";
+  return "NodeID: '" + node_id_.to_string() + "' endpoint: '" + format_ep(ip_, port_) + "'";
 }
 
 std::shared_ptr<bencoding::Node> FindNodeResponse::get_response_node() const {
@@ -590,6 +580,26 @@ std::shared_ptr<bencoding::Node> SampleInfohashesQuery::get_arguments_node() con
     arguments_dict["target"] = std::make_shared<bencoding::StringNode>(ss.str());
   }
   return std::make_shared<bencoding::DictNode>(arguments_dict);
+}
+std::string format_ep(uint32_t ip, uint16_t port) {
+  std::string ip_s, port_s;
+  {
+    uint32_t t1, t2, t3, t4;
+    std::stringstream ss;
+    t1 = (ip >> 24u) & 0xffu;
+    t2 = (ip >> 16u) & 0xffu;
+    t3 = (ip >> 8u) & 0xffu;
+    t4 = (ip >> 0u) & 0xffu;
+    ss << t1 << "." << t2 << "." << t3 << "." << t4;
+    ip_s = ss.str();
+  }
+
+  {
+    std::stringstream ss;
+    ss << port;
+    ss >> port_s;
+  }
+  return ip_s + ":" + port_s;
 }
 }
 

@@ -1,6 +1,9 @@
 #include <albert/bt/peer_connection.hpp>
 
+#include <map>
 #include <memory>
+#include <random>
+#include <string>
 #include <vector>
 
 #include <boost/asio/io_context.hpp>
@@ -84,10 +87,10 @@ void PeerConnection::handle_connect(
   if (!socket_.is_open()) {
     LOG(error) << "Connect timed out " << this->peer_->to_string();
   } else if (ec) {
-    LOG(error) << "Connect error: " << this->peer_->to_string() << " " << ec.message();
-    socket_.close();
+    LOG(debug) << "Connect error: " << this->peer_->to_string() << " " << ec.message();
+    close();
   } else {
-    connected_ = true;
+    connection_status_ = ConnectionStatus::Connected;
     LOG(info) << "connected to " << this->peer_->to_string();
 
     socket_.async_receive(
@@ -158,17 +161,6 @@ void PeerConnection::send_handshake() {
           throw std::runtime_error("Failed to write to socket " + err.message());
         }
       });
-
-  // send interested
-//  socket_.async_send(
-//      boost::asio::buffer(make_empty_message(MessageTypeInterested)),
-//      0,
-//      [](const boost::system::error_code &err, size_t bytes_transferred) {
-//        if (err) {
-//          throw std::runtime_error("Failed to write to socket " + err.message());
-//        }
-//        LOG(info) << "written " << bytes_transferred;
-//      });
 }
 
 uint32_t PeerConnection::read_size() {
@@ -185,15 +177,16 @@ void PeerConnection::pop_data(void *output, size_t size) {
 }
 void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vector<uint8_t> &data) {
   if (type == MessageTypeInterested) {
-    LOG(info) << "peer interested";
+    LOG(info) << "peer " << peer_->to_string() << " interested";
     peer_interested_ = true;
   } else if (type == MessageTypeUnchoke) {
-    LOG(info) << "peer unchoke";
+    LOG(info) << "peer " << peer_->to_string() << " unchoke";
     peer_choke_ = false;
   } else if (type == MessageTypeExtended) {
     if (size > 0) {
       uint8_t extended_id = data[0];
-      std::stringstream ss(std::string((const char*)data.data() + 1, data.size()));
+      auto content_size = size - 1;
+      std::stringstream ss(std::string((const char*)data.data() + 1, content_size));
       auto node = bencoding::Node::decode(ss);
 
       std::istreambuf_iterator<char> eos;
@@ -203,7 +196,8 @@ void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vect
       if (auto dict = std::dynamic_pointer_cast<bencoding::DictNode>(node); dict) {
         handle_extended_message(extended_id, dict, appended_data);
       } else {
-        LOG(error) << "invalid extended message, root node is not a dict";
+        LOG(error) << "Invalid extended message, root node is not a dict. Closing connection";
+        close();
       }
     } else {
       LOG(warning) << "empty extended message";
@@ -261,13 +255,25 @@ void PeerConnection::handle_extended_message(
     auto total_size = get_int64_or_throw(dict, "metadata_size", "ut_metadata");
     m_dict_ = get_dict_or_throw(dict, "m", "ut_metadata");
     piece_count_ = ceil(double(total_size) / MetadataPieceSize);
+    metadata_handshake_handler_(piece_count_, total_size);
 
-    LOG(info) << "Extended handshake: from " << peer_->to_string() << std::endl
+    LOG(debug) << "Extended handshake: from " << peer_->to_string() << std::endl
               << "total pieces: " << piece_count_
               << "data: " << ss.str();
+    if (piece_count_ == 0) {
+      close();
+      throw InvalidPeerMessage("piece count cannot be zero");
+    }
 
-    // start metadata transfer
+    // start metadata pieces transfer, but in a random order, to increase concurrency
+    std::vector<int> piece_ids;
     for (int i = 0; i < piece_count_; i++) {
+      piece_ids.push_back(i);
+    }
+    std::shuffle(piece_ids.begin(), piece_ids.end(), std::random_device{});
+
+    for (auto i : piece_ids) {
+      LOG(debug) << "sending metadata request to " << peer_->to_string() << ", " << i;
       send_metadata_request(i);
     }
   } else {
@@ -281,10 +287,8 @@ void PeerConnection::handle_extended_message(
           LOG(error) << "msg_type request not implemented";
         } else if (msg_type == ExtendedMessageTypeData) {
           auto piece = get_int64_or_throw(dict, "piece", "ut_metadata");
-          auto total_size = get_int64_or_throw(dict, "total_size", "ut_metadata");
-          // this->pieces_stream_.write((const char*)appended_data.data(), appended_data.size());
-            // TODO save torrent file
-          LOG(info) << "got piece " << piece;
+//          auto total_size = get_int64_or_throw(dict, "total_size", "ut_metadata");
+          piece_data_handler_(piece, appended_data);
         } else if (msg_type == ExtendedMessageTypeReject) {
           LOG(error) << "msg_type reject not implemented";
         } else {
@@ -300,13 +304,17 @@ void PeerConnection::handle_extended_message(
 void PeerConnection::handle_receive(const boost::system::error_code &err, size_t bytes_transferred) {
 
   if (err == boost::asio::error::eof) {
-    connected_ = false;
+    connection_status_ = ConnectionStatus::Disconnected;
   } else if (err == boost::asio::error::connection_reset) {
     LOG(warning) << "Peer reset the connection " << peer_->to_string() << ", id " << peer_id_.to_string();
-    connected_ = false;
+    connection_status_ = ConnectionStatus::Disconnected;
   } else if (err) {
     throw std::runtime_error("Unhandled error when reading to from socket " + err.message());
   } else {
+    if (connection_status_ == ConnectionStatus::Connecting) {
+      connection_status_ = ConnectionStatus::Connected;
+    }
+
     try {
       read_ring_.reserve(read_ring_.size() + bytes_transferred);
       for (int i = 0; i < bytes_transferred; i++) {
@@ -315,15 +323,17 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
       while (true) {
         if (message_segmented) {
           auto message_size = last_message_size_;
-          if (has_data(message_size + sizeof(uint8_t))) {
+          if (has_data(message_size)) {
+            LOG(info) << "message content complete, segmentation done " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
             uint8_t message_id;
+            auto content_size = message_size - 1;
             pop_data(&message_id, 1);
-            std::vector<uint8_t> data(message_size-1);
-            pop_data(data.data(), message_size-1);
+            std::vector<uint8_t> data(content_size);
+            pop_data(data.data(), content_size);
             message_segmented = false;
-            handle_message(message_size-1, message_id, data);
+            handle_message(content_size, message_id, data);
           } else {
-            LOG(debug) << "message content not complete, segmented again " << peer_->to_string();
+            LOG(info) << "message content not complete, segmented again " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
             break;
           }
         } else if (handshake_completed_) {
@@ -338,7 +348,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             } else {
               last_message_size_ = message_size;
               message_segmented = true;
-              LOG(debug) << "message content not complete, segmented " << peer_->to_string();
+              LOG(info) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
               break;
             }
           } else {
@@ -363,10 +373,10 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
       }
     } catch (const bencoding::InvalidBencoding &e) {
       LOG(error) << "parse BT handshake: Invalid bencoding: " << e.what();
-      socket_.close();
-      connected_ = false;
+      close();
     } catch (const InvalidPeerMessage &e){
       LOG(error) << "Invalid peer message " << e.what();
+      close();
     }
     socket_.async_receive(
         boost::asio::buffer(read_buffer_.data(), read_buffer_.size()),
@@ -406,14 +416,22 @@ void PeerConnection::send_metadata_request(int64_t piece) {
             if (err) {
               throw std::runtime_error("Failed to write to socket " + err.message());
             }
-            LOG(info) << "written " << bytes_transferred;
           });
     }
   }
 }
-PeerConnection::~PeerConnection() {}
+PeerConnection::~PeerConnection() = default;
 uint8_t PeerConnection::get_peer_extended_message_id(const std::string &message_name) {
   return get_int64_or_throw(m_dict_, message_name, "PeerConenction::get_peer_extended_message_id");
 }
+void PeerConnection::close() {
+  socket_.close();
+  connection_status_ = ConnectionStatus::Disconnected;
+}
+void PeerConnection::set_piece_data_handler(
+    std::function<void(int, const std::vector<uint8_t> &)> handler) {
+  this->piece_data_handler_ = std::move(handler);
+}
+void PeerConnection::set_metadata_handshake_handler(std::function<void(int, size_t)> handler) { metadata_handshake_handler_ = handler; }
 
 }

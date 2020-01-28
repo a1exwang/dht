@@ -11,7 +11,6 @@
 #include <albert/dht/config.hpp>
 #include <albert/dht/routing_table.hpp>
 #include <albert/dht/transaction.hpp>
-#include <albert/bt/peer_connection.hpp>
 
 
 namespace boost::asio {

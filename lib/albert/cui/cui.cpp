@@ -27,14 +27,19 @@ void CommandLineUI::handle_read_input(
 
   if (!error) {
     auto ih = krpc::NodeID::from_hex(target_info_hash_);
-    auto resolver = bt_.resolve_torrent(ih);
+
+    auto resolver = bt_.resolve_torrent(ih, [](const bencoding::DictNode &torrent) {
+      std::ofstream f("torrent.torrent", std::ios::binary);
+      torrent.encode(f, bencoding::EncodeMode::Bencoding);
+      LOG(info) << "torrent saved";
+    });
+
     dht_.get_peers(ih, [this, ih, resolver](uint32_t ip, uint16_t port) {
       if (resolver.expired()) {
         LOG(error) << "TorrentResolver gone before a get_peer request received";
       } else {
         resolver.lock()->add_peer(ip, port);
       }
-      LOG(info) << "CUI::get_peers(" << ih.to_string() << ") = " << boost::asio::ip::address_v4(ip) << ":" << port;
     });
 
     std::vector<char> data(input_buffer_.size());
