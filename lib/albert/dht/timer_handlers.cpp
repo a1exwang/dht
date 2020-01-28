@@ -13,17 +13,18 @@ namespace albert::dht {
 
 void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
   bool simple = true;
-  if (simple) {
-    LOG(info) << "routing table "
-              << dht_->routing_table->max_prefix_length() << " "
-              << dht_->routing_table->good_node_count() << " "
-              << dht_->routing_table->known_node_count();
-  } else {
+  if (dht_->config_.debug) {
     dht_->routing_table->stat();
+    LOG(info) << "Routing table debug mode enabled";
     LOG(info) << "self NodeInfo " << dht_->self_info_.to_string();
     LOG(info) << "total ping query sent: " << dht_->total_ping_query_sent_;
     LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
     LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
+  } else {
+    LOG(info) << "routing table "
+              << dht_->routing_table->max_prefix_length() << " "
+              << dht_->routing_table->good_node_count() << " "
+              << dht_->routing_table->known_node_count();
   }
 }
 void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
