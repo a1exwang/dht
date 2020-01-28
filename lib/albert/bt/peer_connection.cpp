@@ -74,31 +74,34 @@ PeerConnection::PeerConnection(
 
 void PeerConnection::connect() {
   // Start the asynchronous connect operation.
+
+  // Why using shared_from_this(). https://stackoverflow.com/a/35469759
   socket_.async_connect(
       tcp::endpoint(boost::asio::ip::address_v4(peer_->ip()), peer_->port()),
       boost::bind(
           &PeerConnection::handle_connect,
-          this, _1));
+          shared_from_this(),
+          _1));
 
 }
 
 void PeerConnection::handle_connect(
     const boost::system::error_code &ec) {
   if (!socket_.is_open()) {
-    LOG(error) << "Connect timed out " << this->peer_->to_string();
+    LOG(debug) << "Connect timed out " << this->peer_->to_string();
   } else if (ec) {
     LOG(debug) << "Connect error: " << this->peer_->to_string() << " " << ec.message();
     close();
   } else {
     connection_status_ = ConnectionStatus::Connected;
-    LOG(info) << "connected to " << this->peer_->to_string();
+    LOG(info) << "PeerConnection: connected to " << this->peer_->to_string();
 
     socket_.async_receive(
         boost::asio::buffer(read_buffer_.data(), read_buffer_.size()),
         0,
         boost::bind(
             &PeerConnection::handle_receive,
-            this,
+            shared_from_this(),
             boost::asio::placeholders::error,
             boost::asio::placeholders::bytes_transferred));
     send_handshake();
@@ -176,12 +179,17 @@ void PeerConnection::pop_data(void *output, size_t size) {
   read_ring_ = tmp;
 }
 void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vector<uint8_t> &data) {
-  if (type == MessageTypeInterested) {
-    LOG(info) << "peer " << peer_->to_string() << " interested";
-    peer_interested_ = true;
+  if (type == MessageTypeChoke) {
+    peer_choke_ = true;
   } else if (type == MessageTypeUnchoke) {
-    LOG(info) << "peer " << peer_->to_string() << " unchoke";
+    LOG(debug) << "peer " << peer_->to_string() << " unchoke";
     peer_choke_ = false;
+  } else if (type == MessageTypeInterested) {
+    LOG(debug) << "peer " << peer_->to_string() << " interested";
+    peer_interested_ = true;
+  } else if (type == MessageTypeNotInterested) {
+    LOG(debug) << "peer " << peer_->to_string() << " interested";
+    peer_interested_ = false;
   } else if (type == MessageTypeExtended) {
     if (size > 0) {
       uint8_t extended_id = data[0];
@@ -200,10 +208,11 @@ void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vect
         close();
       }
     } else {
-      LOG(warning) << "empty extended message";
+      LOG(error) << "PeerConnection: Invalid extended message, expected size";
+      close();
     }
   } else {
-    LOG(warning) << "Unknown message type ignored " << (int)type;
+    LOG(debug) << "PeerConnection: Unknown message type ignored " << (int)type;
   }
 }
 
@@ -302,6 +311,10 @@ void PeerConnection::handle_extended_message(
   }
 }
 void PeerConnection::handle_receive(const boost::system::error_code &err, size_t bytes_transferred) {
+  // we may arrive here if the torrent download complete before handle_receive() is called
+  if (status() == ConnectionStatus::Disconnected) {
+    return;
+  }
 
   if (err == boost::asio::error::eof) {
     connection_status_ = ConnectionStatus::Disconnected;
@@ -324,7 +337,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
         if (message_segmented) {
           auto message_size = last_message_size_;
           if (has_data(message_size)) {
-            LOG(info) << "message content complete, segmentation done " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
+            LOG(debug) << "message content complete, segmentation done " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
             uint8_t message_id;
             auto content_size = message_size - 1;
             pop_data(&message_id, 1);
@@ -333,7 +346,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             message_segmented = false;
             handle_message(content_size, message_id, data);
           } else {
-            LOG(info) << "message content not complete, segmented again " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
+            LOG(debug) << "message content not complete, segmented again " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
             break;
           }
         } else if (handshake_completed_) {
@@ -348,7 +361,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             } else {
               last_message_size_ = message_size;
               message_segmented = true;
-              LOG(info) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
+              LOG(debug) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
               break;
             }
           } else {
@@ -366,7 +379,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             peer_id_ = krpc::NodeID::decode(ss);
             handshake_completed_ = true;
           } else {
-            LOG(info) << "handshake not complete, segmented " << peer_->to_string();
+            LOG(debug) << "handshake not complete, segmented " << peer_->to_string();
             break;
           }
         }
@@ -383,7 +396,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
         0,
         boost::bind(
             &PeerConnection::handle_receive,
-            this,
+            shared_from_this(),
             boost::asio::placeholders::error,
             boost::asio::placeholders::bytes_transferred));
 
@@ -433,5 +446,8 @@ void PeerConnection::set_piece_data_handler(
   this->piece_data_handler_ = std::move(handler);
 }
 void PeerConnection::set_metadata_handshake_handler(std::function<void(int, size_t)> handler) { metadata_handshake_handler_ = handler; }
+uint8_t PeerConnection::has_peer_extended_message(const std::string &message_name) const {
+  return extended_handshake_->dict().find(message_name) == extended_handshake_->dict().end();
+}
 
 }

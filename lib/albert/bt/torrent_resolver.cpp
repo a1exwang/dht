@@ -8,26 +8,28 @@
 
 #include <boost/bind/bind.hpp>
 
-#include <albert/log/log.hpp>
-#include <albert/krpc/krpc.hpp>
 #include <albert/bencode/bencoding.hpp>
+#include <albert/bt/peer.hpp>
+#include <albert/krpc/krpc.hpp>
+#include <albert/log/log.hpp>
 
 namespace albert::bt {
 
 void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
   using namespace boost::placeholders;
-  peer_connections_.emplace_back(
-      io_,
-      self(),
-      info_hash_,
-      ip,
-      port);
+  peer_connections_.push_back(
+      std::make_shared<peer::PeerConnection>(
+          io_,
+          self(),
+          info_hash_,
+          ip,
+          port));
   auto &pc = peer_connections_.back();
-  pc.set_piece_data_handler(
+  pc->set_piece_data_handler(
       boost::bind(
           &TorrentResolver::piece_handler, this, _1, _2));
-  pc.set_metadata_handshake_handler(boost::bind(&TorrentResolver::handshake_handler, this, _1, _2));
-  pc.connect();
+  pc->set_metadata_handshake_handler(boost::bind(&TorrentResolver::handshake_handler, this, _1, _2));
+  pc->connect();
 }
 
 void TorrentResolver::piece_handler(int piece, const std::vector<uint8_t> &data) {
@@ -82,7 +84,6 @@ bool TorrentResolver::finished() const {
   for (auto &piece : pieces_) {
     n += piece.size();
   }
-  LOG(info) << "finished " << n << ", " << metadata_size_;
   return n == metadata_size_;
 }
 void TorrentResolver::set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler) {
@@ -94,6 +95,11 @@ void TorrentResolver::handshake_handler(int total_pieces, size_t metadata_size) 
   }
   this->pieces_.resize(total_pieces);
   this->metadata_size_ = metadata_size;
+}
+TorrentResolver::~TorrentResolver() {
+  for (auto &pc : peer_connections_) {
+    pc->close();
+  }
 }
 
 }

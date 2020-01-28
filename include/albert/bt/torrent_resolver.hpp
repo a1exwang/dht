@@ -12,6 +12,7 @@ namespace albert::bt {
 class TorrentResolver {
  public:
   TorrentResolver(boost::asio::io_service &io, krpc::NodeID info_hash, krpc::NodeID self);
+  ~TorrentResolver();
   void add_peer(uint32_t ip, uint16_t port);
 
   [[nodiscard]]
@@ -36,6 +37,6 @@ class TorrentResolver {
   boost::asio::io_service &io_;
   krpc::NodeID info_hash_;
   krpc::NodeID self_;
-  std::list<albert::bt::peer::PeerConnection> peer_connections_;
+  std::list<std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
 };
 }

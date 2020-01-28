@@ -17,6 +17,8 @@ constexpr uint8_t MessageTypeChoke = 0;
 constexpr uint8_t MessageTypeUnchoke = 1;
 constexpr uint8_t MessageTypeInterested = 2;
 constexpr uint8_t MessageTypeNotInterested = 3;
+constexpr uint8_t MessageTypeHave = 4;
+constexpr uint8_t MessageTypeBitfield = 5;
 constexpr uint8_t MessageTypeExtended = 20;
 constexpr uint8_t ExtendedMessageTypeRequest = 0;
 constexpr uint8_t ExtendedMessageTypeData = 1;
@@ -53,7 +55,7 @@ enum class ConnectionStatus {
   Connected,
   Disconnected
 };
-class PeerConnection {
+class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
  public:
   PeerConnection(
       boost::asio::io_context &io_context,
@@ -69,29 +71,36 @@ class PeerConnection {
   void set_piece_data_handler(std::function<void(int, const std::vector<uint8_t> &)> handler);
   void set_metadata_handshake_handler(std::function<void(int, size_t)> handler);
 
+  const Peer &peer() { return *peer_; }
+
  private:
+  /**
+   * Handlers
+   */
   void handle_connect(
       const boost::system::error_code& ec);
-  void send_handshake();
-  void send_metadata_request(int64_t piece);
-
-  uint32_t read_size();
-  bool has_data(size_t size) const { return this->read_ring_.size() >= size; }
-  void pop_data(void *output, size_t size);
-
   void handle_message(uint32_t size, uint8_t type, const std::vector<uint8_t> &data);
   void handle_extended_message(
       uint8_t extended_id,
       std::shared_ptr<bencoding::DictNode> msg,
       const std::vector<uint8_t> &appended_data);
-
   void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
 
-  uint8_t has_peer_extended_message(const std::string &message_name) const {
-    return extended_handshake_->dict().find(message_name) == extended_handshake_->dict().end();
-  }
-  uint8_t get_peer_extended_message_id(const std::string &message_name);
+  /**
+   * Send helpers
+   */
+  void send_handshake();
+  void send_metadata_request(int64_t piece);
 
+  /**
+   * helper functions
+   */
+  uint32_t read_size();
+  bool has_data(size_t size) const { return this->read_ring_.size() >= size; }
+  void pop_data(void *output, size_t size);
+
+  uint8_t has_peer_extended_message(const std::string &message_name) const;
+  uint8_t get_peer_extended_message_id(const std::string &message_name);
  private:
   // boost asio stuff
   boost::asio::ip::tcp::socket socket_;
