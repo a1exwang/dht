@@ -20,7 +20,7 @@ namespace po = boost::program_options;
 class Options {
  public:
   explicit Options(albert::dht::Config &config) :c(config) { }
-  bool parse(int argc, char** argv) {
+  void parse(int argc, char** argv) {
     std::string bootstrap_nodes;
     std::vector<std::string> config_fnames;
 
@@ -64,19 +64,17 @@ class Options {
 
     if(vm.count("help")) {
       std::cout << make_usage_string_(basename_(argv[0]), desc, p) << std::endl;
-      return false;
+      throw std::invalid_argument("I'm helping you");
     }
 
     if(vm.count("config") > 0) {
       config_fnames = vm["config"].as<std::vector<std::string> >();
 
-      for (size_t i = 0; i < config_fnames.size(); ++i) {
-        std::ifstream ifs(config_fnames[i].c_str());
+      for (auto &config_fname : config_fnames) {
+        std::ifstream ifs(config_fname.c_str());
 
-        if(ifs.fail())
-        {
-          std::cerr << "Error opening config file: " << config_fnames[i] << std::endl;
-          return false;
+        if(ifs.fail()) {
+          throw std::invalid_argument("Error opening config file: " + config_fname);
         }
 
         po::store(po::parse_config_file(ifs, all_options), vm);
@@ -92,8 +90,7 @@ class Options {
         std::vector<std::string> tokens;
         boost::algorithm::split(tokens, s, boost::is_any_of(":"));
         if (tokens.size() != 2) {
-          std::cerr << "Invalid bootstrap nodes format" << std::endl;
-          return false;
+          throw std::invalid_argument("Invalid bootstrap nodes format '" + s + "'");
         }
         c.bootstrap_nodes.emplace_back(tokens[0], tokens[1]);
       }
@@ -109,8 +106,6 @@ class Options {
       }
       c.self_node_id = ss_hex.str();
     }
-
-    return true;
   }
 
  private:

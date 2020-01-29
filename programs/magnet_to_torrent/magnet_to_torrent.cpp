@@ -11,7 +11,13 @@
 
 int main(int argc, char* argv[]) {
   // usage magnet_to_torrent --conf=dht.conf {bt_info_hash}
-  auto config = albert::dht::Config::from_command_line(argc, argv);
+  albert::dht::Config config;
+  try {
+    config = albert::dht::Config::from_command_line(argc, argv);
+  } catch (const std::exception &e) {
+    LOG(error) << "Failed to parse command line";
+    exit(1);
+  }
   albert::log::initialize_logger(config.debug);
   auto info_hash = config.resolve_torrent_info_hash;
   if (argc >= 1) {
