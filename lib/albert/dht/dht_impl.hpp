@@ -10,6 +10,7 @@
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
 #include <utility>
+#include <albert/dht/dht.hpp>
 
 using boost::asio::ip::udp;
 
@@ -32,15 +33,19 @@ class NodeID;
 }
 
 namespace albert::dht {
-using namespace std::string_literals;
 
 class DHT;
+class Transaction;
+class DHTImpl;
+
 namespace get_peers {
 class GetPeersManager;
 }
-class Transaction;
+namespace sample_infohashes {
+class SampleInfohashesManager;
+}
 
-class DHTImpl;
+using namespace std::string_literals;
 class Timer {
  public:
   typedef std::function<void()> Cancel;
@@ -66,6 +71,9 @@ class DHTImpl {
   explicit DHTImpl(DHT *dht, boost::asio::io_service &io);
   void bootstrap();
   void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
+  void sample_infohashes(std::function<void(const krpc::NodeID &info_hash)> handler);
+
+  void bootstrap_routing_table(RoutingTable &routing_table);
 
  private:
   friend class DHT;
@@ -76,7 +84,7 @@ class DHTImpl {
    */
 
   void handle_ping_response(const krpc::PingResponse &response);
-  void handle_find_node_response(const krpc::FindNodeResponse &response);
+  void handle_find_node_response(const krpc::FindNodeResponse &response, RoutingTable *routing_table);
   void handle_get_peers_response(
       const krpc::GetPeersResponse &response,
       const krpc::GetPeersQuery &query);
@@ -96,7 +104,7 @@ class DHTImpl {
   std::function<void(const boost::system::error_code &, size_t)>
   default_handle_send();
 
-  void find_self(const udp::endpoint &ep);
+  void find_self(RoutingTable &rt, const udp::endpoint &ep);
   void ping(const krpc::NodeInfo &target);
 
   [[nodiscard]]
@@ -128,6 +136,7 @@ class DHTImpl {
 
  private:
   DHT *dht_;
+  std::unique_ptr<sample_infohashes::SampleInfohashesManager> sample_infohashes_manager_;
 
   boost::asio::io_service &io;
 

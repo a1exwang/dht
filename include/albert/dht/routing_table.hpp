@@ -11,6 +11,7 @@
 #include <string>
 
 #include <boost/asio/ip/address_v4.hpp>
+#include <utility>
 
 namespace albert::dht {
 
@@ -161,8 +162,8 @@ class Bucket {
 
 class RoutingTable {
  public:
-  explicit RoutingTable(krpc::NodeID self_id, const std::string &save_path)
-      :root_(self_id, nullptr), self_id_(self_id), save_path_(save_path) {}
+  explicit RoutingTable(krpc::NodeID self_id, std::string name, std::string save_path)
+      :root_(self_id, nullptr), self_id_(self_id), save_path_(std::move(save_path)), name_(std::move(name)) {}
   ~RoutingTable();
 
   [[nodiscard]]
@@ -182,7 +183,7 @@ class RoutingTable {
   void encode(std::ostream &os);
 
   void serialize(std::ostream &os) const;
-  static std::unique_ptr<RoutingTable> deserialize(std::istream &is, const std::string &save_path);
+  static std::unique_ptr<RoutingTable> deserialize(std::istream &is, std::string name, std::string save_path);
 
   std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
@@ -199,6 +200,13 @@ class RoutingTable {
   [[nodiscard]]
   std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
 
+  [[nodiscard]]
+  const std::string &name() const { return name_; }
+  void name(std::string value) { name_ = std::move(value); }
+
+  [[nodiscard]]
+  krpc::NodeID self() const { return self_id_; }
+
  private:
   Bucket root_;
   krpc::NodeID self_id_;
@@ -208,6 +216,7 @@ class RoutingTable {
   size_t total_bad_node_deleted_{};
   size_t total_good_node_deleted_{};
   size_t total_questionable_node_deleted_{};
+  std::string name_;
 };
 
 }

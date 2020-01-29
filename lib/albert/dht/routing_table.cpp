@@ -510,6 +510,7 @@ std::list<Entry> RoutingTable::k_nearest_good_nodes(const krpc::NodeID &id, size
 }
 
 void RoutingTable::serialize(std::ostream &os) const {
+  os << name_ << std::endl;
   iterate_nodes([&os](const Entry &entry) {
     os << entry.id().to_string() << " "
        << boost::asio::ip::address_v4(entry.ip()) << " "
@@ -517,13 +518,17 @@ void RoutingTable::serialize(std::ostream &os) const {
   });
 }
 
-std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, const std::string &save_path) {
+std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, std::string new_name, std::string save_path) {
   std::string node_id;
   std::string ip;
   uint16_t port;
-  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), save_path);
+  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(new_name), std::move(save_path));
+  std::string name;
   while (is) {
     is >> node_id >> ip >> port;
+    if (!is) {
+      throw std::invalid_argument("Invalid routing table format: column parsing failure");
+    }
     auto node = krpc::NodeID::from_hex(node_id);
     auto ip_address = boost::asio::ip::address_v4::from_string(ip);
     ret->add_node(Entry{krpc::NodeInfo{node, ip_address.to_uint(), port}});
@@ -532,9 +537,11 @@ std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, const 
 }
 
 RoutingTable::~RoutingTable() {
-  LOG(info) << "Saving routing table to file '" << save_path_  << "'";
-  std::ofstream save_file(save_path_);
-  serialize(save_file);
+  if (!save_path_.empty()) {
+    LOG(info) << "Saving routing table to file '" << save_path_  << "'";
+    std::ofstream save_file(save_path_);
+    serialize(save_file);
+  }
 }
 
 void Entry::make_good_now() {

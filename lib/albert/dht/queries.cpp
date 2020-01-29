@@ -25,7 +25,7 @@ void DHTImpl::handle_ping_query(const krpc::PingQuery &query) {
 }
 
 void DHTImpl::handle_find_node_query(const krpc::FindNodeQuery &query) {
-  auto nodes = dht_->routing_table->k_nearest_good_nodes(query.target_id(), BucketMaxGoodItems);
+  auto nodes = dht_->main_routing_table_->k_nearest_good_nodes(query.target_id(), BucketMaxGoodItems);
   std::vector<krpc::NodeInfo> info;
   for (auto &node : nodes) {
     info.push_back(node.node_info());
@@ -68,11 +68,8 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   good_sender(query.sender_id());
 }
 void DHTImpl::handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {
-  // TODO
-//    LOG(warning) << "AnnouncePeer Query ignored" << std::endl;
-  LOG(info) << "Received info_hash from '" << query.sender_id().to_string() << " " << sender_endpoint << "' ih='"
-            << query.info_hash().to_string() << "'";
-  dht_->got_info_hash(query.info_hash());
+  // TODO:
+  LOG(debug) << "AnnouncePeer Query ignored" << std::endl;
   good_sender(query.sender_id());
 }
 

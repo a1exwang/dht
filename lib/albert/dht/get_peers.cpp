@@ -51,13 +51,9 @@ void DHTImpl::handle_get_peers_response(
   } else {
     LOG(debug) << "GetPeersRequest manager failed, info_hash not found";
   }
-  dht_->routing_table->add_node(
-      Entry{
-          response.sender_id(),
-          sender_endpoint.address().to_v4().to_uint(),
-          sender_endpoint.port()
-      });
-  dht_->routing_table->make_good_now(response.sender_id());
+
+  good_sender(response.sender_id());
+
 }
 
 void get_peers::GetPeersRequest::delete_node(const krpc::NodeID &id) {
@@ -172,7 +168,7 @@ void DHTImpl::get_peers(const krpc::NodeID &info_hash, const std::function<void(
   dht_->get_peers_manager_->add_callback(info_hash, callback);
 
   std::list<Entry> targets;
-  dht_->routing_table->iterate_nodes([&targets](const Entry &entry) {
+  dht_->main_routing_table_->iterate_nodes([&targets](const Entry &entry) {
     targets.push_back(entry);
   });
 

@@ -4,6 +4,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include <albert/dht/dht.hpp>
+#include <albert/dht/sample_infohashes/sample_infohashes_manager.hpp>
 #include <albert/krpc/krpc.hpp>
 #include "get_peers.hpp"
 
@@ -54,18 +55,19 @@ void DHTImpl::ping(const krpc::NodeInfo &target) {
   auto ping_query = std::make_shared<krpc::PingQuery>(self());
   udp::endpoint ep{boost::asio::ip::make_address_v4(target.ip()), target.port()};
   socket.async_send_to(
-      boost::asio::buffer(dht_->create_query(ping_query)),
+      boost::asio::buffer(dht_->create_query(ping_query, nullptr)),
       ep,
       default_handle_send());
   dht_->total_ping_query_sent_++;
 }
 
-void DHTImpl::find_self(const udp::endpoint &ep) {
+void DHTImpl::find_self(RoutingTable &rt, const udp::endpoint &ep) {
   // bootstrap by finding self
-  auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), self());
+  auto id = rt.self();
+  auto find_node_query = std::make_shared<krpc::FindNodeQuery>(id, id);
   socket.async_send_to(
       boost::asio::buffer(
-          dht_->create_query(find_node_query)
+          dht_->create_query(find_node_query, &rt)
       ),
       ep,
       boost::bind(
@@ -81,15 +83,17 @@ void DHTImpl::handle_send(const boost::system::error_code &error, std::size_t by
   }
 }
 void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
-  bool added = dht_->routing_table->add_node(
-      Entry(
-          sender_id,
-          sender_endpoint.address().to_v4().to_uint(),
-          sender_endpoint.port()));
-  if (added) {
-    dht_->routing_table->make_good_now(sender_id);
-  } else {
-    LOG(error) << "Routing table full. Did not add new good sender";
+  for (auto &rt : dht_->routing_tables_) {
+    bool added = rt->add_node(
+        Entry(
+            sender_id,
+            sender_endpoint.address().to_v4().to_uint(),
+            sender_endpoint.port()));
+    if (added) {
+      rt->make_good_now(sender_id);
+    } else {
+      LOG(error) << "Routing table(" + rt->name() + " ) full. Did not add new good sender";
+    }
   }
 }
 void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::NodeInfo &receiver) {
@@ -100,9 +104,33 @@ void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::No
   );
   udp::endpoint ep{boost::asio::ip::make_address_v4(receiver.ip()), receiver.port()};
   socket.async_send_to(
-      boost::asio::buffer(dht_->create_query(query)),
+      boost::asio::buffer(dht_->create_query(query, dht_->main_routing_table_)),
       ep,
       default_handle_send());
+}
+void DHTImpl::bootstrap_routing_table(RoutingTable &routing_table) {
+  // send bootstrap message to bootstrap nodes
+  for (const auto &item : this->dht_->config_.bootstrap_nodes) {
+    std::string node_host{}, node_port{};
+    std::tie(node_host, node_port) = item;
+
+    udp::resolver resolver(io);
+    udp::endpoint ep;
+    try {
+      for (auto &host : resolver.resolve(udp::resolver::query(node_host, node_port))) {
+        if (host.endpoint().protocol() == udp::v4()) {
+          ep = host.endpoint();
+          break;
+        }
+      }
+    } catch (std::exception &e) {
+      LOG(error) << "DHTImpl::bootstrap(), failed to resolve '" << node_host << ":" << node_port << ", skipping, reason: " << e.what();
+      break;
+    }
+
+    find_self(routing_table, ep);
+  }
+
 }
 
 }

@@ -22,7 +22,10 @@ typedef io_context io_service;
 namespace albert::dht {
 namespace get_peers {
   class GetPeersManager;
-};
+}
+namespace sample_infohashes {
+class SampleInfohashesManager;
+}
 
 class DHTImpl;
 class Config;
@@ -33,15 +36,15 @@ class DHT {
   explicit DHT(Config config);
   ~DHT();
 
-  std::string create_query(std::shared_ptr<krpc::Query> query);
+  // routing_table: The routing table the query belongs to. If routing_table is nullptr, it belongs all routing tables.
+  std::string create_query(std::shared_ptr<krpc::Query> query, RoutingTable *routing_table);
   std::string create_response(const krpc::Response &query);
   double get_current_time() const {
     return std::chrono::duration<double>(
         std::chrono::high_resolution_clock::now() - bootstrap_time_).count();
   }
 
-  void got_info_hash(const krpc::NodeID &info_hash);
-
+  void add_routing_table(std::unique_ptr<RoutingTable> routing_table);
  private:
   static krpc::NodeID parse_node_id(const std::string &s);
   Config config_;
@@ -50,7 +53,12 @@ class DHT {
   krpc::NodeInfo self_info_;
 
   dht::TransactionManager transaction_manager;
-  std::unique_ptr<dht::RoutingTable> routing_table;
+  std::list<std::unique_ptr<dht::RoutingTable>> routing_tables_;
+  dht::RoutingTable *main_routing_table_;
+
+  /**
+   * Function managers
+   */
   std::unique_ptr<get_peers::GetPeersManager> get_peers_manager_;
 
   /**
@@ -76,6 +84,7 @@ class DHTInterface {
   ~DHTInterface();
   void start();
   void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
+  void sample_infohashes(const std::function<void(const krpc::NodeID &info_hash)> handler);
  private:
   std::unique_ptr<DHT> dht_;
   std::unique_ptr<DHTImpl> impl_;

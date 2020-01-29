@@ -14,10 +14,13 @@ class Query;
 }
 
 namespace albert::dht {
+class RoutingTable;
+
 struct Transaction {
   std::string id_;
   std::string method_name_;
   std::shared_ptr<krpc::Query> query_node_;
+  RoutingTable *routing_table_;
 };
 
 class TransactionError : std::runtime_error {

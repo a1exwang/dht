@@ -10,10 +10,11 @@
  */
 
 namespace albert::dht {
-std::string DHT::create_query(std::shared_ptr<krpc::Query> query) {
-  transaction_manager.start([query, this](Transaction &transaction) {
+std::string DHT::create_query(std::shared_ptr<krpc::Query> query, RoutingTable *routing_table) {
+  transaction_manager.start([query, routing_table, this](Transaction &transaction) {
     transaction.method_name_ = query->method_name();
     transaction.query_node_ = query;
+    transaction.routing_table_ = routing_table;
     query->set_transaction_id(transaction.id_);
   });
   std::stringstream ss;
@@ -28,12 +29,8 @@ std::string DHT::create_response(const krpc::Response &query) {
   query.encode(ss, bencoding::EncodeMode::Bencoding);
   return ss.str();
 }
-void DHT::got_info_hash(const krpc::NodeID &info_hash) {
-  info_hash_list_stream_ << info_hash.to_string() << std::endl;
-  info_hash_list_stream_.flush();
-  if (!info_hash_list_stream_) {
-    LOG(error) << "Failed to write to info hash list file '" << config_.info_hash_save_path << "'";
-  }
+void DHT::add_routing_table(std::unique_ptr<RoutingTable> routing_table) {
+  routing_tables_.push_front(std::move(routing_table));
 }
 
 }

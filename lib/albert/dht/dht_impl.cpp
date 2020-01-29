@@ -8,6 +8,7 @@
 
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
+#include <albert/dht/sample_infohashes/sample_infohashes_manager.hpp>
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
 #include <albert/utils/utils.hpp>
@@ -22,6 +23,7 @@ using namespace std::string_literals;
 
 DHTImpl::DHTImpl(DHT *dht, boost::asio::io_service &io)
     : dht_(dht),
+      sample_infohashes_manager_(nullptr),
       io(io),
       socket(io,
              udp::endpoint(
@@ -60,13 +62,15 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     continue_receive();
     return;
   }
+  RoutingTable *routing_table = nullptr;
   try {
-    message = krpc::Message::decode(*node, [this, &query_node, &node](std::string id) -> std::string {
+    message = krpc::Message::decode(*node, [this, &query_node, &node, &routing_table](std::string id) -> std::string {
       std::string method_name{};
       if (dht_->transaction_manager.has_transaction(id)) {
-        this->dht_->transaction_manager.end(id, [&method_name, &query_node](const dht::Transaction &transaction) {
+        this->dht_->transaction_manager.end(id, [&method_name, &query_node, &routing_table](const dht::Transaction &transaction) {
           method_name = transaction.method_name_;
           query_node = transaction.query_node_;
+          routing_table = transaction.routing_table_;
         });
       } else {
         std::stringstream ss;
@@ -87,7 +91,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
   bool has_error = false;
   if (auto response = std::dynamic_pointer_cast<krpc::Response>(message); response) {
     if (auto find_node_response = std::dynamic_pointer_cast<krpc::FindNodeResponse>(response); find_node_response) {
-      handle_find_node_response(*find_node_response);
+      handle_find_node_response(*find_node_response, routing_table);
     } else if (auto ping_response = std::dynamic_pointer_cast<krpc::PingResponse>(response); ping_response) {
       handle_ping_response(*ping_response);
     } else if (auto get_peers_response = std::dynamic_pointer_cast<krpc::GetPeersResponse>(response); get_peers_response) {
@@ -124,12 +128,14 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
 
   // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
   if (!has_error) {
-    bool found = dht_->routing_table->make_good_now(
-        sender_endpoint.address().to_v4().to_uint(),
-        sender_endpoint.port()
-    );
-    if (!found) {
-      LOG(debug) << "A stranger has sent us a message, not updating routing table";
+    for (auto &rt : dht_->routing_tables_) {
+      bool found = dht_->main_routing_table_->make_good_now(
+          sender_endpoint.address().to_v4().to_uint(),
+          sender_endpoint.port()
+      );
+      if (!found) {
+        LOG(debug) << "A stranger has sent us a message, not updating routing table";
+      }
     }
   }
   continue_receive();
@@ -137,7 +143,6 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
 
 
 void DHTImpl::bootstrap() {
-
   // Start an asynchronous wait for one of the signals to occur.
   signals_.async_wait([this](const boost::system::error_code& error, int signal_number) {
     if (error) {
@@ -156,31 +161,20 @@ void DHTImpl::bootstrap() {
                   boost::asio::placeholders::error,
                   boost::asio::placeholders::bytes_transferred));
 
-  // send bootstrap message to bootstrap nodes
-  for (const auto &item : this->dht_->config_.bootstrap_nodes) {
-    std::string node_host{}, node_port{};
-    std::tie(node_host, node_port) = item;
-
-    udp::resolver resolver(io);
-    udp::endpoint ep;
-    try {
-      for (auto &host : resolver.resolve(udp::resolver::query(node_host, node_port))) {
-        if (host.endpoint().protocol() == udp::v4()) {
-          ep = host.endpoint();
-          break;
-        }
-      }
-    } catch (std::exception &e) {
-      LOG(error) << "DHTImpl::bootstrap(), failed to resolve '" << node_host << ":" << node_port << ", skipping, reason: " << e.what();
-      break;
-    }
-
-    find_self(ep);
-  }
-
   // start all timers
   for (auto &timer : timers_) {
     timer.fire_immediately();
+  }
+
+  // Bootstrapping routing table by finding self
+  bootstrap_routing_table(*dht_->main_routing_table_);
+}
+
+void DHTImpl::sample_infohashes(std::function<void(const krpc::NodeID &info_hash)> handler) {
+  if (sample_infohashes_manager_) {
+    throw std::invalid_argument("Cannot sample_infohashes already in progress");
+  } else {
+    sample_infohashes_manager_ = std::make_unique<sample_infohashes::SampleInfohashesManager>(*dht_, *this, std::move(handler));
   }
 }
 
@@ -189,31 +183,38 @@ void DHTImpl::bootstrap() {
  */
 
 DHT::DHT(Config config)
-    :config_(std::move(config)),
-     self_info_(parse_node_id(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
-     transaction_manager(),
-     get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
-     routing_table(nullptr),
-     info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app)
+    : config_(std::move(config)),
+      self_info_(parse_node_id(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
+      transaction_manager(),
+      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
+      main_routing_table_(nullptr),
+      info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app)
       {
+
   std::ifstream ifs(config_.routing_table_save_path);
+  std::unique_ptr<RoutingTable> rt;
   if (ifs) {
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
     try {
-      routing_table = dht::RoutingTable::deserialize(ifs, config_.routing_table_save_path);
-      LOG(info) << "Routing table size " << routing_table->known_node_count();
+      rt = dht::RoutingTable::deserialize(ifs, "main", config_.routing_table_save_path);
+      LOG(info) << "Routing table size " << rt->known_node_count();
     } catch (const std::exception &e) {
       LOG(info) << "Fail to load routing table, '" << e.what() << "', Creating empty routing table";
-      routing_table = std::make_unique<dht::RoutingTable>(
+      rt = std::make_unique<dht::RoutingTable>(
           parse_node_id(config_.self_node_id),
+          "main",
           config_.routing_table_save_path);
     }
   } else {
     LOG(info) << "Creating empty routing table";
-    routing_table = std::make_unique<dht::RoutingTable>(
+    rt = std::make_unique<dht::RoutingTable>(
         parse_node_id(config_.self_node_id),
+        "main",
         config_.routing_table_save_path);
   }
+  main_routing_table_ = rt.get();
+  routing_tables_.push_back(std::move(rt));
+
   if (!info_hash_list_stream_.is_open()) {
     throw std::runtime_error("Failed to open info hash list file '" + config_.info_hash_save_path + "'");
   }
@@ -231,7 +232,12 @@ DHTInterface::~DHTInterface() {}
 void DHTInterface::start() {
   impl_->bootstrap();
 }
-void DHTInterface::get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) { impl_->get_peers(info_hash, callback); }
+void DHTInterface::get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) {
+  impl_->get_peers(info_hash, callback);
+}
+void DHTInterface::sample_infohashes(const std::function<void (const krpc::NodeID &)> handler) {
+  impl_->sample_infohashes(std::move(handler));
+}
 
 void Timer::handler_timer(const boost::system::error_code &error) {
   if (error) {

@@ -14,10 +14,12 @@ add_library(
         timer_handlers.cpp
         get_peers.cpp
         config.cpp
+        sample_infohashes/sample_infohashes_manager.cpp
 )
 target_link_libraries(
         dht PUBLIC
         krpc transaction routing_table bencoding public_ip log utils
         Boost::program_options
 )
+
 
