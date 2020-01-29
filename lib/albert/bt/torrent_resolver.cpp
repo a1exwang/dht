@@ -35,8 +35,10 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
 void TorrentResolver::piece_handler(int piece, const std::vector<uint8_t> &data) {
   if (piece >= 0 && piece < pieces_.size()) {
     if (pieces_[piece].empty()) {
-      LOG(info) << "got piece " << piece << ", total " << pieces_.size();
       pieces_[piece] = data;
+      LOG(info) << "TorrentResolver: " << info_hash_.to_string() << ", got piece " << piece
+                << ", piece: " << pieces_got() << "/" << pieces_.size()
+                << ", data: " << data_got() << "/" << metadata_size_;
     } else {
       LOG(info) << "already have piece " << piece << ", ignored";
     }
@@ -80,11 +82,7 @@ std::vector<uint8_t> TorrentResolver::merged_pieces() const {
   return std::move(ret);
 }
 bool TorrentResolver::finished() const {
-  size_t n = 0;
-  for (auto &piece : pieces_) {
-    n += piece.size();
-  }
-  return n == metadata_size_;
+  return data_got() == metadata_size_;
 }
 void TorrentResolver::set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler) {
   torrent_handler_ = std::move(handler);
@@ -100,6 +98,21 @@ TorrentResolver::~TorrentResolver() {
   for (auto &pc : peer_connections_) {
     pc->close();
   }
+}
+size_t TorrentResolver::pieces_got() const {
+  size_t n = 0;
+  for (auto &piece : pieces_) {
+    if (!piece.empty())
+      n++;
+  }
+  return n;
+}
+size_t TorrentResolver::data_got() const {
+  size_t n = 0;
+  for (auto &piece : pieces_) {
+    n += piece.size();
+  }
+  return n;
 }
 
 }

@@ -33,6 +33,7 @@ class CommandLineUI {
       std::size_t bytes_transferred);
 
   void start();
+  void start_search();
 
  private:
   boost::asio::io_service &io_;
@@ -41,8 +42,13 @@ class CommandLineUI {
 
   boost::asio::posix::stream_descriptor input_;
   boost::asio::streambuf input_buffer_;
-  std::stringstream input_ss_;
+
+  /**
+   * The info hash of target to search.
+   * If empty read from stdin
+   */
   std::string target_info_hash_;
+  bool is_searching_ = false;
 };
 
 }

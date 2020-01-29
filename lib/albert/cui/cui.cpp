@@ -26,50 +26,37 @@ void CommandLineUI::handle_read_input(
     std::size_t bytes_transferred) {
 
   if (!error) {
-    auto ih = krpc::NodeID::from_hex(target_info_hash_);
-
-    auto resolver = bt_.resolve_torrent(ih, [](const bencoding::DictNode &torrent) {
-      std::ofstream f("torrent.torrent", std::ios::binary);
-      torrent.encode(f, bencoding::EncodeMode::Bencoding);
-      LOG(info) << "torrent saved";
-    });
-
-    dht_.get_peers(ih, [this, ih, resolver](uint32_t ip, uint16_t port) {
-      if (resolver.expired()) {
-        LOG(error) << "TorrentResolver gone before a get_peer request received";
-      } else {
-        resolver.lock()->add_peer(ip, port);
-      }
-    });
-
-    std::vector<char> data(input_buffer_.size());
-    input_buffer_.sgetn(data.data(), data.size());
-    input_buffer_.consume(input_buffer_.size());
-    input_ss_.write(data.data(), data.size());
-
-    std::string command_line = input_ss_.str();
-    std::vector<std::string> cmd;
-    boost::split(cmd, command_line, boost::is_any_of("\t "));
-
-    if (cmd.size() == 2) {
-      auto function_name = cmd[0];
-      if (function_name == "get-peers") {
-//        auto info_hash = cmd[1];
-//        dht_->get_peers(krpc::NodeID::from_hex(info_hash));
-      } else {
-        LOG(error) << "Unknown function name " << function_name;
-      }
+    if (is_searching_) {
+      input_buffer_.consume(input_buffer_.size());
+      LOG(error) << "Already in search, ignored";
     } else {
-      LOG(error) << "Invalid command size " << cmd.size();
-    }
+      std::vector<char> data(input_buffer_.size());
+      input_buffer_.sgetn(data.data(), data.size());
+      input_buffer_.consume(input_buffer_.size());
+      std::string command_line(data.data(), data.size());
+      std::vector<std::string> cmd;
+      boost::split(cmd, command_line, boost::is_any_of("\t "));
 
-  } else if (error == boost::asio::error::not_found) {
-    std::vector<char> data(input_buffer_.size());
-    input_buffer_.sgetn(data.data(), data.size());
-    input_buffer_.consume(input_buffer_.size());
-    input_ss_.write(data.data(), data.size());
-    /* ignore if new line not reached */
+      if (cmd.size() == 2) {
+        auto function_name = cmd[0];
+        if (function_name == "ih") {
+          target_info_hash_ = cmd[1];
+        } else {
+          if (target_info_hash_.empty()) {
+            LOG(error) << "Unknown function name " << function_name;
+          }
+        }
+      } else {
+        if (target_info_hash_.empty()) {
+          LOG(error) << "Invalid command size " << cmd.size();
+        }
+      }
+      if (!target_info_hash_.empty()) {
+        start_search();
+      }
+    }
   } else {
+    input_buffer_.consume(input_buffer_.size());
     LOG(error) << "Failed to read from stdin " << error.message();
   }
 
@@ -102,6 +89,26 @@ void CommandLineUI::start() {
           boost::asio::placeholders::error,
           boost::asio::placeholders::bytes_transferred)
   );
+}
+void CommandLineUI::start_search() {
+  this->is_searching_ = true;
+  auto ih = krpc::NodeID::from_hex(target_info_hash_);
+
+  auto resolver = bt_.resolve_torrent(ih, [this, ih](const bencoding::DictNode &torrent) {
+    is_searching_ = false;
+    auto file_name = ih.to_string() + ".torrent";
+    std::ofstream f(file_name, std::ios::binary);
+    torrent.encode(f, bencoding::EncodeMode::Bencoding);
+    LOG(info) << "torrent saved as '" << file_name;
+  });
+
+  dht_.get_peers(ih, [this, ih, resolver](uint32_t ip, uint16_t port) {
+    if (resolver.expired()) {
+      LOG(error) << "TorrentResolver gone before a get_peer request received";
+    } else {
+      resolver.lock()->add_peer(ip, port);
+    }
+  });
 }
 
 }

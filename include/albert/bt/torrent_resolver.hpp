@@ -18,7 +18,14 @@ class TorrentResolver {
   [[nodiscard]]
   bool finished() const;
 
-  [[nodiscard]] krpc::NodeID self() const;
+  [[nodiscard]]
+  size_t pieces_got() const;
+
+  [[nodiscard]]
+  size_t data_got() const;
+
+  [[nodiscard]]
+  krpc::NodeID self() const;
 
   void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
  private:
