@@ -73,7 +73,12 @@ class DHTImpl {
   void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
   void sample_infohashes(std::function<void(const krpc::NodeID &info_hash)> handler);
 
+  /* For SampleInfohashesManager */
   void bootstrap_routing_table(RoutingTable &routing_table);
+  void send_sample_infohashes_query(
+      const krpc::NodeID &target,
+      const krpc::NodeInfo &receiver
+  );
 
  private:
   friend class DHT;

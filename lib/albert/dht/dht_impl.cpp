@@ -174,7 +174,7 @@ void DHTImpl::sample_infohashes(std::function<void(const krpc::NodeID &info_hash
   if (sample_infohashes_manager_) {
     throw std::invalid_argument("Cannot sample_infohashes already in progress");
   } else {
-    sample_infohashes_manager_ = std::make_unique<sample_infohashes::SampleInfohashesManager>(*dht_, *this, std::move(handler));
+    sample_infohashes_manager_ = std::make_unique<sample_infohashes::SampleInfohashesManager>(io, *dht_, *this, std::move(handler));
   }
 }
 
@@ -199,7 +199,7 @@ DHT::DHT(Config config)
       rt = dht::RoutingTable::deserialize(ifs, "main", config_.routing_table_save_path);
       LOG(info) << "Routing table size " << rt->known_node_count();
     } catch (const std::exception &e) {
-      LOG(info) << "Fail to load routing table, '" << e.what() << "', Creating empty routing table";
+      LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
       rt = std::make_unique<dht::RoutingTable>(
           parse_node_id(config_.self_node_id),
           "main",

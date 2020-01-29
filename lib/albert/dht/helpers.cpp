@@ -132,5 +132,16 @@ void DHTImpl::bootstrap_routing_table(RoutingTable &routing_table) {
   }
 
 }
+void DHTImpl::send_sample_infohashes_query(const krpc::NodeID &target, const krpc::NodeInfo &receiver) {
+  auto query = std::make_shared<krpc::SampleInfohashesQuery>(
+      self(),
+      target
+  );
+  udp::endpoint ep{boost::asio::ip::make_address_v4(receiver.ip()), receiver.port()};
+  socket.async_send_to(
+      boost::asio::buffer(dht_->create_query(query, nullptr)),
+      ep,
+      default_handle_send());
+}
 
 }

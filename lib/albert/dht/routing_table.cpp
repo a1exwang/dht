@@ -510,7 +510,6 @@ std::list<Entry> RoutingTable::k_nearest_good_nodes(const krpc::NodeID &id, size
 }
 
 void RoutingTable::serialize(std::ostream &os) const {
-  os << name_ << std::endl;
   iterate_nodes([&os](const Entry &entry) {
     os << entry.id().to_string() << " "
        << boost::asio::ip::address_v4(entry.ip()) << " "
@@ -518,15 +517,14 @@ void RoutingTable::serialize(std::ostream &os) const {
   });
 }
 
-std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, std::string new_name, std::string save_path) {
+std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, std::string name, std::string save_path) {
   std::string node_id;
   std::string ip;
   uint16_t port;
-  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(new_name), std::move(save_path));
-  std::string name;
+  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path));
   while (is) {
     is >> node_id >> ip >> port;
-    if (!is) {
+    if (!is.good() && !is.eof()) {
       throw std::invalid_argument("Invalid routing table format: column parsing failure");
     }
     auto node = krpc::NodeID::from_hex(node_id);
