@@ -143,5 +143,8 @@ void DHTImpl::send_sample_infohashes_query(const krpc::NodeID &target, const krp
       ep,
       default_handle_send());
 }
+void DHTImpl::set_announce_peer_handler(std::function<void(const krpc::NodeID &info_hash)> handler) {
+  this->announce_peer_handler_ = std::move(handler);
+}
 
 }

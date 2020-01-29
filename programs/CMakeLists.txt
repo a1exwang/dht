@@ -1,3 +1,4 @@
 add_subdirectory(magnet_to_torrent)
 add_subdirectory(bt_peer)
 add_subdirectory(torrent_collector)
+add_subdirectory(torrent_collector2)

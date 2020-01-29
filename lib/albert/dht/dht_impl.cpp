@@ -238,6 +238,9 @@ void DHTInterface::get_peers(const krpc::NodeID &info_hash, const std::function<
 void DHTInterface::sample_infohashes(const std::function<void (const krpc::NodeID &)> handler) {
   impl_->sample_infohashes(std::move(handler));
 }
+void DHTInterface::set_announce_peer_handler(std::function<void(const krpc::NodeID &info_hash)> handler) {
+  impl_->set_announce_peer_handler(std::move(handler));
+}
 
 void Timer::handler_timer(const boost::system::error_code &error) {
   if (error) {

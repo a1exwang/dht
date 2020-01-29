@@ -80,6 +80,8 @@ class DHTImpl {
       const krpc::NodeInfo &receiver
   );
 
+  void set_announce_peer_handler(std::function<void (const krpc::NodeID &info_hash)> handler);
+
  private:
   friend class DHT;
   friend class Timer;
@@ -151,5 +153,8 @@ class DHTImpl {
   boost::asio::signal_set signals_;
 
   std::vector<Timer> timers_;
+
+
+  std::function<void (const krpc::NodeID &info_hash)> announce_peer_handler_;
 };
 }

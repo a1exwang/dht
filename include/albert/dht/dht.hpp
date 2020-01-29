@@ -85,6 +85,7 @@ class DHTInterface {
   void start();
   void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
   void sample_infohashes(const std::function<void(const krpc::NodeID &info_hash)> handler);
+  void set_announce_peer_handler(std::function<void (const krpc::NodeID &info_hash)> handler);
  private:
   std::unique_ptr<DHT> dht_;
   std::unique_ptr<DHTImpl> impl_;
