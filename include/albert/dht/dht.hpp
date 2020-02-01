@@ -1,15 +1,16 @@
 #pragma once
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
+
+#include <chrono>
 #include <fstream>
+#include <list>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <albert/krpc/krpc.hpp>
 #include <albert/dht/config.hpp>
-#include <albert/dht/routing_table.hpp>
 #include <albert/dht/transaction.hpp>
 
 
@@ -20,6 +21,9 @@ typedef io_context io_service;
 
 
 namespace albert::dht {
+namespace routing_table {
+class RoutingTable;
+}
 namespace get_peers {
   class GetPeersManager;
 }
@@ -37,14 +41,14 @@ class DHT {
   ~DHT();
 
   // routing_table: The routing table the query belongs to. If routing_table is nullptr, it belongs all routing tables.
-  std::string create_query(std::shared_ptr<krpc::Query> query, RoutingTable *routing_table);
+  std::string create_query(std::shared_ptr<krpc::Query> query, routing_table::RoutingTable *routing_table);
   std::string create_response(const krpc::Response &query);
   double get_current_time() const {
     return std::chrono::duration<double>(
         std::chrono::high_resolution_clock::now() - bootstrap_time_).count();
   }
 
-  void add_routing_table(std::unique_ptr<RoutingTable> routing_table);
+  void add_routing_table(std::unique_ptr<routing_table::RoutingTable> routing_table);
  private:
   static krpc::NodeID parse_node_id(const std::string &s);
   Config config_;
@@ -53,8 +57,8 @@ class DHT {
   krpc::NodeInfo self_info_;
 
   dht::TransactionManager transaction_manager;
-  std::list<std::unique_ptr<dht::RoutingTable>> routing_tables_;
-  dht::RoutingTable *main_routing_table_;
+  std::list<std::unique_ptr<dht::routing_table::RoutingTable>> routing_tables_;
+  dht::routing_table::RoutingTable *main_routing_table_;
 
   /**
    * Function managers

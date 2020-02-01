@@ -1,4 +1,4 @@
-#include <albert/dht/routing_table.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 
 #include <random>
 #include <memory>
@@ -8,9 +8,9 @@
 
 #include <albert/log/log.hpp>
 
-namespace albert::dht {
+namespace albert::dht::routing_table {
 
-void dht::Bucket::split_if_required() {
+void Bucket::split_if_required() {
   if (!(is_leaf() &&
       self_in_bucket() &&
       known_node_count() > BucketMaxGoodItems)){
@@ -22,11 +22,11 @@ void dht::Bucket::split_if_required() {
   //  each with half the range of the old bucket,
   //  and the nodes from the old bucket are distributed among the two new ones
 
-  left_ = std::make_unique<Bucket>(self_, this);
+  left_ = std::make_unique<Bucket>(self_, this, owner_);
   left_->prefix_ = prefix_;
   left_->prefix_length_ = prefix_length_ + 1;
 
-  right_ = std::make_unique<Bucket>(self_, this);
+  right_ = std::make_unique<Bucket>(self_, this, owner_);
   right_->prefix_ = prefix_ | krpc::NodeID::pow2(krpc::NodeIDBits - prefix_length_ - 1);
   right_->prefix_length_ = prefix_length_ + 1;
 
@@ -157,7 +157,7 @@ bool Bucket::is_full() const {
     if (self_in_bucket()) {
       return prefix_length_ >= (krpc::NodeIDBits - 1);
     } else {
-      return this->good_node_count() >= BucketMaxGoodItems;
+      return good_node_count() >= owner_->max_bucket_size();
     }
   } else {
     return left_->is_full() && right_->is_full();
@@ -388,22 +388,25 @@ std::tuple<size_t, size_t, size_t> Bucket::gc() {
       }
     }
     size_t n_good_deleted = 0, n_questionable_deleted = 0;
-    if (n_non_bad > BucketMaxItems) {
+
+    // If routing table is too big, we delete questionable nodes first, then good nodes.
+    if (n_non_bad > owner_->max_bucket_size()) {
       LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " non_bad count " << n_non_bad << " delete extra nodes";
-      for (size_t i = 0; i < std::min(n_non_bad - BucketMaxItems, questionable_nodes.size()); i++) {
+      for (size_t i = 0; i < std::min(n_non_bad - owner_->max_bucket_size(), questionable_nodes.size()); i++) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete questionable node " << questionable_nodes[i].to_string();
         nodes_to_delete.push_back(questionable_nodes[i]);
         n_questionable_deleted++;
       }
     }
-    if (n_good > BucketMaxGoodItems) {
+    if (n_good > owner_->max_bucket_size()) {
       LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " good count " << n_good << " delete extra nodes";
-      for (size_t i = 0; i < good_nodes.size() - BucketMaxGoodItems; i++) {
+      for (size_t i = 0; i < good_nodes.size() - owner_->max_bucket_size(); i++) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete good node " << good_nodes[i].to_string();
         nodes_to_delete.push_back(good_nodes[i]);
         n_good_deleted++;
       }
     }
+
     for (auto &id : nodes_to_delete) {
       known_nodes_.erase(id);
     }
@@ -517,11 +520,11 @@ void RoutingTable::serialize(std::ostream &os) const {
   });
 }
 
-std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, std::string name, std::string save_path) {
+std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, std::string name, std::string save_path, size_t max_bucket_size, bool delete_good_nodes) {
   std::string node_id;
   std::string ip;
   uint16_t port;
-  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path));
+  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path), max_bucket_size, delete_good_nodes);
   while (is) {
     is >> node_id >> ip >> port;
     if (!is.good() && !is.eof()) {

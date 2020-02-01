@@ -13,7 +13,7 @@
 #include <boost/asio/ip/address_v4.hpp>
 #include <utility>
 
-namespace albert::dht {
+namespace albert::dht::routing_table {
 
 const int MaxGoodNodeAliveMinutes = 15;
 
@@ -65,9 +65,10 @@ class Entry {
 //  Each bucket can only hold K nodes, currently eight, before becoming "full."
 const size_t BucketMaxGoodItems = 8;
 const size_t BucketMaxItems = 32;
+class RoutingTable;
 class Bucket {
  public:
-  Bucket(krpc::NodeID self_id, Bucket *parent) :self_(self_id), parent_(parent) {}
+  Bucket(krpc::NodeID self_id, Bucket *parent, const RoutingTable *owner) :self_(self_id), parent_(parent), owner_(owner) {}
   bool add_node(const Entry &entry);
 
   bool self_in_bucket() const;
@@ -158,12 +159,16 @@ class Bucket {
   Bucket *parent_;
   krpc::NodeID self_{};
 
+  const RoutingTable *owner_;
 };
 
 class RoutingTable {
  public:
-  explicit RoutingTable(krpc::NodeID self_id, std::string name, std::string save_path)
-      :root_(self_id, nullptr), self_id_(self_id), save_path_(std::move(save_path)), name_(std::move(name)) {}
+  explicit RoutingTable(krpc::NodeID self_id, std::string name, std::string save_path, size_t max_bucket_size, bool delete_good)
+      :root_(self_id, nullptr, this), self_id_(self_id),
+       save_path_(std::move(save_path)), name_(std::move(name)), max_bucket_size_(max_bucket_size),
+       delete_good_nodes_(delete_good) {}
+
   ~RoutingTable();
 
   [[nodiscard]]
@@ -183,7 +188,8 @@ class RoutingTable {
   void encode(std::ostream &os);
 
   void serialize(std::ostream &os) const;
-  static std::unique_ptr<RoutingTable> deserialize(std::istream &is, std::string name, std::string save_path);
+  static std::unique_ptr<RoutingTable> deserialize(std::istream &is, std::string name,
+                                                   std::string save_path, size_t max_bucket_size, bool delete_good_nodes);
 
   std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
@@ -207,6 +213,11 @@ class RoutingTable {
   [[nodiscard]]
   krpc::NodeID self() const { return self_id_; }
 
+  [[nodiscard]]
+  size_t max_bucket_size() const { return max_bucket_size_; }
+  [[nodiscard]]
+  bool delete_good_nodes() const { return delete_good_nodes_; }
+
  private:
   Bucket root_;
   krpc::NodeID self_id_;
@@ -216,7 +227,10 @@ class RoutingTable {
   size_t total_bad_node_deleted_{};
   size_t total_good_node_deleted_{};
   size_t total_questionable_node_deleted_{};
+
   std::string name_;
+  size_t max_bucket_size_ = BucketMaxGoodItems;
+  bool delete_good_nodes_ = true;
 };
 
 }

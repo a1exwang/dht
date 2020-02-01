@@ -4,6 +4,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include <albert/dht/dht.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/sample_infohashes/sample_infohashes_manager.hpp>
 #include <albert/krpc/krpc.hpp>
 #include "get_peers.hpp"
@@ -61,7 +62,7 @@ void DHTImpl::ping(const krpc::NodeInfo &target) {
   dht_->total_ping_query_sent_++;
 }
 
-void DHTImpl::find_self(RoutingTable &rt, const udp::endpoint &ep) {
+void DHTImpl::find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep) {
   // bootstrap by finding self
   auto id = rt.self();
   auto find_node_query = std::make_shared<krpc::FindNodeQuery>(id, id);
@@ -85,7 +86,7 @@ void DHTImpl::handle_send(const boost::system::error_code &error, std::size_t by
 void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
   for (auto &rt : dht_->routing_tables_) {
     bool added = rt->add_node(
-        Entry(
+        routing_table::Entry(
             sender_id,
             sender_endpoint.address().to_v4().to_uint(),
             sender_endpoint.port()));
@@ -108,7 +109,7 @@ void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::No
       ep,
       default_handle_send());
 }
-void DHTImpl::bootstrap_routing_table(RoutingTable &routing_table) {
+void DHTImpl::bootstrap_routing_table(routing_table::RoutingTable &routing_table) {
   // send bootstrap message to bootstrap nodes
   for (const auto &item : this->dht_->config_.bootstrap_nodes) {
     std::string node_host{}, node_port{};

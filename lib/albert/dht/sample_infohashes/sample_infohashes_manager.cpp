@@ -6,7 +6,7 @@
 #include <boost/asio/io_service.hpp>
 
 #include <albert/log/log.hpp>
-#include <albert/dht/routing_table.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/dht.hpp>
 #include "../dht_impl.hpp"
 
@@ -24,7 +24,7 @@ SampleInfohashesManager::SampleInfohashesManager(
      handler_(handler),
      action_timer_(io, boost::asio::chrono::seconds(0)) {
 
-  auto rt = std::make_unique<dht::RoutingTable>(current_target_, "sample_infohashes(" + current_target_.to_string() + ")", "");
+  auto rt = std::make_unique<dht::routing_table::RoutingTable>(current_target_, "sample_infohashes(" + current_target_.to_string() + ")", "", dht::routing_table::BucketMaxItems, true);
   routing_table_ = rt.get();
   dht_.add_routing_table(std::move(rt));
   impl_.bootstrap_routing_table(*routing_table_);
@@ -36,7 +36,7 @@ void SampleInfohashesManager::handle_timer(const boost::system::error_code &erro
   if (error) {
     throw std::runtime_error("timer error: " + error.message());
   }
-  routing_table_->iterate_nodes([this](const dht::Entry &entry) {
+  routing_table_->iterate_nodes([this](const dht::routing_table::Entry &entry) {
     if (traversed_.find(entry.id()) == traversed_.end()) {
       impl_.send_sample_infohashes_query(current_target_, entry.node_info());
     }

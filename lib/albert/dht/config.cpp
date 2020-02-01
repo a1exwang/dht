@@ -48,6 +48,8 @@ class Options {
         ("get-peers-refresh-interval", po::value(&c.get_peers_refresh_interval_seconds), "")
         ("get-peers-reqeust-expiration", po::value(&c.get_peers_request_expiration_seconds), "")
         ("resolve-torrent-info-hash", po::value(&c.resolve_torrent_info_hash), "")
+        ("max-routing-table-bucket-size", po::value(&c.max_routing_table_bucket_size), "")
+        ("delete-good-nodes", po::value(&c.delete_good_nodes), "")
         ;
 
     po::options_description all_options;
@@ -213,6 +215,8 @@ void Config::serialize(std::ostream &os) const {
   os << "get_peers_request_expiration_seconds = " << get_peers_request_expiration_seconds << std::endl;
   os << "debug = " << debug << std::endl;
   os << "resolve_torrent_info_hash = " << resolve_torrent_info_hash << std::endl;
+  os << "max_routing_table_bucket_size = " << max_routing_table_bucket_size << std::endl;
+  os << "delete_good_nodes = " << delete_good_nodes << std::endl;
   os << "# end of config." << std::endl;
 }
 

@@ -15,7 +15,9 @@ typedef io_context io_service;
 namespace albert::dht {
 class DHT;
 class DHTImpl;
+namespace routing_table {
 class RoutingTable;
+}
 }
 
 namespace albert::dht::sample_infohashes {
@@ -34,7 +36,7 @@ class SampleInfohashesManager {
   DHT &dht_;
 
   krpc::NodeID current_target_;
-  dht::RoutingTable *routing_table_;
+  dht::routing_table::RoutingTable *routing_table_;
   std::function<void (const krpc::NodeID &)> handler_;
   std::set<krpc::NodeID> traversed_;
 

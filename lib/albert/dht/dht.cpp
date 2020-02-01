@@ -10,7 +10,7 @@
  */
 
 namespace albert::dht {
-std::string DHT::create_query(std::shared_ptr<krpc::Query> query, RoutingTable *routing_table) {
+std::string DHT::create_query(std::shared_ptr<krpc::Query> query, routing_table::RoutingTable *routing_table) {
   transaction_manager.start([query, routing_table, this](Transaction &transaction) {
     transaction.method_name_ = query->method_name();
     transaction.query_node_ = query;
@@ -29,7 +29,7 @@ std::string DHT::create_response(const krpc::Response &query) {
   query.encode(ss, bencoding::EncodeMode::Bencoding);
   return ss.str();
 }
-void DHT::add_routing_table(std::unique_ptr<RoutingTable> routing_table) {
+void DHT::add_routing_table(std::unique_ptr<routing_table::RoutingTable> routing_table) {
   routing_tables_.push_front(std::move(routing_table));
 }
 

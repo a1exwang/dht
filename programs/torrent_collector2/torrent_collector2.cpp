@@ -36,9 +36,6 @@ int main(int argc, char* argv[]) {
     ofs << ih.to_string() << std::endl;
     ofs.flush();
   });
-//  dht.sample_infohashes([](const albert::krpc::NodeID &info_hash) {
-//    LOG(info) << "got info hash " << info_hash.to_string();
-//  });
 
 //  auto bt_id = albert::krpc::NodeID::random();
 //  LOG(info) << "BT peer ID " << bt_id.to_string();

@@ -8,6 +8,7 @@
 
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/sample_infohashes/sample_infohashes_manager.hpp>
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
@@ -62,7 +63,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     continue_receive();
     return;
   }
-  RoutingTable *routing_table = nullptr;
+  routing_table::RoutingTable *routing_table = nullptr;
   try {
     message = krpc::Message::decode(*node, [this, &query_node, &node, &routing_table](std::string id) -> std::string {
       std::string method_name{};
@@ -188,29 +189,29 @@ DHT::DHT(Config config)
       transaction_manager(),
       get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
       main_routing_table_(nullptr),
-      info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app)
-      {
+      info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app) {
 
   std::ifstream ifs(config_.routing_table_save_path);
-  std::unique_ptr<RoutingTable> rt;
+  std::unique_ptr<routing_table::RoutingTable> rt;
   if (ifs) {
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
     try {
-      rt = dht::RoutingTable::deserialize(ifs, "main", config_.routing_table_save_path);
+      rt = routing_table::RoutingTable::deserialize(ifs, "main",
+                                          config_.routing_table_save_path, config_.max_routing_table_bucket_size, config_.delete_good_nodes);
       LOG(info) << "Routing table size " << rt->known_node_count();
     } catch (const std::exception &e) {
       LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
-      rt = std::make_unique<dht::RoutingTable>(
-          parse_node_id(config_.self_node_id),
-          "main",
-          config_.routing_table_save_path);
     }
   } else {
     LOG(info) << "Creating empty routing table";
-    rt = std::make_unique<dht::RoutingTable>(
+  }
+  if (!rt) {
+    rt = std::make_unique<routing_table::RoutingTable>(
         parse_node_id(config_.self_node_id),
         "main",
-        config_.routing_table_save_path);
+        config_.routing_table_save_path,
+        config_.max_routing_table_bucket_size,
+        config_.delete_good_nodes);
   }
   main_routing_table_ = rt.get();
   routing_tables_.push_back(std::move(rt));

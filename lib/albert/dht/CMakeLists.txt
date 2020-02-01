@@ -1,8 +1,7 @@
+add_subdirectory(routing_table)
+
 add_library(transaction transaction.cpp)
 target_link_libraries(transaction PUBLIC krpc)
-
-add_library(routing_table routing_table.cpp)
-target_link_libraries(routing_table PUBLIC krpc)
 
 add_library(
         dht

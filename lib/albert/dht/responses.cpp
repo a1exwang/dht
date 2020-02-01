@@ -5,6 +5,7 @@
 #include <boost/bind.hpp>
 
 #include <albert/dht/dht.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/sample_infohashes/sample_infohashes_manager.hpp>
 #include <albert/dht/transaction.hpp>
 #include <albert/krpc/krpc.hpp>
@@ -19,10 +20,14 @@ void DHTImpl::handle_ping_response(const krpc::PingResponse &response) {
   dht_->total_ping_response_received_++;
 }
 
-void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response, RoutingTable *routing_table) {
+void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response, routing_table::RoutingTable *routing_table) {
   for (auto &target_node : response.nodes()) {
-    dht::Entry entry(target_node);
-    routing_table->add_node(entry);
+    if (target_node.id() == self()) {
+      LOG(info) << "got self id by find_node response from " << sender_endpoint << ", " << response.sender_id().to_string();
+    } else {
+      dht::routing_table::Entry entry(target_node);
+      routing_table->add_node(entry);
+    }
   }
   good_sender(response.sender_id());
 }

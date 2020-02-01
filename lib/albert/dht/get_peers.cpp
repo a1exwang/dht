@@ -5,6 +5,7 @@
 
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/bt/peer_connection.hpp>
 
 
@@ -167,8 +168,8 @@ void DHTImpl::get_peers(const krpc::NodeID &info_hash, const std::function<void(
 
   dht_->get_peers_manager_->add_callback(info_hash, callback);
 
-  std::list<Entry> targets;
-  dht_->main_routing_table_->iterate_nodes([&targets](const Entry &entry) {
+  std::list<routing_table::Entry> targets;
+  dht_->main_routing_table_->iterate_nodes([&targets](const routing_table::Entry &entry) {
     targets.push_back(entry);
   });
 

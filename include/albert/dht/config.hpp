@@ -30,6 +30,9 @@ struct Config {
   int get_peers_refresh_interval_seconds = 2;
   int get_peers_request_expiration_seconds = 30;
 
+  size_t max_routing_table_bucket_size = 8;
+  bool delete_good_nodes = true;
+
   bool debug = false;
   std::string resolve_torrent_info_hash;
 };

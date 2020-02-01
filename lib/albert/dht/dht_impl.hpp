@@ -74,7 +74,7 @@ class DHTImpl {
   void sample_infohashes(std::function<void(const krpc::NodeID &info_hash)> handler);
 
   /* For SampleInfohashesManager */
-  void bootstrap_routing_table(RoutingTable &routing_table);
+  void bootstrap_routing_table(routing_table::RoutingTable &routing_table);
   void send_sample_infohashes_query(
       const krpc::NodeID &target,
       const krpc::NodeInfo &receiver
@@ -91,7 +91,7 @@ class DHTImpl {
    */
 
   void handle_ping_response(const krpc::PingResponse &response);
-  void handle_find_node_response(const krpc::FindNodeResponse &response, RoutingTable *routing_table);
+  void handle_find_node_response(const krpc::FindNodeResponse &response, routing_table::RoutingTable *routing_table);
   void handle_get_peers_response(
       const krpc::GetPeersResponse &response,
       const krpc::GetPeersQuery &query);
@@ -111,7 +111,7 @@ class DHTImpl {
   std::function<void(const boost::system::error_code &, size_t)>
   default_handle_send();
 
-  void find_self(RoutingTable &rt, const udp::endpoint &ep);
+  void find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep);
   void ping(const krpc::NodeInfo &target);
 
   [[nodiscard]]

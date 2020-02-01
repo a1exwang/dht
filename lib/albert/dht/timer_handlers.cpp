@@ -7,6 +7,7 @@
 
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/log/log.hpp>
 
 namespace albert::dht {
@@ -48,7 +49,7 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
     if (!rt->is_full()) {
       LOG(debug) << "sending find node query and find_self()...";
       auto targets = rt->select_expand_route_targets();
-      Entry node;
+      routing_table::Entry node;
       krpc::NodeID target_id;
       for (auto &item : targets) {
         std::tie(node, target_id) = item;
@@ -70,7 +71,7 @@ void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
     rt->gc();
 
     // try refreshing questionable nodes
-    rt->iterate_nodes([this, &rt](const Entry &node) {
+    rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
       if (!node.is_good()) {
         if (!rt->require_response_now(node.id())) {
           LOG(error) << "Node gone when iterating " << node.to_string();
