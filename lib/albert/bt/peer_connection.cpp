@@ -64,9 +64,11 @@ PeerConnection::PeerConnection(
     boost::asio::io_context &io_context,
     const krpc::NodeID &self,
     const krpc::NodeID &target,
+    uint32_t bind_ip,
+    uint16_t bind_port,
     uint32_t ip,
     uint16_t port)
-    :socket_(io_context),
+    :socket_(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), 0)),
      self_(self),
      target_(target),
      peer_(std::make_unique<Peer>(ip, port))

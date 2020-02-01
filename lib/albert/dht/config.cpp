@@ -46,9 +46,10 @@ class Options {
         ("report-interval-seconds", po::value(&c.report_interval_seconds), "DHT routing table report interval in seconds")
         ("refresh-nodes-check-interval", po::value(&c.refresh_nodes_check_interval_seconds), "")
         ("get-peers-refresh-interval", po::value(&c.get_peers_refresh_interval_seconds), "")
-        ("get-peers-reqeust-expiration", po::value(&c.get_peers_request_expiration_seconds), "")
+        ("get-peers-request-expiration", po::value(&c.get_peers_request_expiration_seconds), "")
         ("resolve-torrent-info-hash", po::value(&c.resolve_torrent_info_hash), "")
         ("max-routing-table-bucket-size", po::value(&c.max_routing_table_bucket_size), "")
+        ("max-routing-table-known-nodes", po::value(&c.max_routing_table_known_nodes), "")
         ("delete-good-nodes", po::value(&c.delete_good_nodes), "")
         ("fake-id", po::value(&c.fake_id), "")
         ("fake-id-prefix-length", po::value(&c.fake_id_prefix_length), "")
@@ -219,6 +220,7 @@ void Config::serialize(std::ostream &os) const {
   os << "debug = " << debug << std::endl;
   os << "resolve_torrent_info_hash = " << resolve_torrent_info_hash << std::endl;
   os << "max_routing_table_bucket_size = " << max_routing_table_bucket_size << std::endl;
+  os << "max_routing_table_known_nodes = " << max_routing_table_known_nodes << std::endl;
   os << "delete_good_nodes = " << delete_good_nodes << std::endl;
   os << "fake_id = " << fake_id << std::endl;
   os << "fake_id_prefix_length = " << fake_id_prefix_length << std::endl;

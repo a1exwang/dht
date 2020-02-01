@@ -199,6 +199,7 @@ DHT::DHT(Config config)
           ifs, "main",
           config_.routing_table_save_path,
           config_.max_routing_table_bucket_size,
+          config_.max_routing_table_known_nodes,
           config_.delete_good_nodes,
           config_.fat_routing_table,
           boost::bind(&DHT::add_to_black_list, this, _1, _2));
@@ -215,6 +216,7 @@ DHT::DHT(Config config)
         "main",
         config_.routing_table_save_path,
         config_.max_routing_table_bucket_size,
+        config_.max_routing_table_known_nodes,
         config_.delete_good_nodes,
         config_.fat_routing_table,
         boost::bind(&DHT::add_to_black_list, this, _1, _2));

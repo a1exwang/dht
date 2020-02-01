@@ -128,7 +128,7 @@ class Bucket {
   // NOTE:
   //  This function is quite dangerous.
   //  as changing `entry.id_` may cause the map key and value.id inconsistent
-  void dfs_w(const std::function<void (Bucket&)> &cb);
+  bool dfs_w(const std::function<bool (Bucket&)> &cb);
   Entry *search(const krpc::NodeID &id);
 
   [[nodiscard]]
@@ -178,7 +178,7 @@ class Bucket {
 class RoutingTable {
  public:
   explicit RoutingTable(
-      krpc::NodeID self_id, std::string name, std::string save_path, size_t max_bucket_size,
+      krpc::NodeID self_id, std::string name, std::string save_path, size_t max_bucket_size, size_t max_known_nodes,
       bool delete_good, bool fat_mode, std::function<void(uint32_t, uint16_t)> black_list_node)
       :root_(self_id, this, fat_mode),
        self_id_(self_id),
@@ -187,7 +187,8 @@ class RoutingTable {
        max_bucket_size_(max_bucket_size),
        delete_good_nodes_(delete_good),
        fat_mode_(fat_mode),
-       black_list_node_(std::move(black_list_node)) {}
+       black_list_node_(std::move(black_list_node)),
+       max_known_nodes_(max_known_nodes) {}
 
   ~RoutingTable();
 
@@ -216,6 +217,7 @@ class RoutingTable {
       std::string name,
       std::string save_path,
       size_t max_bucket_size,
+      size_t max_known_nodes,
       bool delete_good_nodes,
       bool fat_mode,
       std::function<void(uint32_t, uint16_t)> black_list_node);
@@ -265,6 +267,8 @@ class RoutingTable {
   size_t max_bucket_size_ = BucketMaxGoodItems;
   bool delete_good_nodes_ = true;
   bool fat_mode_;
+
+  size_t max_known_nodes_;
 
   std::function<void(uint32_t, uint16_t)> black_list_node_;
 };

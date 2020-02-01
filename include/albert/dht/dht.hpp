@@ -6,7 +6,7 @@
 #include <fstream>
 #include <list>
 #include <memory>
-#include <set>
+#include <unordered_set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -81,7 +81,15 @@ class DHT {
   std::map<std::string, size_t> message_counters_;
   std::ofstream info_hash_list_stream_;
 
-  std::set<std::tuple<uint32_t, uint16_t>> black_list_;
+  struct BlackListHash {
+    size_t operator()(const std::tuple<uint32_t, uint16_t> &item) const {
+      uint32_t ip = 0;
+      uint16_t port = 0;
+      std::tie(ip, port) = item;
+      return (ip << 16u) | port;
+    }
+  };
+  std::unordered_set<std::tuple<uint32_t, uint16_t>, BlackListHash> black_list_;
 
   // This must be placed last
   // Hide network IO implementation details

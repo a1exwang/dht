@@ -22,10 +22,11 @@ void DHTImpl::continue_receive() {
 
 }
 std::function<void(const boost::system::error_code &, size_t)>
-DHTImpl::default_handle_send() {
+DHTImpl::default_handle_send(const std::string &description) {
   return boost::bind(
       &DHTImpl::handle_send,
       this,
+      description,
       boost::asio::placeholders::error,
       boost::asio::placeholders::bytes_transferred);
 }
@@ -49,16 +50,19 @@ void DHTImpl::send_find_node_response(
   socket.async_send_to(
       boost::asio::buffer(dht_->create_response(*response)),
       ep,
-      default_handle_send());
+      default_handle_send("find_node " + receiver.to_string()));
   dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 }
 void DHTImpl::ping(const krpc::NodeInfo &target) {
   auto ping_query = std::make_shared<krpc::PingQuery>(self());
   udp::endpoint ep{boost::asio::ip::make_address_v4(target.ip()), target.port()};
+
+  std::stringstream ep_ss;
+  ep_ss << ep;
   socket.async_send_to(
       boost::asio::buffer(dht_->create_query(ping_query, nullptr)),
       ep,
-      default_handle_send());
+      default_handle_send("ping " + ep_ss.str()));
   dht_->total_ping_query_sent_++;
 }
 
@@ -74,13 +78,14 @@ void DHTImpl::find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep
       boost::bind(
           &DHTImpl::handle_send,
           this,
+          std::string("find_self"),
           boost::asio::placeholders::error,
           boost::asio::placeholders::bytes_transferred));
 }
 
-void DHTImpl::handle_send(const boost::system::error_code &error, std::size_t bytes_transferred) {
+void DHTImpl::handle_send(const std::string &description, const boost::system::error_code &error, std::size_t bytes_transferred) {
   if (error || bytes_transferred <= 0) {
-    LOG(error) << "sendto failed: " << error.message();
+    LOG(error) << "DHTImpl: async_send_to '" << description << "' failed: " << error.message();
   }
 }
 void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
@@ -93,7 +98,7 @@ void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
     if (added) {
       rt->make_good_now(sender_id);
     } else {
-      LOG(error) << "Routing table(" + rt->name() + " ) full. Did not add new good sender";
+      LOG(debug) << "Routing table(" + rt->name() + " ) full. Did not add new good sender";
     }
   }
 }
@@ -107,7 +112,7 @@ void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::No
   socket.async_send_to(
       boost::asio::buffer(dht_->create_query(query, dht_->main_routing_table_)),
       ep,
-      default_handle_send());
+      default_handle_send("get_peers " + info_hash.to_string()));
 }
 void DHTImpl::bootstrap_routing_table(routing_table::RoutingTable &routing_table) {
   // send bootstrap message to bootstrap nodes
@@ -142,7 +147,7 @@ void DHTImpl::send_sample_infohashes_query(const krpc::NodeID &target, const krp
   socket.async_send_to(
       boost::asio::buffer(dht_->create_query(query, nullptr)),
       ep,
-      default_handle_send());
+      default_handle_send("sample_infohashes"));
 }
 void DHTImpl::set_announce_peer_handler(std::function<void(const krpc::NodeID &info_hash)> handler) {
   this->announce_peer_handler_ = std::move(handler);

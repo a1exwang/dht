@@ -113,7 +113,7 @@ class DHTImpl {
    */
   void continue_receive();
   std::function<void(const boost::system::error_code &, size_t)>
-  default_handle_send();
+  default_handle_send(const std::string &description);
 
   void find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep);
   void ping(const krpc::NodeInfo &target);
@@ -133,7 +133,7 @@ class DHTImpl {
       const krpc::NodeInfo &receiver
       );
 
-  void handle_send(const boost::system::error_code &error, std::size_t bytes_transferred);
+  void handle_send(const std::string &description, const boost::system::error_code &error, std::size_t bytes_transferred);
   void good_sender(const krpc::NodeID &sender_id);
 
   void bad_node(const krpc::NodeID &id);

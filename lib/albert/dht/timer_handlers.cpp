@@ -70,7 +70,7 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
         socket.async_send_to(
             boost::asio::buffer(dht_->create_query(find_node_query, rt.get())),
             ep,
-            default_handle_send());
+            default_handle_send("expand route find_node " + target_id.to_string()));
         find_self(*rt, udp::endpoint{boost::asio::ip::address_v4(node.ip()), node.port()});
       }
     }
@@ -84,9 +84,10 @@ void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
     // try refreshing questionable nodes
     rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
       if (!node.is_good()) {
-        if (!rt->require_response_now(node.id())) {
-          LOG(error) << "Node gone when iterating " << node.to_string();
-        }
+        const_cast<routing_table::Entry&>(node).require_response_now();
+//        if (!rt->require_response_now(node.id())) {
+//          LOG(error) << "Node gone when iterating " << node.to_string();
+//        }
         ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
       }
     });

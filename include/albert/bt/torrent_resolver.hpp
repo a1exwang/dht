@@ -11,7 +11,12 @@ typedef io_context io_service;
 namespace albert::bt {
 class TorrentResolver {
  public:
-  TorrentResolver(boost::asio::io_service &io, krpc::NodeID info_hash, krpc::NodeID self);
+  TorrentResolver(
+      boost::asio::io_service &io,
+      krpc::NodeID info_hash,
+      krpc::NodeID self,
+      uint32_t bind_ip,
+      uint16_t bind_port);
   ~TorrentResolver();
   void add_peer(uint32_t ip, uint16_t port);
 
@@ -36,6 +41,8 @@ class TorrentResolver {
   std::vector<uint8_t> merged_pieces() const;
 
  private:
+  uint32_t bind_ip_;
+  uint16_t bind_port_;
   std::vector<std::vector<uint8_t>> pieces_;
   size_t metadata_size_;
 

@@ -15,6 +15,14 @@
 
 namespace albert::bt {
 
+TorrentResolver::TorrentResolver(
+    boost::asio::io_service &io,
+    krpc::NodeID info_hash,
+    krpc::NodeID self,
+    uint32_t bind_ip,
+    uint16_t bind_port)
+    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port) { }
+
 void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
   using namespace boost::placeholders;
   peer_connections_.push_back(
@@ -22,6 +30,8 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
           io_,
           self(),
           info_hash_,
+          bind_ip_,
+          bind_port_,
           ip,
           port));
   auto &pc = peer_connections_.back();
@@ -68,9 +78,6 @@ void TorrentResolver::piece_handler(int piece, const std::vector<uint8_t> &data)
 krpc::NodeID TorrentResolver::self() const {
   return self_;
 }
-TorrentResolver::TorrentResolver(
-    boost::asio::io_service &io, krpc::NodeID info_hash, krpc::NodeID self)
-    :io_(io), info_hash_(info_hash), self_(self) { }
 
 std::vector<uint8_t> TorrentResolver::merged_pieces() const {
   std::vector<uint8_t> ret(metadata_size_);

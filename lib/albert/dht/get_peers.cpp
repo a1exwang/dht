@@ -168,10 +168,10 @@ void DHTImpl::get_peers(const krpc::NodeID &info_hash, const std::function<void(
 
   dht_->get_peers_manager_->add_callback(info_hash, callback);
 
-  std::list<routing_table::Entry> targets;
-  dht_->main_routing_table_->iterate_nodes([&targets](const routing_table::Entry &entry) {
-    targets.push_back(entry);
-  });
+  std::list<routing_table::Entry> targets = dht_->main_routing_table_->k_nearest_good_nodes(info_hash, 100);
+//  dht_->main_routing_table_->iterate_nodes([&targets](const routing_table::Entry &entry) {
+//    targets.push_back(entry);
+//  });
 
   int sent = 0;
   for (auto &entry : targets) {

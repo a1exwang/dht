@@ -45,6 +45,7 @@ uint32_t my_v4() {
       throw std::runtime_error("Failed to get my public IP v4 address, stdout: " + stdout);
     }
   }
+
   return ip;
 }
 

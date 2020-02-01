@@ -11,3 +11,5 @@
 - Enable clang-tidy. Check for bugprone-use-after-move
 
 - Save torrent file to disk
+
+- Ban multiple node ID with single endpoint

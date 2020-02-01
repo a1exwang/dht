@@ -31,6 +31,7 @@ struct Config {
   int get_peers_request_expiration_seconds = 30;
 
   size_t max_routing_table_bucket_size = 8;
+  size_t max_routing_table_known_nodes = 16384;
   bool delete_good_nodes = true;
 
   bool fake_id = false;

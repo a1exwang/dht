@@ -25,7 +25,7 @@ void DHTImpl::handle_ping_query(const krpc::PingQuery &query) {
           dht_->create_response(res)
       ),
       sender_endpoint,
-      default_handle_send());
+      default_handle_send("ping query to " + query.sender_id().to_string()));
   dht_->total_ping_query_received_++;
 
   good_sender(query.sender_id());
@@ -76,10 +76,10 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   socket.async_send_to(
       boost::asio::buffer(dht_->create_response(response)),
       sender_endpoint,
-      default_handle_send());
+      default_handle_send("get_peers query " + query.sender_id().to_string()));
   dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 
-  LOG(info) << "get_peers query received from " << sender_endpoint
+  LOG(debug) << "get_peers query received from " << sender_endpoint
             << " token: '" << albert::dht::utils::hexdump(token.data(), token.size(), false) << "'";
   good_sender(query.sender_id());
 }
@@ -94,7 +94,7 @@ void DHTImpl::handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {
   socket.async_send_to(
       boost::asio::buffer(dht_->create_response(response)),
       sender_endpoint,
-      default_handle_send());
+      default_handle_send("announce_peer query " + query.sender_id().to_string()));
   dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 
   good_sender(query.sender_id());

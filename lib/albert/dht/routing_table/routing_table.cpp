@@ -174,12 +174,17 @@ void Bucket::dfs(const std::function<void(const Bucket &)> &cb) const {
     right_->dfs(cb);
   }
 }
-void Bucket::dfs_w(const std::function<void(Bucket &)> &cb) {
-  cb(*this);
-  if (!is_leaf()) {
-    left_->dfs_w(cb);
-    right_->dfs_w(cb);
+bool Bucket::dfs_w(const std::function<bool (Bucket &)> &cb) {
+  if (cb(*this)) {
+    if (!is_leaf()) {
+      if (left_->dfs_w(cb)) {
+        return right_->dfs_w(cb);
+      }
+    } else {
+      return true;
+    }
   }
+  return false;
 }
 void Bucket::bfs(const std::function<void(const Bucket &)> &cb) const {
   std::list<const Bucket*> queue;
@@ -213,17 +218,18 @@ krpc::NodeID Bucket::min() const {
 bool Bucket::make_good_now(const krpc::NodeID &id) {
   bool found = false;
   Bucket *bucket = nullptr;
-  dfs_w([&found, id, &bucket](Bucket &b) {
+  dfs_w([&found, id, &bucket](Bucket &b) -> bool {
     if (!found && b.is_leaf()) {
       for (auto &item : b.known_nodes_) {
         if (item.first == id) {
           item.second.make_good_now();
           found = true;
           bucket = &b;
-          return;
+          return false;
         }
       }
     }
+    return true;
   });
   if (bucket) {
     bucket->split_if_required();
@@ -233,17 +239,18 @@ bool Bucket::make_good_now(const krpc::NodeID &id) {
 bool Bucket::make_good_now(uint32_t ip, uint16_t port) {
   bool found = false;
   Bucket *bucket = nullptr;
-  dfs_w([&found, &bucket, ip, port](Bucket &b) {
+  dfs_w([&found, &bucket, ip, port](Bucket &b) -> bool {
     if (!found && b.is_leaf()) {
       for (auto &item : b.known_nodes_) {
         if (item.second.ip() == ip && item.second.port() == port) {
           item.second.make_good_now();
           found = true;
           bucket = &b;
-          return;
+          return false;
         }
       }
     }
+    return true;
   });
   if (bucket) {
     bucket->split_if_required();
@@ -278,10 +285,12 @@ void Bucket::iterate_entries(const std::function<void(const Entry &)> &cb) const
   }
 }
 void Bucket::remove(const krpc::NodeID &id) {
-  dfs_w([id](Bucket &bucket) {
+  dfs_w([id](Bucket &bucket) -> bool {
     if (bucket.known_nodes_.find(id) != bucket.known_nodes_.end()) {
       bucket.known_nodes_.erase(id);
+      return false;
     }
+    return true;
   });
 }
 bool Bucket::require_response_now(const krpc::NodeID &target) {
@@ -296,15 +305,16 @@ bool Bucket::require_response_now(const krpc::NodeID &target) {
 Entry *Bucket::search(const krpc::NodeID &id) {
   Entry *ret = nullptr;
   bool found = false;
-  dfs_w([&ret, &found, &id](Bucket &bucket) {
+  dfs_w([&ret, &found, &id](Bucket &bucket) -> bool {
     if (!found && bucket.is_leaf()) {
       for (auto &item : bucket.known_nodes_) {
         if (item.first == id) {
           ret = &item.second;
-          return;
+          return false;
         }
       }
     }
+    return true;
   });
   return ret;
 
@@ -362,16 +372,16 @@ std::tuple<size_t, size_t, size_t> Bucket::gc() {
 }
 
 void Bucket::make_bad(uint32_t ip, uint16_t port) {
-  size_t count = 0;
-  dfs_w([&count, ip, port](Bucket &b) {
+  dfs_w([ip, port](Bucket &b) -> bool {
     if (b.is_leaf()) {
       for (auto &item : b.known_nodes_) {
         if (item.second.ip() == ip && item.second.port() == port) {
           item.second.make_bad();
-          count++;
+          return false;
         }
       }
     }
+    return true;
   });
 }
 
@@ -434,9 +444,13 @@ bool RoutingTable::make_good_now(const krpc::NodeID &id) {
   return root_.make_good_now(id);
 }
 bool RoutingTable::add_node(Entry entry) {
-  if (root_.add_node(entry)) {
-    total_node_added_++;
-    return true;
+  if (root_.total_known_node_count() <= max_known_nodes_) {
+    if (root_.add_node(entry)) {
+      total_node_added_++;
+      return true;
+    } else {
+      return false;
+    }
   } else {
     return false;
   }
@@ -491,20 +505,22 @@ std::list<Entry> RoutingTable::k_nearest_good_nodes(const krpc::NodeID &id, size
 
 void RoutingTable::serialize(std::ostream &os) const {
   iterate_nodes([&os](const Entry &entry) {
-    os << entry.id().to_string() << " "
-       << boost::asio::ip::address_v4(entry.ip()) << " "
-       << entry.port() << std::endl;
+    if (entry.is_good()) {
+      os << entry.id().to_string() << " "
+         << boost::asio::ip::address_v4(entry.ip()) << " "
+         << entry.port() << std::endl;
+    }
   });
 }
 
 std::unique_ptr<RoutingTable> RoutingTable::deserialize(
-    std::istream &is, std::string name, std::string save_path, size_t max_bucket_size,
+    std::istream &is, std::string name, std::string save_path, size_t max_bucket_size, size_t max_known_nodes,
     bool delete_good_nodes, bool fat_mode,
     std::function<void(uint32_t, uint16_t)> black_list_node) {
   std::string node_id;
   std::string ip;
   uint16_t port;
-  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path), max_bucket_size,
+  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path), max_bucket_size, max_known_nodes,
                                             delete_good_nodes, fat_mode, std::move(black_list_node));
   while (is) {
     is >> node_id >> ip >> port;

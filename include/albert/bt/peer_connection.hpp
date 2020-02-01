@@ -61,6 +61,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       boost::asio::io_context &io_context,
       const krpc::NodeID &self,
       const krpc::NodeID &target,
+      uint32_t bind_ip,
+      uint16_t bind_port,
       uint32_t ip,
       uint16_t port);
   ~PeerConnection();
@@ -112,9 +114,9 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   krpc::NodeID target_;
   krpc::NodeID peer_id_;
 
-  std::array<uint8_t, 65536> read_buffer_;
-  std::vector<uint8_t> read_ring_;
-  std::array<uint8_t, 65536> write_buffer_;
+  std::array<uint8_t, 65536> read_buffer_{};
+  std::vector<uint8_t> read_ring_{};
+  std::array<uint8_t, 65536> write_buffer_{};
 
   std::unique_ptr<Peer> peer_;
   ConnectionStatus connection_status_ = ConnectionStatus::Connecting;
@@ -125,7 +127,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   bool peer_choke_ = true;
 
   uint32_t last_message_size_ = 0;
-  size_t piece_count_;
+  size_t piece_count_ = 0;
 
   std::shared_ptr<bencoding::DictNode> extended_handshake_;
   std::map<std::string, std::shared_ptr<bencoding::Node>> m_dict_;

@@ -28,12 +28,14 @@ int main(int argc, char* argv[]) {
 
   boost::asio::io_service io_service{};
 
+  auto bind_ip = boost::asio::ip::address_v4::from_string(config.bind_ip).to_uint();
+  uint16_t bind_port = config.bind_port;
   albert::dht::DHTInterface dht(std::move(config), io_service);
   dht.start();
 
   auto bt_id = albert::krpc::NodeID::random();
   LOG(info) << "BT peer ID " << bt_id.to_string();
-  albert::bt::BT bt(io_service, bt_id);
+  albert::bt::BT bt(io_service, bt_id, bind_ip, bind_port);
   bt.start();
 
   std::ofstream ofs("ih.txt");
@@ -45,20 +47,20 @@ int main(int argc, char* argv[]) {
       ofs << ih.to_string() << std::endl;
       ofs.flush();
 
-      auto resolver = bt.resolve_torrent(ih, [ih](const albert::bencoding::DictNode &torrent) {
-        auto file_name = ih.to_string() + ".torrent";
-        std::ofstream f(file_name, std::ios::binary);
-        torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
-        LOG(info) << "torrent saved as '" << file_name;
-      });
-
-      dht.get_peers(ih, [ih, resolver](uint32_t ip, uint16_t port) {
-        if (resolver.expired()) {
-          LOG(error) << "TorrentResolver gone before a get_peer request received";
-        } else {
-          resolver.lock()->add_peer(ip, port);
-        }
-      });
+//      auto resolver = bt.resolve_torrent(ih, [ih](const albert::bencoding::DictNode &torrent) {
+//        auto file_name = ih.to_string() + ".torrent";
+//        std::ofstream f(file_name, std::ios::binary);
+//        torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
+//        LOG(info) << "torrent saved as '" << file_name;
+//      });
+//
+//      dht.get_peers(ih, [ih, resolver](uint32_t ip, uint16_t port) {
+//        if (resolver.expired()) {
+//          LOG(error) << "TorrentResolver gone before a get_peer request received";
+//        } else {
+//          resolver.lock()->add_peer(ip, port);
+//        }
+//      });
     }
   });
 
