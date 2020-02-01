@@ -419,6 +419,20 @@ std::tuple<size_t, size_t, size_t> Bucket::gc() {
   }
 }
 
+void Bucket::make_bad(uint32_t ip, uint16_t port) {
+  size_t count = 0;
+  dfs_w([&count, ip, port](Bucket &b) {
+    if (b.is_leaf()) {
+      for (auto &item : b.known_nodes_) {
+        if (item.second.ip() == ip && item.second.port() == port) {
+          item.second.make_bad();
+          count++;
+        }
+      }
+    }
+  });
+}
+
 std::list<std::tuple<Entry, krpc::NodeID>> RoutingTable::select_expand_route_targets() {
   std::list<std::tuple<Entry, krpc::NodeID>> entries;
   root_.bfs([&entries](const Bucket &bucket) {
@@ -544,11 +558,10 @@ RoutingTable::~RoutingTable() {
     serialize(save_file);
   }
 }
-
-void Entry::make_good_now() {
-  this->last_seen_ = std::chrono::high_resolution_clock::now();
-  this->response_required = false;
+void RoutingTable::make_bad(uint32_t ip, uint16_t port) {
+  root_.make_bad(ip, port);
 }
+
 bool Entry::is_good() const {
   // A good node is a node has responded to one of our queries within the last 15 minutes,
   // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
@@ -556,6 +569,14 @@ bool Entry::is_good() const {
   return !is_bad() &&
       (std::chrono::high_resolution_clock::now() - last_seen_) < std::chrono::minutes(MaxGoodNodeAliveMinutes);
 }
+
+bool Entry::is_bad() const {
+  if (!response_required)
+    return false;
+
+  return (std::chrono::high_resolution_clock::now() - last_require_response_) > krpc::KRPCTimeout || bad_;
+}
+
 void Entry::require_response_now() {
   if (!response_required) {
     response_required = true;
@@ -563,10 +584,13 @@ void Entry::require_response_now() {
     LOG(trace) << "require response " << to_string();
   }
 }
-bool Entry::is_bad() const {
-  if (!response_required)
-    return false;
 
-  return (std::chrono::high_resolution_clock::now() - last_require_response_) > krpc::KRPCTimeout;
+void Entry::make_good_now() {
+  this->last_seen_ = std::chrono::high_resolution_clock::now();
+  this->response_required = false;
+}
+
+void Entry::make_bad() {
+  bad_ = true;
 }
 }

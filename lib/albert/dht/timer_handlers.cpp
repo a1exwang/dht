@@ -29,6 +29,13 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
       LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
       LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
     }
+    LOG(info) << "Peer black list " << black_list_.size() << " in total: ";
+    for (auto &item : black_list_) {
+      uint32_t ip = 0;
+      uint16_t port = 0;
+      std::tie(ip, port) = item;
+      LOG(info) << "  " << boost::asio::ip::address_v4(ip) << ":" << port;
+    }
   } else {
     LOG(info) << "main routing table "
               << dht_->main_routing_table_->max_prefix_length() << " "
@@ -42,6 +49,7 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
                   << rt->known_node_count();
       }
     }
+    LOG(info) << "total banned " << black_list_.size();
   }
 }
 void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {

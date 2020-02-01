@@ -156,5 +156,16 @@ krpc::NodeID DHTImpl::maybe_fake_self(const krpc::NodeID &target) const {
   }
   return self_id;
 }
+void DHTImpl::bad_sender() {
+  uint32_t ip = sender_endpoint.address().to_v4().to_uint();
+  uint16_t port = sender_endpoint.port();
+  black_list_.insert({ip, port});
+  for (auto &rt : dht_->routing_tables_) {
+    rt->make_bad(ip, port);
+  }
+}
+bool DHTImpl::in_black_list(uint32_t ip, uint16_t port) const {
+  return this->black_list_.find({ip, port}) != black_list_.end();
+}
 
 }

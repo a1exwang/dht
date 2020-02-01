@@ -48,6 +48,7 @@ class Entry {
   bool is_bad() const;
 
   void make_good_now();
+  void make_bad();
   void require_response_now();
 
   [[nodiscard]]
@@ -59,6 +60,8 @@ class Entry {
   std::chrono::high_resolution_clock::time_point last_seen_{};
   bool response_required = false;
   std::chrono::high_resolution_clock::time_point last_require_response_{};
+
+  bool bad_ = false;
 };
 
 // ref:
@@ -98,6 +101,7 @@ class Bucket {
 
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
+  void make_bad(uint32_t ip, uint16_t port);
 
   void split_if_required();
 
@@ -199,6 +203,8 @@ class RoutingTable {
 
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
+
+  void make_bad(uint32_t ip, uint16_t port);
 
   void iterate_nodes(const std::function<void (const Entry &)> &callback) const;
   void gc();

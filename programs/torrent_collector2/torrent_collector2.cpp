@@ -1,4 +1,5 @@
 #include <exception>
+#include <set>
 #include <sstream>
 
 #include <albert/bt/bt.hpp>
@@ -31,10 +32,14 @@ int main(int argc, char* argv[]) {
 
 
   std::ofstream ofs("ih.txt");
-  dht.set_announce_peer_handler([&ofs](const albert::krpc::NodeID &ih) {
-    LOG(info) << "announce_peer " << ih.to_string();
-    ofs << ih.to_string() << std::endl;
-    ofs.flush();
+  std::set<albert::krpc::NodeID> ihs;
+  dht.set_announce_peer_handler([&ofs, &ihs](const albert::krpc::NodeID &ih) {
+    auto result = ihs.insert(ih);
+    if (result.second) {
+      LOG(info) << "announce_peer " << ih.to_string();
+      ofs << ih.to_string() << std::endl;
+      ofs.flush();
+    }
   });
 
 //  auto bt_id = albert::krpc::NodeID::random();

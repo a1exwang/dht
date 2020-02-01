@@ -1,7 +1,11 @@
 #pragma once
 #include <array>
 #include <functional>
+#include <memory>
+#include <set>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
@@ -132,6 +136,11 @@ class DHTImpl {
   void handle_send(const boost::system::error_code &error, std::size_t bytes_transferred);
   void good_sender(const krpc::NodeID &sender_id);
 
+  void bad_node(const krpc::NodeID &id);
+  void bad_sender();
+  bool in_black_list(uint32_t ip, uint16_t port) const;
+
+
   /**
    * Timer Handlers
    *
@@ -157,7 +166,8 @@ class DHTImpl {
 
   std::vector<Timer> timers_;
 
-
   std::function<void (const krpc::NodeID &info_hash)> announce_peer_handler_;
+
+  std::set<std::tuple<uint32_t, uint16_t>> black_list_;
 };
 }

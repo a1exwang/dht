@@ -26,7 +26,12 @@ void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response, 
       LOG(info) << "got self id by find_node response from " << sender_endpoint << ", " << response.sender_id().to_string();
     } else {
       dht::routing_table::Entry entry(target_node);
-      routing_table->add_node(entry);
+      // not self and not in black list
+      if (!(target_node.id() == self()) &&
+          !(target_node.ip() == dht_->self_info_.ip() && target_node.port() == dht_->self_info_.port()) &&
+          !in_black_list(target_node.ip(), target_node.port())) {
+        routing_table->add_node(entry);
+      }
     }
   }
   good_sender(response.sender_id());

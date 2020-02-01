@@ -50,6 +50,12 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     return;
   }
 
+  if (in_black_list(sender_endpoint.address().to_v4().to_uint(), sender_endpoint.port())) {
+    LOG(info) << "ignored peer from black list: " << sender_endpoint;
+    continue_receive();
+    return;
+  }
+
   // parse receive data into a Message
   std::stringstream ss(std::string(receive_buffer.data(), bytes_transferred));
   std::shared_ptr<krpc::Message> message;
@@ -60,6 +66,8 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
   } catch (const bencoding::InvalidBencoding &e) {
     LOG(error) << "Invalid bencoding, e: '" << e.what() << "', ignored " << std::endl
                << albert::dht::utils::hexdump(receive_buffer.data(), bytes_transferred, true);
+    LOG(info) << "banned " << sender_endpoint << " due to invalid bencoding";
+    bad_sender();
     continue_receive();
     return;
   }
@@ -85,11 +93,12 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     std::stringstream ss;
     node->encode(ss, bencoding::EncodeMode::JSON);
     LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
+    LOG(info) << "banned " << sender_endpoint << " due to invalid message";
+    bad_sender();
     continue_receive();
     return;
   }
 
-  bool has_error = false;
   if (auto response = std::dynamic_pointer_cast<krpc::Response>(message); response) {
     if (auto find_node_response = std::dynamic_pointer_cast<krpc::FindNodeResponse>(response); find_node_response) {
       handle_find_node_response(*find_node_response, routing_table);
@@ -100,12 +109,13 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
         handle_get_peers_response(*get_peers_response, *q);
       } else {
         LOG(error) << "Invalid get_peers response, Query type not get_peers";
+        LOG(info) << "banned " << sender_endpoint << " due to invalid get_peers response";
+        bad_sender();
       }
     } else if (auto sample_infohashes_res = std::dynamic_pointer_cast<krpc::SampleInfohashesResponse>(response); sample_infohashes_res) {
       handle_sample_infohashes_response(*sample_infohashes_res);
     } else {
       LOG(error) << "Warning! response type not supported";
-      has_error = true;
     }
   } else if (auto query = std::dynamic_pointer_cast<krpc::Query>(message); query) {
     if (auto ping = std::dynamic_pointer_cast<krpc::PingQuery>(query); ping) {
@@ -118,27 +128,17 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       handle_announce_peer_query(*announce_peer_query);
     } else {
       LOG(error) << "Warning! query type not supported";
-      has_error = true;
     }
   } else if (auto dht_error = std::dynamic_pointer_cast<krpc::Error>(message); dht_error) {
     LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "' method: " << query_method_name;
+    LOG(info) << "banned " << sender_endpoint << " due to error message";
+    bad_sender();
   } else {
     LOG(error) << "Unknown message type";
-    has_error = true;
+    LOG(info) << "banned " << sender_endpoint << " due to unknown message type";
+    bad_sender();
   }
 
-  // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
-  if (!has_error) {
-    for (auto &rt : dht_->routing_tables_) {
-      bool found = dht_->main_routing_table_->make_good_now(
-          sender_endpoint.address().to_v4().to_uint(),
-          sender_endpoint.port()
-      );
-      if (!found) {
-        LOG(debug) << "A stranger has sent us a message, not updating routing table";
-      }
-    }
-  }
   continue_receive();
 }
 
