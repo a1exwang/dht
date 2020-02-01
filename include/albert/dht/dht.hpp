@@ -6,7 +6,9 @@
 #include <fstream>
 #include <list>
 #include <memory>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <albert/krpc/krpc.hpp>
@@ -49,6 +51,9 @@ class DHT {
   }
 
   void add_routing_table(std::unique_ptr<routing_table::RoutingTable> routing_table);
+
+  bool in_black_list(uint32_t ip, uint16_t port) const;
+  void add_to_black_list(uint32_t ip, uint16_t port);
  private:
   static krpc::NodeID parse_node_id(const std::string &s);
   Config config_;
@@ -75,6 +80,8 @@ class DHT {
 
   std::map<std::string, size_t> message_counters_;
   std::ofstream info_hash_list_stream_;
+
+  std::set<std::tuple<uint32_t, uint16_t>> black_list_;
 
   // This must be placed last
   // Hide network IO implementation details

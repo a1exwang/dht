@@ -12,7 +12,7 @@ namespace albert::dht::routing_table {
 
 void Bucket::split_if_required() {
   if (!(is_leaf() &&
-      self_in_bucket() &&
+      (fat_mode_ || self_in_bucket()) &&
       known_node_count() > BucketMaxGoodItems)){
     return;
   }
@@ -22,11 +22,11 @@ void Bucket::split_if_required() {
   //  each with half the range of the old bucket,
   //  and the nodes from the old bucket are distributed among the two new ones
 
-  left_ = std::make_unique<Bucket>(self_, this, owner_);
+  left_ = std::make_unique<Bucket>(this, owner_);
   left_->prefix_ = prefix_;
   left_->prefix_length_ = prefix_length_ + 1;
 
-  right_ = std::make_unique<Bucket>(self_, this, owner_);
+  right_ = std::make_unique<Bucket>(this, owner_);
   right_->prefix_ = prefix_ | krpc::NodeID::pow2(krpc::NodeIDBits - prefix_length_ - 1);
   right_->prefix_length_ = prefix_length_ + 1;
 
@@ -100,49 +100,6 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const krpc::NodeID &id, size_t k) 
         break;
       }
     }
-//    auto itl = good_nodes_.lower_bound(id);
-//    // We return the nearest using a merge-sort like algorithm
-//    if (itl == good_nodes_.end()) {
-//      if (itl == good_nodes_.begin()) {
-//        // good_nodes_ is empty
-//      } else {
-//        itl--;
-//        results.push_back(itl->second);
-//        for (int i = 0; i < k && itl != good_nodes_.begin(); i++, itl--) {
-//          results.push_back(itl->second);
-//        }
-//      }
-//    } else /* itl != goode_nodes.end() */ {
-//      results.push_back(itl->second);
-//      auto itr = itl;
-//      itr++;
-//      // From now one.
-//      // `itl` always points to the left-most element that we've used,
-//      //    and `it` cannot point to a non-existing position.
-//      // `itl` always moves left.
-//
-//      // `itr` always points to the left-most element that we've not used.
-//      //    and `it2` may point to a non-existing position(e.g. good_nodes.end()).
-//      // `itr` always moves right.
-//      while (results.size() < k) {
-//        if (itl == good_nodes_.begin() && itr == good_nodes_.end()) {
-//          break;
-//        } else if (itl == good_nodes_.begin()) {
-//          results.push_back((itr++)->second);
-//        } else if (itr == good_nodes_.end()) {
-//          results.push_front((--itl)->second);
-//        } else {
-//          auto itl_bk = itl;
-//          itl_bk--;
-//          // find the nearer one
-//          if (id.is_first_nearer(itl_bk->first, itr->first)) {
-//            results.push_front((--itl)->second);
-//          } else {
-//            results.push_back((itr++)->second);
-//          }
-//        }
-//      }
-//    }
     return results;
   } else {
     if (!id.bit(krpc::NodeIDBits - prefix_length_ - 1)) {
@@ -250,22 +207,6 @@ bool Bucket::in_bucket(krpc::NodeID id) const {
 }
 size_t Bucket::prefix_length() const { return prefix_length_; }
 
-const Entry *Bucket::search(uint32_t ip, uint16_t port) const {
-  const Entry *ret = nullptr;
-  bool found = false;
-  dfs([&ret, &found, ip, port](const Bucket &bucket) {
-    if (!found && bucket.is_leaf()) {
-      for (auto &item : bucket.known_nodes_) {
-        auto &node = item.second;
-        if (node.ip() == ip && node.port() == port) {
-          ret = &node;
-          return;
-        }
-      }
-    }
-  });
-  return ret;
-}
 krpc::NodeID Bucket::min() const {
   return prefix_;
 }
@@ -377,6 +318,7 @@ std::tuple<size_t, size_t, size_t> Bucket::gc() {
       if (node.second.is_bad()) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete bad node " << node.second.to_string();
         nodes_to_delete.push_back(node.first);
+        owner_->black_list_node(node.second.ip(), node.second.port());
         n_bad++;
       } else if (node.second.is_good()) {
         n_good++;
@@ -450,22 +392,43 @@ void RoutingTable::encode(std::ostream &os) {
   root_.encode(os);
   os << "}" << std::endl;
 }
+
+struct TrieLevelStat {
+  size_t good = 0;
+  size_t known = 0;
+  size_t buckets = 0;
+};
+
 void RoutingTable::stat() const {
   LOG(info) << "Routing Table: ";
+  if (fat_mode_) {
+    std::map<size_t, TrieLevelStat> level_stat;
+    root_.bfs([&level_stat](const Bucket &bucket) {
+      if (bucket.is_leaf()) {
+        auto p = bucket.prefix_length();
+        level_stat[p].good += bucket.good_node_count();
+        level_stat[p].known += bucket.known_node_count();
+        level_stat[p].buckets += 1;
+      }
+    });
+    for (auto &item : level_stat) {
+      LOG(debug) << "  depth=" << item.first << ", buckets=" << item.second.buckets << " " << item.second.good << "/" << item.second.known;
+    }
+  } else {
+    root_.bfs([](const Bucket &bucket) {
+      if (bucket.is_leaf()) {
+        LOG(debug) << "  len(p)=" << bucket.prefix_length()
+                   << ", " << bucket.good_node_count() << "/" << bucket.known_node_count();
+      }
+    });
+  }
   LOG(info) << "  total entries: " << root_.total_known_node_count();
   LOG(info) << "  total good entries: " << root_.total_good_node_count();
   LOG(info) << "  total node added: " << total_node_added_;
   LOG(info) << "  total good deleted: " << total_good_node_deleted_;
   LOG(info) << "  total questionable deleted: " << total_questionable_node_deleted_;
   LOG(info) << "  total bad deleted: " << total_bad_node_deleted_;
-  root_.bfs([](const Bucket &bucket) {
-    if (bucket.is_leaf()) {
-      if (bucket.known_node_count() > 0) {
-        LOG(debug) << "  len(p)=" << bucket.prefix_length()
-                   << ", good " << bucket.good_node_count() << ", n " << bucket.known_node_count();
-      }
-    }
-  });
+  LOG(info) << "  total bucket count: " << bucket_count();
 }
 bool RoutingTable::make_good_now(const krpc::NodeID &id) {
   return root_.make_good_now(id);
@@ -534,11 +497,15 @@ void RoutingTable::serialize(std::ostream &os) const {
   });
 }
 
-std::unique_ptr<RoutingTable> RoutingTable::deserialize(std::istream &is, std::string name, std::string save_path, size_t max_bucket_size, bool delete_good_nodes) {
+std::unique_ptr<RoutingTable> RoutingTable::deserialize(
+    std::istream &is, std::string name, std::string save_path, size_t max_bucket_size,
+    bool delete_good_nodes, bool fat_mode,
+    std::function<void(uint32_t, uint16_t)> black_list_node) {
   std::string node_id;
   std::string ip;
   uint16_t port;
-  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path), max_bucket_size, delete_good_nodes);
+  auto ret = std::make_unique<RoutingTable>(krpc::NodeID(), std::move(name), std::move(save_path), max_bucket_size,
+                                            delete_good_nodes, fat_mode, std::move(black_list_node));
   while (is) {
     is >> node_id >> ip >> port;
     if (!is.good() && !is.eof()) {
@@ -560,6 +527,20 @@ RoutingTable::~RoutingTable() {
 }
 void RoutingTable::make_bad(uint32_t ip, uint16_t port) {
   root_.make_bad(ip, port);
+}
+size_t RoutingTable::bucket_count() const {
+  size_t n = 0;
+  root_.dfs([&n](const Bucket &b) {
+    if (b.is_leaf() && b.good_node_count() > 0) {
+      n++;
+    }
+  });
+  return n;
+}
+void RoutingTable::black_list_node(uint32_t ip, uint16_t port) const {
+  if (black_list_node_) {
+    black_list_node_(ip, port);
+  }
 }
 
 bool Entry::is_good() const {

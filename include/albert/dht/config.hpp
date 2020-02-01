@@ -35,6 +35,7 @@ struct Config {
 
   bool fake_id = false;
   size_t fake_id_prefix_length = 128;
+  bool fat_routing_table = false;
 
   bool debug = false;
   std::string resolve_torrent_info_hash;

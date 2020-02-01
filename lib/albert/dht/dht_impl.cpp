@@ -50,8 +50,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     return;
   }
 
-  if (in_black_list(sender_endpoint.address().to_v4().to_uint(), sender_endpoint.port())) {
-    LOG(info) << "ignored peer from black list: " << sender_endpoint;
+  if (dht_->in_black_list(sender_endpoint.address().to_v4().to_uint(), sender_endpoint.port())) {
     continue_receive();
     return;
   }
@@ -196,8 +195,13 @@ DHT::DHT(Config config)
   if (ifs) {
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
     try {
-      rt = routing_table::RoutingTable::deserialize(ifs, "main",
-                                          config_.routing_table_save_path, config_.max_routing_table_bucket_size, config_.delete_good_nodes);
+      rt = routing_table::RoutingTable::deserialize(
+          ifs, "main",
+          config_.routing_table_save_path,
+          config_.max_routing_table_bucket_size,
+          config_.delete_good_nodes,
+          config_.fat_routing_table,
+          boost::bind(&DHT::add_to_black_list, this, _1, _2));
       LOG(info) << "Routing table size " << rt->known_node_count();
     } catch (const std::exception &e) {
       LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
@@ -211,7 +215,9 @@ DHT::DHT(Config config)
         "main",
         config_.routing_table_save_path,
         config_.max_routing_table_bucket_size,
-        config_.delete_good_nodes);
+        config_.delete_good_nodes,
+        config_.fat_routing_table,
+        boost::bind(&DHT::add_to_black_list, this, _1, _2));
   }
   main_routing_table_ = rt.get();
   routing_tables_.push_back(std::move(rt));

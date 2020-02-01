@@ -24,7 +24,9 @@ SampleInfohashesManager::SampleInfohashesManager(
      handler_(handler),
      action_timer_(io, boost::asio::chrono::seconds(0)) {
 
-  auto rt = std::make_unique<dht::routing_table::RoutingTable>(current_target_, "sample_infohashes(" + current_target_.to_string() + ")", "", dht::routing_table::BucketMaxItems, true);
+  auto rt = std::make_unique<dht::routing_table::RoutingTable>(
+      current_target_, "sample_infohashes(" + current_target_.to_string() + ")", "", dht::routing_table::BucketMaxItems, true, false,
+      nullptr);
   routing_table_ = rt.get();
   dht_.add_routing_table(std::move(rt));
   impl_.bootstrap_routing_table(*routing_table_);

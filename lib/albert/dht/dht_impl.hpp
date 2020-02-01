@@ -138,8 +138,6 @@ class DHTImpl {
 
   void bad_node(const krpc::NodeID &id);
   void bad_sender();
-  bool in_black_list(uint32_t ip, uint16_t port) const;
-
 
   /**
    * Timer Handlers
@@ -168,6 +166,5 @@ class DHTImpl {
 
   std::function<void (const krpc::NodeID &info_hash)> announce_peer_handler_;
 
-  std::set<std::tuple<uint32_t, uint16_t>> black_list_;
 };
 }

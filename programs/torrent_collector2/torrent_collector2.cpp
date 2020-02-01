@@ -7,6 +7,7 @@
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
+#include <albert/bt/torrent_resolver.hpp>
 
 #include <boost/asio/io_service.hpp>
 
@@ -30,22 +31,37 @@ int main(int argc, char* argv[]) {
   albert::dht::DHTInterface dht(std::move(config), io_service);
   dht.start();
 
+  auto bt_id = albert::krpc::NodeID::random();
+  LOG(info) << "BT peer ID " << bt_id.to_string();
+  albert::bt::BT bt(io_service, bt_id);
+  bt.start();
 
   std::ofstream ofs("ih.txt");
   std::set<albert::krpc::NodeID> ihs;
-  dht.set_announce_peer_handler([&ofs, &ihs](const albert::krpc::NodeID &ih) {
+  dht.set_announce_peer_handler([&ofs, &ihs, &bt, &dht](const albert::krpc::NodeID &ih) {
     auto result = ihs.insert(ih);
     if (result.second) {
-      LOG(info) << "announce_peer " << ih.to_string();
+      LOG(info) << "got info_hash " << ih.to_string() << " started to resolving torrent";
       ofs << ih.to_string() << std::endl;
       ofs.flush();
+
+      auto resolver = bt.resolve_torrent(ih, [ih](const albert::bencoding::DictNode &torrent) {
+        auto file_name = ih.to_string() + ".torrent";
+        std::ofstream f(file_name, std::ios::binary);
+        torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
+        LOG(info) << "torrent saved as '" << file_name;
+      });
+
+      dht.get_peers(ih, [ih, resolver](uint32_t ip, uint16_t port) {
+        if (resolver.expired()) {
+          LOG(error) << "TorrentResolver gone before a get_peer request received";
+        } else {
+          resolver.lock()->add_peer(ip, port);
+        }
+      });
     }
   });
 
-//  auto bt_id = albert::krpc::NodeID::random();
-//  LOG(info) << "BT peer ID " << bt_id.to_string();
-//  albert::bt::BT bt(io_service, bt_id);
-//  bt.start();
 
 #ifdef NDEBUG
   try {

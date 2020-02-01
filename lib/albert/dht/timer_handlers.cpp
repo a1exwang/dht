@@ -29,27 +29,30 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
       LOG(info) << "total ping query received: " << dht_->total_ping_query_received_;
       LOG(info) << "total ping response received: " << dht_->total_ping_response_received_;
     }
-    LOG(info) << "Peer black list " << black_list_.size() << " in total: ";
-    for (auto &item : black_list_) {
-      uint32_t ip = 0;
-      uint16_t port = 0;
-      std::tie(ip, port) = item;
-      LOG(info) << "  " << boost::asio::ip::address_v4(ip) << ":" << port;
-    }
+//    std::stringstream black_list_s;
+//    for (auto &item : dht_->black_list_) {
+//      uint32_t ip = 0;
+//      uint16_t port = 0;
+//      std::tie(ip, port) = item;
+//      black_list_s << boost::asio::ip::address_v4(ip) << ":" << port << " ";
+//    }
+    LOG(info) << "black list " << dht_->black_list_.size() << " in total";
   } else {
     LOG(info) << "main routing table "
               << dht_->main_routing_table_->max_prefix_length() << " "
               << dht_->main_routing_table_->good_node_count() << " "
-              << dht_->main_routing_table_->known_node_count();
+              << dht_->main_routing_table_->known_node_count() << " "
+              << dht_->main_routing_table_->bucket_count() << " "
+              << "banned " << dht_->black_list_.size();
     for (auto &rt : dht_->routing_tables_) {
       if (rt->name() != dht_->main_routing_table_->name()) {
         LOG(info) << "Routing table '" << rt->name() << "' "
                   << rt->max_prefix_length() << " "
                   << rt->good_node_count() << " "
-                  << rt->known_node_count();
+                  << rt->known_node_count() << " "
+                  << rt->bucket_count();
       }
     }
-    LOG(info) << "total banned " << black_list_.size();
   }
 }
 void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {

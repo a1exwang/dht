@@ -1,13 +1,15 @@
 #pragma once
 #include "albert/krpc/krpc.hpp"
 
-#include <chrono>
 #include <cstdint>
+
+#include <chrono>
+#include <exception>
+#include <functional>
 #include <iostream>
 #include <list>
-#include <functional>
-#include <memory>
 #include <map>
+#include <memory>
 #include <string>
 
 #include <boost/asio/ip/address_v4.hpp>
@@ -71,7 +73,18 @@ const size_t BucketMaxItems = 32;
 class RoutingTable;
 class Bucket {
  public:
-  Bucket(krpc::NodeID self_id, Bucket *parent, const RoutingTable *owner) :self_(self_id), parent_(parent), owner_(owner) {}
+  Bucket(krpc::NodeID self_id, const RoutingTable *owner, bool fat_mode)
+      :self_(self_id), parent_(nullptr), owner_(owner), fat_mode_(fat_mode) {}
+
+  Bucket(Bucket *parent, const RoutingTable *owner)
+      :self_(parent ? parent->self_ : /* this should not happen*/krpc::NodeID()),
+       parent_(parent),
+       owner_(owner),
+       fat_mode_(parent ? parent->fat_mode_ : false) {
+    if (parent == nullptr) {
+      throw std::invalid_argument("Bucket construct, parent should not be nullptr");
+    }
+  }
   bool add_node(const Entry &entry);
 
   bool self_in_bucket() const;
@@ -87,11 +100,6 @@ class Bucket {
   size_t known_node_count() const;
   std::tuple<size_t, size_t, size_t> gc();
 
-  // search functions return a nullptr if not found.
-  const Entry *search(uint32_t ip, uint16_t port) const;
-  const Entry *search(const krpc::NodeID &id) const {
-    return (const_cast<Bucket* const>(this))->search(id);
-  }
   void remove(const krpc::NodeID &id);
 
   void dfs(const std::function<void (const Bucket&)> &cb) const;
@@ -162,16 +170,24 @@ class Bucket {
   std::unique_ptr<Bucket> left_{}, right_{};
   Bucket *parent_;
   krpc::NodeID self_{};
+  bool fat_mode_ = false;
 
   const RoutingTable *owner_;
 };
 
 class RoutingTable {
  public:
-  explicit RoutingTable(krpc::NodeID self_id, std::string name, std::string save_path, size_t max_bucket_size, bool delete_good)
-      :root_(self_id, nullptr, this), self_id_(self_id),
-       save_path_(std::move(save_path)), name_(std::move(name)), max_bucket_size_(max_bucket_size),
-       delete_good_nodes_(delete_good) {}
+  explicit RoutingTable(
+      krpc::NodeID self_id, std::string name, std::string save_path, size_t max_bucket_size,
+      bool delete_good, bool fat_mode, std::function<void(uint32_t, uint16_t)> black_list_node)
+      :root_(self_id, this, fat_mode),
+       self_id_(self_id),
+       save_path_(std::move(save_path)),
+       name_(std::move(name)),
+       max_bucket_size_(max_bucket_size),
+       delete_good_nodes_(delete_good),
+       fat_mode_(fat_mode),
+       black_list_node_(std::move(black_list_node)) {}
 
   ~RoutingTable();
 
@@ -187,13 +203,22 @@ class RoutingTable {
   [[nodiscard]]
   size_t known_node_count() const;
 
+  [[nodiscard]]
+  size_t bucket_count() const;
+
   void stat() const;
   // encode to json
   void encode(std::ostream &os);
 
   void serialize(std::ostream &os) const;
-  static std::unique_ptr<RoutingTable> deserialize(std::istream &is, std::string name,
-                                                   std::string save_path, size_t max_bucket_size, bool delete_good_nodes);
+  static std::unique_ptr<RoutingTable> deserialize(
+      std::istream &is,
+      std::string name,
+      std::string save_path,
+      size_t max_bucket_size,
+      bool delete_good_nodes,
+      bool fat_mode,
+      std::function<void(uint32_t, uint16_t)> black_list_node);
 
   std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
@@ -224,6 +249,8 @@ class RoutingTable {
   [[nodiscard]]
   bool delete_good_nodes() const { return delete_good_nodes_; }
 
+  void black_list_node(uint32_t ip, uint16_t port) const;
+
  private:
   Bucket root_;
   krpc::NodeID self_id_;
@@ -237,6 +264,9 @@ class RoutingTable {
   std::string name_;
   size_t max_bucket_size_ = BucketMaxGoodItems;
   bool delete_good_nodes_ = true;
+  bool fat_mode_;
+
+  std::function<void(uint32_t, uint16_t)> black_list_node_;
 };
 
 }

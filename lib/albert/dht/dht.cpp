@@ -1,5 +1,6 @@
 #include <albert/dht/dht.hpp>
 
+#include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/config.hpp>
 #include <albert/dht/transaction.hpp>
 #include <albert/krpc/krpc.hpp>
@@ -31,6 +32,15 @@ std::string DHT::create_response(const krpc::Response &query) {
 }
 void DHT::add_routing_table(std::unique_ptr<routing_table::RoutingTable> routing_table) {
   routing_tables_.push_front(std::move(routing_table));
+}
+bool DHT::in_black_list(uint32_t ip, uint16_t port) const {
+  return black_list_.find({ip, port}) != black_list_.end();
+}
+void DHT::add_to_black_list(uint32_t ip, uint16_t port) {
+  this->black_list_.insert({ip, port});
+  for (auto &rt : routing_tables_) {
+    rt->make_bad(ip, port);
+  }
 }
 
 }

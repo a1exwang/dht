@@ -52,6 +52,7 @@ class Options {
         ("delete-good-nodes", po::value(&c.delete_good_nodes), "")
         ("fake-id", po::value(&c.fake_id), "")
         ("fake-id-prefix-length", po::value(&c.fake_id_prefix_length), "")
+        ("fat-routing-table", po::value(&c.fat_routing_table), "")
         ;
 
     po::options_description all_options;
@@ -221,6 +222,7 @@ void Config::serialize(std::ostream &os) const {
   os << "delete_good_nodes = " << delete_good_nodes << std::endl;
   os << "fake_id = " << fake_id << std::endl;
   os << "fake_id_prefix_length = " << fake_id_prefix_length << std::endl;
+  os << "fat_routing_table = " << fat_routing_table << std::endl;
   os << "# end of config." << std::endl;
 }
 
