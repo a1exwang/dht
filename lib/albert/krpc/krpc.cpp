@@ -155,6 +155,30 @@ NodeID NodeID::hash(const uint8_t *data, size_t size) {
   return ret;
 }
 
+NodeID NodeID::fake(const NodeID &target, size_t prefix_length) const {
+  NodeID ret{};
+  for (size_t i = 0; i < NodeIDBits; i++) {
+    if (i < prefix_length) {
+      ret.bit(i, bit(i));
+    } else {
+      ret.bit(i, target.bit(i));
+    }
+  }
+  return ret;
+}
+
+void NodeID::bit(size_t r, size_t value) {
+  assert(r >= 0 && r < NodeIDBits);
+  // NodeIDLength - ceil(r/8)
+  size_t index = NodeIDLength - 1 - r / 8;
+  size_t bit = r % 8;
+  if (value == 0) {
+    data_[index] &= ~(1u << bit);
+  } else {
+    data_[index] |= 1u << bit;
+  }
+}
+
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
   dict["t"] = std::make_shared<bencoding::StringNode>(transaction_id_);
   dict["y"] = std::make_shared<bencoding::StringNode>(type_);
@@ -601,5 +625,13 @@ std::string format_ep(uint32_t ip, uint16_t port) {
   }
   return ip_s + ":" + port_s;
 }
+std::shared_ptr<bencoding::Node> AnnouncePeerResponse::get_response_node() const {
+  std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;
+  std::stringstream ss;
+  node_id_.encode(ss);
+  arguments_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
+  return std::make_shared<bencoding::DictNode>(arguments_dict);
+}
+
 }
 

@@ -50,6 +50,8 @@ class Options {
         ("resolve-torrent-info-hash", po::value(&c.resolve_torrent_info_hash), "")
         ("max-routing-table-bucket-size", po::value(&c.max_routing_table_bucket_size), "")
         ("delete-good-nodes", po::value(&c.delete_good_nodes), "")
+        ("fake-id", po::value(&c.fake_id), "")
+        ("fake-id-prefix-length", po::value(&c.fake_id_prefix_length), "")
         ;
 
     po::options_description all_options;
@@ -217,6 +219,8 @@ void Config::serialize(std::ostream &os) const {
   os << "resolve_torrent_info_hash = " << resolve_torrent_info_hash << std::endl;
   os << "max_routing_table_bucket_size = " << max_routing_table_bucket_size << std::endl;
   os << "delete_good_nodes = " << delete_good_nodes << std::endl;
+  os << "fake_id = " << fake_id << std::endl;
+  os << "fake_id_prefix_length = " << fake_id_prefix_length << std::endl;
   os << "# end of config." << std::endl;
 }
 

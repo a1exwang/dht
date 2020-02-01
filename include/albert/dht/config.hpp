@@ -33,6 +33,9 @@ struct Config {
   size_t max_routing_table_bucket_size = 8;
   bool delete_good_nodes = true;
 
+  bool fake_id = false;
+  size_t fake_id_prefix_length = 128;
+
   bool debug = false;
   std::string resolve_torrent_info_hash;
 };

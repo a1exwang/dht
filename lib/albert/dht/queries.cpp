@@ -18,7 +18,7 @@
 namespace albert::dht {
 
 void DHTImpl::handle_ping_query(const krpc::PingQuery &query) {
-  krpc::PingResponse res(query.transaction_id(), self());
+  krpc::PingResponse res(query.transaction_id(), maybe_fake_self(query.sender_id()));
 
   socket.async_send_to(
       boost::asio::buffer(
@@ -37,10 +37,11 @@ void DHTImpl::handle_find_node_query(const krpc::FindNodeQuery &query) {
   for (auto &node : nodes) {
     info.push_back(node.node_info());
   }
+
   send_find_node_response(
       query.transaction_id(),
       krpc::NodeInfo{
-          query.sender_id(),
+          maybe_fake_self(query.sender_id()),
           sender_endpoint.address().to_v4().to_uint(),
           sender_endpoint.port()
       },
@@ -55,8 +56,12 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   /**
    * Currently we only return self as closer nodes
    */
-  std::vector<krpc::NodeInfo> nodes{dht_->self_info_};
-//  std::vector<krpc::NodeInfo> nodes;
+  std::vector<krpc::NodeInfo> nodes{};
+  if (dht_->config_.fake_id) {
+    auto self_id = maybe_fake_self(query.sender_id());
+    nodes.push_back(krpc::NodeInfo(self_id, dht_->self_info_.ip(), dht_->self_info_.port()));
+  }
+
   std::string token(6, 0);
   std::random_device rng{};
   std::uniform_int_distribution<char> dist;
@@ -64,7 +69,7 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   krpc::GetPeersResponse response(
       query.transaction_id(),
       krpc::ClientVersion,
-      self(),
+      maybe_fake_self(query.sender_id()),
       token,
       nodes
   );
@@ -79,11 +84,19 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   good_sender(query.sender_id());
 }
 void DHTImpl::handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {
-  // TODO:
-  LOG(debug) << "AnnouncePeer Query ignored" << std::endl;
   if (announce_peer_handler_) {
     announce_peer_handler_(query.info_hash());
   }
+  krpc::AnnouncePeerResponse response(
+      query.transaction_id(),
+      maybe_fake_self(query.sender_id())
+  );
+  socket.async_send_to(
+      boost::asio::buffer(dht_->create_response(response)),
+      sender_endpoint,
+      default_handle_send());
+  dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
+
   good_sender(query.sender_id());
 }
 

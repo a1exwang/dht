@@ -147,5 +147,14 @@ void DHTImpl::send_sample_infohashes_query(const krpc::NodeID &target, const krp
 void DHTImpl::set_announce_peer_handler(std::function<void(const krpc::NodeID &info_hash)> handler) {
   this->announce_peer_handler_ = std::move(handler);
 }
+krpc::NodeID DHTImpl::maybe_fake_self(const krpc::NodeID &target) const {
+  krpc::NodeID self_id;
+  if (dht_->config_.fake_id) {
+    self_id = self().fake(target, dht_->config_.fake_id_prefix_length);
+  } else {
+    self_id = self();
+  }
+  return self_id;
+}
 
 }

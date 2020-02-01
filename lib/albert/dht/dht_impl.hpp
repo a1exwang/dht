@@ -117,6 +117,9 @@ class DHTImpl {
   [[nodiscard]]
   krpc::NodeID self() const;
 
+  [[nodiscard]]
+  krpc::NodeID maybe_fake_self(const krpc::NodeID &target) const;
+
   void send_find_node_response(
       const std::string &transaction_id,
       const krpc::NodeInfo &receiver,

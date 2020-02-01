@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
   try {
     config = albert::dht::Config::from_command_line(argc, argv);
   } catch (const std::exception &e) {
-    LOG(error) << "Failed to parse command line";
+    LOG(error) << "Failed to parse command line: " << e.what();
     exit(1);
   }
   albert::log::initialize_logger(config.debug);

@@ -54,6 +54,9 @@ class NodeID {
   uint8_t bit(size_t r) const;
   NodeID distance(const NodeID &rhs) const { return *this ^ rhs; }
 
+  NodeID fake(const NodeID &target, size_t prefix_length = 128) const;
+ private:
+  void bit(size_t r, size_t value);
 
  private:
   // network byte order
@@ -350,6 +353,19 @@ class GetPeersResponse :public Response {
   std::string token_;
   std::vector<NodeInfo> nodes_;
   std::vector<std::tuple<uint32_t, uint16_t>> peers_;
+};
+
+class AnnouncePeerResponse :public Response {
+ public:
+  AnnouncePeerResponse(
+      std::string transaction_id,
+      NodeID sender_id)
+      : Response(std::move(transaction_id)), node_id_(sender_id) { }
+  const NodeID &sender_id() const { return node_id_; }
+ protected:
+  std::shared_ptr<bencoding::Node> get_response_node() const override;
+ private:
+  NodeID node_id_;
 };
 
 class SampleInfohashesResponse :public Response {

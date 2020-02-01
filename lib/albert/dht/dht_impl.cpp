@@ -64,12 +64,12 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     return;
   }
   routing_table::RoutingTable *routing_table = nullptr;
+  std::string query_method_name{};
   try {
-    message = krpc::Message::decode(*node, [this, &query_node, &node, &routing_table](std::string id) -> std::string {
-      std::string method_name{};
+    message = krpc::Message::decode(*node, [this, &query_method_name, &query_node, &node, &routing_table](std::string id) -> std::string {
       if (dht_->transaction_manager.has_transaction(id)) {
-        this->dht_->transaction_manager.end(id, [&method_name, &query_node, &routing_table](const dht::Transaction &transaction) {
-          method_name = transaction.method_name_;
+        this->dht_->transaction_manager.end(id, [&query_method_name, &query_node, &routing_table](const dht::Transaction &transaction) {
+          query_method_name = transaction.method_name_;
           query_node = transaction.query_node_;
           routing_table = transaction.routing_table_;
         });
@@ -79,7 +79,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
         LOG(debug) << "Invalid message, transaction not found, transaction_id: '"
                    << dht::utils::hexdump(id.data(), id.size(), false) << "', bencoding: " << ss.str();
       }
-      return method_name;
+      return query_method_name;
     });
   } catch (const krpc::InvalidMessage &e) {
     std::stringstream ss;
@@ -121,7 +121,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       has_error = true;
     }
   } else if (auto dht_error = std::dynamic_pointer_cast<krpc::Error>(message); dht_error) {
-    LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "'";
+    LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "' method: " << query_method_name;
   } else {
     LOG(error) << "Unknown message type";
     has_error = true;

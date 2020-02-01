@@ -31,7 +31,7 @@ std::string hexdump(const void *ptr, size_t length, bool verbose) {
   const size_t column_width = 16;
   std::stringstream line;
   size_t i = 0;
-  for (size_t i = 0; i < length; i++) {
+  for (; i < length; i++) {
     if (verbose && i % column_width == 0) {
       std::stringstream ss_address;
       ss_address << std::hex << std::setfill('0') << std::setw(hex_digits) << i;
@@ -57,9 +57,9 @@ std::string hexdump(const void *ptr, size_t length, bool verbose) {
       }
     }
   }
-  if (verbose && i % column_width != column_width-1) {
-    for (size_t k = 0; k < column_width-i; k++) {
-      ss << ' ';
+  if (verbose && i%column_width != column_width-1) {
+    for (size_t k = 0; k < column_width-(i%column_width); k++) {
+      ss << "   ";
     }
     ss << "| ";
     ss << line.str();
