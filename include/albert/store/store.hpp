@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <optional>
 #include <stdexcept>
 
 namespace albert::store {
@@ -16,7 +17,7 @@ class Store {
 
   virtual void create(const std::string &key, const std::string &value) = 0;
   virtual void update(const std::string &key, const std::string &value) = 0;
-  virtual std::string read(const std::string &key) const = 0;
+  virtual std::optional<std::string> read(const std::string &key) const = 0;
 };
 
 }

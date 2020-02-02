@@ -3,11 +3,12 @@
 #include <sstream>
 
 #include <albert/bt/bt.hpp>
+#include <albert/bt/torrent_resolver.hpp>
 #include <albert/cui/cui.hpp>
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
-#include <albert/bt/torrent_resolver.hpp>
+#include <albert/store/sqlite3_store.hpp>
 
 #include <boost/asio/io_service.hpp>
 
@@ -38,15 +39,22 @@ int main(int argc, char* argv[]) {
   albert::bt::BT bt(io_service, bt_id, bind_ip, bind_port);
   bt.start();
 
+  albert::store::Sqlite3Store store("torrents.sqlite3");
+
   std::ofstream ofs("ih.txt");
   std::set<albert::krpc::NodeID> ihs;
-  dht.set_announce_peer_handler([&ofs, &ihs, &bt, &dht](const albert::krpc::NodeID &ih) {
+  dht.set_announce_peer_handler([&ofs, &ihs, &bt, &dht, &store](const albert::krpc::NodeID &ih) {
     auto result = ihs.insert(ih);
     if (result.second) {
       LOG(info) << "got info_hash " << ih.to_string() << " started to resolving torrent";
       ofs << ih.to_string() << std::endl;
       ofs.flush();
 
+      auto ih_hex = ih.to_string();
+      auto item = store.read(ih_hex);
+      if (!item.has_value()) {
+        store.create(ih_hex, "");
+      }
 //      auto resolver = bt.resolve_torrent(ih, [ih](const albert::bencoding::DictNode &torrent) {
 //        auto file_name = ih.to_string() + ".torrent";
 //        std::ofstream f(file_name, std::ios::binary);
