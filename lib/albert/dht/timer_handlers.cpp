@@ -46,7 +46,7 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
               << dht_->main_routing_table_->bucket_count() << " "
               << "banned " << dht_->black_list_.size() << " "
               << "mem " << utils::pretty_size(dht_->main_routing_table_->memory_size()) << " "
-              << "tx-mem " << utils::pretty_size(dht_->transaction_manager.memory_size())
+              << "tx: (n,mem) " << dht_->transaction_manager.size() << "," << utils::pretty_size(dht_->transaction_manager.memory_size())
           ;
     for (auto &rt : dht_->routing_tables_) {
       if (rt->name() != dht_->main_routing_table_->name()) {

@@ -65,8 +65,9 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
   } catch (const bencoding::InvalidBencoding &e) {
     LOG(error) << "Invalid bencoding, e: '" << e.what() << "', ignored " << std::endl
                << albert::dht::utils::hexdump(receive_buffer.data(), bytes_transferred, true);
-    LOG(info) << "banned " << sender_endpoint << " due to invalid bencoding";
-    bad_sender();
+    if (bad_sender()) {
+      LOG(info) << "banned " << sender_endpoint << " due to invalid bencoding";
+    }
     continue_receive();
     return;
   }
@@ -92,8 +93,9 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     std::stringstream ss;
     node->encode(ss, bencoding::EncodeMode::JSON);
     LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
-    LOG(info) << "banned " << sender_endpoint << " due to invalid message";
-    bad_sender();
+    if (bad_sender()) {
+      LOG(info) << "banned " << sender_endpoint << " due to invalid message";
+    }
     continue_receive();
     return;
   }
@@ -108,8 +110,9 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
         handle_get_peers_response(*get_peers_response, *q);
       } else {
         LOG(error) << "Invalid get_peers response, Query type not get_peers";
-        LOG(info) << "banned " << sender_endpoint << " due to invalid get_peers response";
-        bad_sender();
+        if (bad_sender()) {
+          LOG(info) << "banned " << sender_endpoint << " due to invalid get_peers response";
+        }
       }
     } else if (auto sample_infohashes_res = std::dynamic_pointer_cast<krpc::SampleInfohashesResponse>(response); sample_infohashes_res) {
       handle_sample_infohashes_response(*sample_infohashes_res);
@@ -130,12 +133,14 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     }
   } else if (auto dht_error = std::dynamic_pointer_cast<krpc::Error>(message); dht_error) {
     LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "' method: " << query_method_name;
-    LOG(info) << "banned " << sender_endpoint << " due to error message";
-    bad_sender();
+    if (bad_sender()) {
+      LOG(info) << "banned " << sender_endpoint << " due to error message";
+    }
   } else {
     LOG(error) << "Unknown message type";
-    LOG(info) << "banned " << sender_endpoint << " due to unknown message type";
-    bad_sender();
+    if (bad_sender()) {
+      LOG(info) << "banned " << sender_endpoint << " due to unknown message type";
+    }
   }
 
   continue_receive();

@@ -21,6 +21,7 @@ void TransactionManager::start(const std::function<void(Transaction &transaction
   }
   Transaction transaction{};
   transaction.id_ = transaction_id;
+  transaction.start_time_ = std::chrono::high_resolution_clock::now();
 
   callback(transaction);
   if (transaction.method_name_.empty()) {

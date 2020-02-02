@@ -137,7 +137,8 @@ class DHTImpl {
   void good_sender(const krpc::NodeID &sender_id);
 
   void bad_node(const krpc::NodeID &id);
-  void bad_sender();
+  // return value: If the sender is added to black list, it returns true; otherwise, it returns false.
+  bool bad_sender();
 
   /**
    * Timer Handlers

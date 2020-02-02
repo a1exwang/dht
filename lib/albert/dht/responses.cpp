@@ -29,6 +29,7 @@ void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response, 
       // not self and not in black list
       if (!(target_node.id() == self()) &&
           !(target_node.ip() == dht_->self_info_.ip() && target_node.port() == dht_->self_info_.port()) &&
+          target_node.port() != 0 &&
           !dht_->in_black_list(target_node.ip(), target_node.port())) {
         routing_table->add_node(entry);
       }

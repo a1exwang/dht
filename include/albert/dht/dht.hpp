@@ -53,7 +53,7 @@ class DHT {
   void add_routing_table(std::unique_ptr<routing_table::RoutingTable> routing_table);
 
   bool in_black_list(uint32_t ip, uint16_t port) const;
-  void add_to_black_list(uint32_t ip, uint16_t port);
+  bool add_to_black_list(uint32_t ip, uint16_t port);
  private:
   static krpc::NodeID parse_node_id(const std::string &s);
   Config config_;

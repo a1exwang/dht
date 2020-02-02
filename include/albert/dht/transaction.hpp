@@ -39,6 +39,7 @@ class TransactionManager {
 
   void gc();
   size_t memory_size() const;
+  size_t size() const { return transactions_.size(); }
  private:
   std::map<std::string, Transaction> transactions_;
   uint64_t transaction_counter_;

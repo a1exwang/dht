@@ -36,11 +36,11 @@ void DHT::add_routing_table(std::unique_ptr<routing_table::RoutingTable> routing
 bool DHT::in_black_list(uint32_t ip, uint16_t port) const {
   return black_list_.find({ip, port}) != black_list_.end();
 }
-void DHT::add_to_black_list(uint32_t ip, uint16_t port) {
-  this->black_list_.insert({ip, port});
+bool DHT::add_to_black_list(uint32_t ip, uint16_t port) {
   for (auto &rt : routing_tables_) {
     rt->make_bad(ip, port);
   }
+  return this->black_list_.insert({ip, port}).second;
 }
 
 }
