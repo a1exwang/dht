@@ -45,7 +45,9 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
               << dht_->main_routing_table_->known_node_count() << " "
               << dht_->main_routing_table_->bucket_count() << " "
               << "banned " << dht_->black_list_.size() << " "
-              << "mem " << utils::pretty_size(dht_->main_routing_table_->memory_size());
+              << "mem " << utils::pretty_size(dht_->main_routing_table_->memory_size()) << " "
+              << "tx-mem " << utils::pretty_size(dht_->transaction_manager.memory_size())
+          ;
     for (auto &rt : dht_->routing_tables_) {
       if (rt->name() != dht_->main_routing_table_->name()) {
         LOG(info) << "Routing table '" << rt->name() << "' "
@@ -97,6 +99,8 @@ void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
       });
     }
   }
+
+  dht_->transaction_manager.gc();
 }
 
 }

@@ -23,6 +23,7 @@ struct Transaction {
   std::string method_name_;
   std::shared_ptr<krpc::Query> query_node_;
   routing_table::RoutingTable *routing_table_;
+  std::chrono::high_resolution_clock::time_point start_time_;
 };
 
 class TransactionError : std::runtime_error {
@@ -34,9 +35,10 @@ class TransactionManager {
  public:
   void start(const std::function<void (Transaction &transaction)> &callback);
   void end(const std::string& id, const std::function<void (const Transaction &transaction)> &callback);
-  bool has_transaction(const std::string &id) const {
-    return transactions_.find(id) != transactions_.end();
-  }
+  bool has_transaction(const std::string &id) const;
+
+  void gc();
+  size_t memory_size() const;
  private:
   std::map<std::string, Transaction> transactions_;
   uint64_t transaction_counter_;

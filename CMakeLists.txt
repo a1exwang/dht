@@ -24,6 +24,7 @@ include_directories(include)
 
 find_package(Boost REQUIRED COMPONENTS system log program_options)
 find_package(OpenSSL REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 add_subdirectory(lib/albert)
 

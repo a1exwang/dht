@@ -1,5 +1,9 @@
 #include <albert/dht/transaction.hpp>
 
+#include <list>
+
+#include <albert/log/log.hpp>
+
 namespace albert::dht {
 void TransactionManager::start(const std::function<void(Transaction &transaction)> &callback) {
   std::unique_lock<std::mutex> _(lock_);
@@ -38,5 +42,28 @@ void TransactionManager::end(
   }
   callback(this->transactions_.at(id));
   this->transactions_.erase(id);
+}
+
+void TransactionManager::gc() {
+  std::list<std::string> to_delete;
+  for (auto &item : transactions_) {
+    if (std::chrono::high_resolution_clock::now() - item.second.start_time_ > std::chrono::minutes(20)) {
+      to_delete.push_back(item.first);
+    }
+  }
+  for (auto &item : to_delete) {
+    transactions_.erase(item);
+  }
+  LOG(info) << "TransactionManager: delete " << to_delete.size() << " expiried transactions";
+}
+bool TransactionManager::has_transaction(const std::string &id) const {
+  return transactions_.find(id) != transactions_.end();
+}
+size_t TransactionManager::memory_size() const {
+  size_t size = sizeof(*this);
+  for (auto &item : transactions_) {
+    size += sizeof(item.first) + sizeof(item.second) + item.first.size();
+  }
+  return size;
 }
 }
