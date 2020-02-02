@@ -10,6 +10,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <boost/asio/ip/address_v4.hpp>
@@ -57,7 +58,7 @@ class Entry {
   std::string to_string() const { return info_.to_string(); }
 
  private:
-  krpc::NodeInfo info_;
+  const krpc::NodeInfo info_;
 
   std::chrono::high_resolution_clock::time_point last_seen_{};
   bool response_required = false;
@@ -85,8 +86,8 @@ class Bucket {
       throw std::invalid_argument("Bucket construct, parent should not be nullptr");
     }
   }
-  bool add_node(const Entry &entry);
 
+  // Attribute accessor
   bool self_in_bucket() const;
   bool in_bucket(krpc::NodeID id) const;
   bool is_leaf() const;
@@ -98,28 +99,35 @@ class Bucket {
   size_t good_node_count() const;
   size_t total_known_node_count() const;
   size_t known_node_count() const;
-  std::tuple<size_t, size_t, size_t> gc();
+  size_t memory_size() const;
+  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
 
-  void remove(const krpc::NodeID &id);
 
+  // Node manipulating functions
+  bool add_node(const Entry &entry);
+  std::optional<Entry> remove(const krpc::NodeID &id);
+  void remove(uint32_t ip, uint16_t port);
+  std::tuple<size_t, size_t, size_t, std::list<krpc::NodeInfo>> gc();
+
+  // Iteration helpers
   void dfs(const std::function<void (const Bucket&)> &cb) const;
   void bfs(const std::function<void (const Bucket&)> &cb) const;
   void iterate_entries(const std::function<void (const Entry&)> &cb) const;
-  bool require_response_now(const krpc::NodeID &target);
 
+  // Node status management functions
+  bool require_response_now(const krpc::NodeID &target);
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
   void make_bad(uint32_t ip, uint16_t port);
 
+  // Other helper functions
   void split_if_required();
 
   void encode(std::ostream &os);
 
   [[nodiscard]]
-  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
-
-  [[nodiscard]]
   std::list<std::tuple<Entry, krpc::NodeID>> find_some_node_for_filling_bucket(size_t k) const;
+
  private:
   static std::string indent(int n);
   void encode_(std::ostream &os, int i);
@@ -224,17 +232,18 @@ class RoutingTable {
 
   std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
 
+  // This is the only function that insert a node into routing table
   bool add_node(Entry entry);
-  void remove_node(const krpc::NodeID &target);
-  bool require_response_now(const krpc::NodeID &target);
+  std::optional<Entry> remove_node(const krpc::NodeID &target);
+  void remove_node(uint32_t ip, uint16_t port);
+  void gc();
 
   bool make_good_now(const krpc::NodeID &id);
   bool make_good_now(uint32_t ip, uint16_t port);
-
   void make_bad(uint32_t ip, uint16_t port);
+  bool require_response_now(const krpc::NodeID &target);
 
   void iterate_nodes(const std::function<void (const Entry &)> &callback) const;
-  void gc();
 
   [[nodiscard]]
   std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
@@ -252,6 +261,8 @@ class RoutingTable {
   bool delete_good_nodes() const { return delete_good_nodes_; }
 
   void black_list_node(uint32_t ip, uint16_t port) const;
+
+  size_t memory_size() const;
 
  private:
   Bucket root_;
@@ -271,6 +282,8 @@ class RoutingTable {
   size_t max_known_nodes_;
 
   std::function<void(uint32_t, uint16_t)> black_list_node_;
+
+  std::map<std::tuple<uint32_t, uint16_t>, krpc::NodeID> reverse_map_;
 };
 
 }

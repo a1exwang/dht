@@ -284,14 +284,18 @@ void Bucket::iterate_entries(const std::function<void(const Entry &)> &cb) const
     cb(item.second);
   }
 }
-void Bucket::remove(const krpc::NodeID &id) {
-  dfs_w([id](Bucket &bucket) -> bool {
+std::optional<Entry> Bucket::remove(const krpc::NodeID &id) {
+  std::optional<Entry> ret;
+  dfs_w([id, &ret](Bucket &bucket) -> bool {
     if (bucket.known_nodes_.find(id) != bucket.known_nodes_.end()) {
+      auto node = bucket.known_nodes_[id];
+      ret.emplace(std::move(bucket.known_nodes_[id]));
       bucket.known_nodes_.erase(id);
       return false;
     }
     return true;
   });
+  return ret;
 }
 bool Bucket::require_response_now(const krpc::NodeID &target) {
   auto entry = search(target);
@@ -319,24 +323,24 @@ Entry *Bucket::search(const krpc::NodeID &id) {
   return ret;
 
 }
-std::tuple<size_t, size_t, size_t> Bucket::gc() {
+std::tuple<size_t, size_t, size_t, std::list<krpc::NodeInfo>> Bucket::gc() {
   if (is_leaf()) {
-    std::list<krpc::NodeID> nodes_to_delete;
-    std::vector<krpc::NodeID> questionable_nodes, good_nodes;
+    std::list<krpc::NodeInfo> nodes_to_delete;
+    std::vector<krpc::NodeInfo> questionable_nodes, good_nodes;
     size_t n_good = 0, n_non_bad = 0, n_bad = 0;
     for (auto &node : known_nodes_) {
       if (node.second.is_bad()) {
         LOG(debug) << "Bucket::gc() prefix " << prefix_length_ << " delete bad node " << node.second.to_string();
-        nodes_to_delete.push_back(node.first);
+        nodes_to_delete.push_back(node.second.node_info());
         owner_->black_list_node(node.second.ip(), node.second.port());
         n_bad++;
       } else if (node.second.is_good()) {
         n_good++;
         n_non_bad++;
-        good_nodes.push_back(node.first);
+        good_nodes.push_back(node.second.node_info());
       } else {
         n_non_bad++;
-        questionable_nodes.push_back(node.first);
+        questionable_nodes.push_back(node.second.node_info());
       }
     }
     size_t n_good_deleted = 0, n_questionable_deleted = 0;
@@ -359,15 +363,17 @@ std::tuple<size_t, size_t, size_t> Bucket::gc() {
       }
     }
 
-    for (auto &id : nodes_to_delete) {
-      known_nodes_.erase(id);
+    for (auto &node : nodes_to_delete) {
+      known_nodes_.erase(node.id());
     }
-    return {n_good_deleted, n_questionable_deleted, n_bad};
+    return {n_good_deleted, n_questionable_deleted, n_bad, nodes_to_delete};
   } else {
     size_t a1, a2, b1, b2, c1, c2;
-    std::tie(a1, b1, c1) = right_->gc();
-    std::tie(a2, b2, c2) = left_->gc();
-    return {a1 + a2, b1 + b2, c1 + c2};
+    std::list<krpc::NodeInfo> l, r;
+    std::tie(a1, b1, c1, l) = right_->gc();
+    std::tie(a2, b2, c2, r) = left_->gc();
+    l.merge(r);
+    return {a1 + a2, b1 + b2, c1 + c2, l};
   }
 }
 
@@ -379,6 +385,28 @@ void Bucket::make_bad(uint32_t ip, uint16_t port) {
           item.second.make_bad();
           return false;
         }
+      }
+    }
+    return true;
+  });
+}
+size_t Bucket::memory_size() const {
+  size_t ret = sizeof(*this);
+  ret += known_node_count() * (sizeof(krpc::NodeID) + sizeof(Entry));
+  if (left_) {
+    ret += left_->memory_size();
+  }
+  if (right_) {
+    ret += right_->memory_size();
+  }
+  return ret;
+}
+void Bucket::remove(uint32_t ip, uint16_t port) {
+  dfs_w([ip, port](Bucket &bucket) -> bool {
+    for (auto &item : bucket.known_nodes_) {
+      if (item.second.ip() == ip && item.second.port() == port) {
+        bucket.known_nodes_.erase(item.first);
+        return false;
       }
     }
     return true;
@@ -444,16 +472,34 @@ bool RoutingTable::make_good_now(const krpc::NodeID &id) {
   return root_.make_good_now(id);
 }
 bool RoutingTable::add_node(Entry entry) {
-  if (root_.total_known_node_count() <= max_known_nodes_) {
-    if (root_.add_node(entry)) {
-      total_node_added_++;
-      return true;
-    } else {
+  if (reverse_map_.find({entry.ip(), entry.port()}) == reverse_map_.end()) {
+    reverse_map_[std::make_tuple(entry.ip(), entry.port())] = entry.id();
+    if (is_full()) {
+      LOG(debug) << "failed to add node because routing table is full";
       return false;
+    } else {
+      if (root_.add_node(entry)) {
+        total_node_added_++;
+        return true;
+      } else {
+        LOG(debug) << "failed to add node because routing table bucket is full";
+        return false;
+      }
     }
   } else {
+    if (entry.id() == reverse_map_[{entry.ip(), entry.port()}]) {
+      if (!root_.in_bucket(entry.node_info().id())) {
+        LOG(error) << "!!!!!!!!!!!!!!!!!!! error, routing table inconsistent";
+      }
+    } else {
+      black_list_node(entry.ip(), entry.port());
+      reverse_map_.erase({entry.ip(), entry.port()});
+      remove_node(entry.ip(), entry.port());
+      LOG(info) << "banned node " << entry.to_string() << " because it has multiple node IDs";
+    }
     return false;
   }
+
 }
 bool RoutingTable::make_good_now(uint32_t ip, uint16_t port) {
   return root_.make_good_now(ip, port);
@@ -465,15 +511,23 @@ void RoutingTable::iterate_nodes(const std::function<void(const Entry &)> &callb
     }
   });
 }
-void RoutingTable::remove_node(const krpc::NodeID &target) {
-  root_.remove(target);
+std::optional<Entry> RoutingTable::remove_node(const krpc::NodeID &target) {
+  auto node = root_.remove(target);
+  if (node.has_value()) {
+    reverse_map_.erase({node->ip(), node->port()});
+  }
+  return node;
 }
 void RoutingTable::gc() {
   size_t bad{}, good{}, quest;
-  std::tie(good, quest, bad) = root_.gc();
+  std::list<krpc::NodeInfo> info;
+  std::tie(good, quest, bad, info) = root_.gc();
   total_good_node_deleted_ += good;
   total_questionable_node_deleted_ += quest;
   total_bad_node_deleted_ += bad;
+  for (auto &node : info) {
+    reverse_map_.erase({node.ip(), node.port()});
+  }
 }
 size_t RoutingTable::max_prefix_length() const {
   size_t length = 0;
@@ -492,7 +546,7 @@ size_t RoutingTable::good_node_count() const {
 }
 
 bool RoutingTable::is_full() const {
-  return root_.is_full();
+  return root_.total_known_node_count() > max_known_nodes_ || root_.is_full();
 }
 
 bool RoutingTable::require_response_now(const krpc::NodeID &target) {
@@ -557,6 +611,17 @@ void RoutingTable::black_list_node(uint32_t ip, uint16_t port) const {
   if (black_list_node_) {
     black_list_node_(ip, port);
   }
+}
+void RoutingTable::remove_node(uint32_t ip, uint16_t port) {
+  root_.remove(ip, port);
+}
+size_t RoutingTable::memory_size() const {
+  size_t size = sizeof(*this);
+  size += root_.memory_size() - sizeof(root_);
+  size += name_.size();
+  size += save_path_.size();
+  size += (sizeof(reverse_map_.begin()->first) + sizeof(reverse_map_.begin()->second)) * reverse_map_.size();
+  return size;
 }
 
 bool Entry::is_good() const {

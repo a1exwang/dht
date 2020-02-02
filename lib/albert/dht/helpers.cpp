@@ -96,10 +96,9 @@ void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
             sender_endpoint.address().to_v4().to_uint(),
             sender_endpoint.port()));
     if (added) {
-      rt->make_good_now(sender_id);
-    } else {
-      LOG(debug) << "Routing table(" + rt->name() + " ) full. Did not add new good sender";
+      LOG(debug) << "DHTImpl: good sender " << sender_id.to_string();
     }
+    rt->make_good_now(sender_id);
   }
 }
 void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::NodeInfo &receiver) {

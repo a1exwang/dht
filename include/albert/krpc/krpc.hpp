@@ -47,6 +47,7 @@ class NodeID {
 
   bool operator<(const NodeID &rhs) const;
   bool operator==(const NodeID &rhs) const;
+  bool operator!=(const NodeID &rhs) const;
   bool operator<=(const NodeID &rhs) const;
   NodeID operator&(const NodeID &rhs) const;
   NodeID operator|(const NodeID &rhs) const;
@@ -74,9 +75,10 @@ class NodeInfo {
   NodeID id() const { return node_id_; }
   uint32_t ip() const { return ip_; }
   uint16_t port() const { return port_; }
+  std::tuple<uint32_t, uint16_t> tuple() const;
   void ip(uint32_t ip) { ip_ = ip; }
   void port(uint16_t port) { port_ = port; }
-  bool operator<(const NodeInfo &rhs) const { return this->node_id_ < rhs.node_id_; }
+  bool operator<(const NodeInfo &rhs) const;
  private:
   NodeID node_id_;
   uint32_t ip_{};

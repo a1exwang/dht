@@ -9,6 +9,7 @@
 #include <albert/dht/dht.hpp>
 #include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/log/log.hpp>
+#include <albert/utils/utils.hpp>
 
 namespace albert::dht {
 
@@ -43,7 +44,8 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
               << dht_->main_routing_table_->good_node_count() << " "
               << dht_->main_routing_table_->known_node_count() << " "
               << dht_->main_routing_table_->bucket_count() << " "
-              << "banned " << dht_->black_list_.size();
+              << "banned " << dht_->black_list_.size() << " "
+              << "mem " << utils::pretty_size(dht_->main_routing_table_->memory_size());
     for (auto &rt : dht_->routing_tables_) {
       if (rt->name() != dht_->main_routing_table_->name()) {
         LOG(info) << "Routing table '" << rt->name() << "' "
@@ -60,10 +62,9 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
     if (!rt->is_full()) {
       LOG(debug) << "sending find node query and find_self()...";
       auto targets = rt->select_expand_route_targets();
-      routing_table::Entry node;
-      krpc::NodeID target_id;
       for (auto &item : targets) {
-        std::tie(node, target_id) = item;
+        auto &node = std::get<0>(item);
+        auto &target_id = std::get<1>(item);
 
         auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), target_id);
         udp::endpoint ep{boost::asio::ip::make_address_v4(node.ip()), node.port()};
@@ -77,21 +78,25 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
 
   }
 }
+
 void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
   for (auto &rt : dht_->routing_tables_) {
     rt->gc();
 
-    // try refreshing questionable nodes
-    rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
-      if (!node.is_good()) {
-        const_cast<routing_table::Entry&>(node).require_response_now();
+    if (!rt->is_full()) {
+      // try refreshing questionable nodes
+      rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
+        if (!node.is_good() && !node.is_bad()) {
+          // FIXME: const_cast
+          const_cast<routing_table::Entry&>(node).require_response_now();
 //        if (!rt->require_response_now(node.id())) {
 //          LOG(error) << "Node gone when iterating " << node.to_string();
 //        }
-        ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
-      }
-    });
+          ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
+        }
+      });
+    }
   }
-
 }
+
 }

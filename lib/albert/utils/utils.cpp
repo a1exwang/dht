@@ -89,7 +89,22 @@ template<typename T>
 T network_to_host(T input) {
   return host_to_network(input);
 }
+std::string pretty_size(size_t size) {
+  std::stringstream ss;
+  static const char *SIZES[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  int div = 0;
+  size_t rem = 0;
 
+  while (size >= 1024 && div < (sizeof(SIZES) / sizeof(SIZES[0]))) {
+    rem = (size % 1024);
+    div++;
+    size /= 1024;
+  }
+
+  double size_d = (float)size + (float)rem / 1024.0;
+  ss << std::fixed << std::setprecision(2) << size_d << SIZES[div];
+  return ss.str();
+}
 
 template uint32_t network_to_host(uint32_t input);
 template uint16_t network_to_host(uint16_t input);

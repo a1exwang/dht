@@ -178,6 +178,7 @@ void NodeID::bit(size_t r, size_t value) {
     data_[index] |= 1u << bit;
   }
 }
+bool NodeID::operator!=(const NodeID &rhs) const { return !((*this) == rhs); }
 
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
   dict["t"] = std::make_shared<bencoding::StringNode>(transaction_id_);
@@ -459,6 +460,8 @@ void NodeInfo::encode(std::ostream &os) const {
 std::string NodeInfo::to_string() const {
   return "NodeID: '" + node_id_.to_string() + "' endpoint: '" + format_ep(ip_, port_) + "'";
 }
+std::tuple<uint32_t, uint16_t> NodeInfo::tuple() const { return std::make_tuple(ip_, port_); }
+bool NodeInfo::operator<(const NodeInfo &rhs) const { return this->node_id_ < rhs.node_id_; }
 
 std::shared_ptr<bencoding::Node> FindNodeResponse::get_response_node() const {
   std::map<std::string, std::shared_ptr<bencoding::Node>> response_dict;
