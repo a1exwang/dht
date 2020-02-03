@@ -68,7 +68,7 @@ PeerConnection::PeerConnection(
     uint16_t bind_port,
     uint32_t ip,
     uint16_t port)
-    :socket_(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), 0)),
+    :socket_(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port)),
      self_(self),
      target_(target),
      peer_(std::make_unique<Peer>(ip, port))

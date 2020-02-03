@@ -1,9 +1,14 @@
 #include <albert/store/sqlite3_store.hpp>
 
-#include <sstream>
 #include <cassert>
 
+#include <sstream>
+#include <thread>
+#include <random>
+
 #include <sqlite3.h>
+#include <chrono>
+#include <functional>
 
 namespace albert::store {
 
@@ -18,42 +23,84 @@ Sqlite3Store::Sqlite3Store(const std::string &path) {
   }
 }
 
-void Sqlite3Store::create(const std::string &key, const std::string &value) {
-  std::stringstream ss;
-  char *z_err_msg = nullptr;
-  ss << "INSERT INTO torrents (info_hash, data) VALUES (" << escape_sql(key) << ", " << escape_sql(value) << ");";
+static int my_callback(void *user, int argc, char **argv, char **col_name) {
+  auto real_callback = static_cast<const std::function<void(const std::string &key, const std::string &data)>*>(user);
+  if (*real_callback) {
+    std::string info_hash;
+    std::string data;
+    for (int i = 0; i < argc; i++) {
+      if (col_name[i] == std::string("info_hash")) {
+        info_hash = argv[i];
+      } else if (col_name[i] == std::string("data")) {
+        data = argv[i];
+      }
+    }
+    (*real_callback)(info_hash, data);
+  }
+  return 0;
+}
 
-  auto sql = ss.str();
-  auto rc = sqlite3_exec(db_, sql.c_str(), nullptr, 0, &z_err_msg);
-  if (rc != SQLITE_OK) {
-    std::string s("when running '" + ss.str() + "'" + sqlite3_errmsg(db_));
-    sqlite3_free(z_err_msg);
-    throw Sqlite3OperationError(s);
+static void sqlite_retry(
+    sqlite3* db,
+    const std::string &sql,
+    std::function<void(const std::string &key, const std::string &data)> callback,
+    std::chrono::milliseconds timeout = std::chrono::milliseconds(500)
+) {
+  char *z_err_msg;
+  auto t0 = std::chrono::high_resolution_clock::now();
+  while (true) {
+    auto rc = sqlite3_exec(db, sql.c_str(), my_callback, &callback, &z_err_msg);
+    if (rc == SQLITE_LOCKED || rc == SQLITE_BUSY) {
+      // continue
+      if (std::chrono::high_resolution_clock::now() > t0 + timeout) {
+        throw Sqlite3TimeoutError("Database locked, retried but time out: sql: " + sql);
+      }
+      std::random_device rng;
+      // sleep for 16us ~ 272us
+      auto us = rng() % 256 + 16;
+      std::this_thread::sleep_for(std::chrono::microseconds(us));
+    }
+    else if (rc != SQLITE_OK) {
+      sqlite3_errcode(db);
+      std::string s("get_empty_keys: when running '" + sql + "', code=" + std::to_string(rc) + ", " + sqlite3_errmsg(db));
+      sqlite3_free(z_err_msg);
+      throw Sqlite3OperationError(s);
+    } else {
+      return;
+    }
   }
 }
 
-namespace {
-static int callback(void *user, int argc, char **argv, char **col_name) {
-  assert(argc == 2);
-
-  auto result = static_cast<std::optional<std::string> *>(user);
-  (*result) = std::string(argv[1]);
-  return 0;
-}
+void Sqlite3Store::create(const std::string &key, const std::string &value) {
+  std::stringstream ss;
+  ss << "INSERT INTO torrents (info_hash, data) VALUES (" << escape_sql(key) << ", " << escape_sql(value) << ");";
+  sqlite_retry(db_, ss.str(), nullptr);
 }
 
 std::optional<std::string> Sqlite3Store::read(const std::string &key) const {
   std::stringstream ss;
-  char *z_err_msg;
   ss << "SELECT info_hash, data FROM torrents WHERE info_hash = " << escape_sql(key) << ";";
-  auto sql = ss.str();
   std::optional<std::string> result;
-  auto rc = sqlite3_exec(db_, sql.c_str(), callback, &result, &z_err_msg);
-  if (rc != SQLITE_OK) {
-    std::string s("when running '" + ss.str() + "'" + sqlite3_errmsg(db_));
-    sqlite3_free(z_err_msg);
-    throw Sqlite3OperationError(s);
-  }
+  sqlite_retry(db_, ss.str(), [&result](const std::string &key, const std::string &value) {
+    result.emplace(value);
+  });
+  return result;
+}
+void Sqlite3Store::update(const std::string &key, const std::string &value) {
+  std::stringstream ss;
+  ss << "UPDATE torrents SET data = " + escape_sql(value) + " WHERE info_hash = " << escape_sql(key) << ";";
+  auto sql = ss.str();
+
+  sqlite_retry(db_, sql, nullptr);
+}
+
+std::vector<std::string> Sqlite3Store::get_empty_keys() const {
+  std::vector<std::string> result;
+  std::string sql = "SELECT info_hash FROM torrents WHERE data is null or data = '';";
+
+  sqlite_retry(db_, sql, [&result](const std::string &key, const std::string &value) {
+    result.push_back(key);
+  });
   return result;
 };
 

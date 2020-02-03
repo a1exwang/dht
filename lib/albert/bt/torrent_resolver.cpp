@@ -20,8 +20,10 @@ TorrentResolver::TorrentResolver(
     krpc::NodeID info_hash,
     krpc::NodeID self,
     uint32_t bind_ip,
-    uint16_t bind_port)
-    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port) { }
+    uint16_t bind_port,
+    std::chrono::high_resolution_clock::time_point expiration_at
+    )
+    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port), expiration_at_(expiration_at) { }
 
 void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
   using namespace boost::placeholders;

@@ -546,7 +546,7 @@ size_t RoutingTable::good_node_count() const {
 }
 
 bool RoutingTable::is_full() const {
-  return root_.total_known_node_count() > max_known_nodes_ || root_.is_full();
+  return root_.total_known_node_count() >= max_known_nodes_ || root_.is_full();
 }
 
 bool RoutingTable::require_response_now(const krpc::NodeID &target) {

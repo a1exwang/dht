@@ -85,19 +85,17 @@ void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
   for (auto &rt : dht_->routing_tables_) {
     rt->gc();
 
-    if (!rt->is_full()) {
-      // try refreshing questionable nodes
-      rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
-        if (!node.is_good() && !node.is_bad()) {
-          // FIXME: const_cast
-          const_cast<routing_table::Entry&>(node).require_response_now();
+    // try refreshing questionable nodes
+    rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
+      if (!node.is_good() && !node.is_bad()) {
+        // FIXME: const_cast
+        const_cast<routing_table::Entry&>(node).require_response_now();
 //        if (!rt->require_response_now(node.id())) {
 //          LOG(error) << "Node gone when iterating " << node.to_string();
 //        }
-          ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
-        }
-      });
-    }
+        ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
+      }
+    });
   }
 
   dht_->transaction_manager.gc();

@@ -16,7 +16,8 @@ class TorrentResolver {
       krpc::NodeID info_hash,
       krpc::NodeID self,
       uint32_t bind_ip,
-      uint16_t bind_port);
+      uint16_t bind_port,
+      std::chrono::high_resolution_clock::time_point expiration_at_);
   ~TorrentResolver();
   void add_peer(uint32_t ip, uint16_t port);
 
@@ -31,6 +32,10 @@ class TorrentResolver {
 
   [[nodiscard]]
   krpc::NodeID self() const;
+
+  bool timeout() const {
+    return std::chrono::high_resolution_clock::now() > expiration_at_;
+  }
 
   void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
  private:
@@ -52,5 +57,7 @@ class TorrentResolver {
   krpc::NodeID info_hash_;
   krpc::NodeID self_;
   std::list<std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
+
+  std::chrono::high_resolution_clock::time_point expiration_at_;
 };
 }

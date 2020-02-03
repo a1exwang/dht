@@ -1,9 +1,6 @@
 #include <exception>
 #include <set>
-#include <sstream>
 
-#include <albert/bt/bt.hpp>
-#include <albert/bt/torrent_resolver.hpp>
 #include <albert/cui/cui.hpp>
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
@@ -12,66 +9,30 @@
 
 #include <boost/asio/io_service.hpp>
 
-int main(int argc, char* argv[]) {
-  // usage magnet_to_torrent --conf=dht.conf {bt_info_hash}
-  albert::dht::Config config;
-  try {
-    config = albert::dht::Config::from_command_line(argc, argv);
-  } catch (const std::exception &e) {
-    LOG(error) << "Failed to parse command line: " << e.what();
-    exit(1);
-  }
-  albert::log::initialize_logger(config.debug);
+int main(int argc, const char* argv[]) {
 
-  std::stringstream ss;
-  config.serialize(ss);
-  LOG(info) << ss.str();
+  /* Config parsing */
+  auto args = albert::config::argv2args(argc, argv);
+  albert::dht::Config dht_config;
+  args = dht_config.from_command_line(args);
+  albert::config::throw_on_remaining_args(args);
 
+  /* Initialization */
+  albert::log::initialize_logger(dht_config.debug);
   boost::asio::io_service io_service{};
+  albert::dht::DHTInterface dht(std::move(dht_config), io_service);
+  albert::store::Sqlite3Store store("torrents/torrents.sqlite3");
 
-  auto bind_ip = boost::asio::ip::address_v4::from_string(config.bind_ip).to_uint();
-  uint16_t bind_port = config.bind_port;
-  albert::dht::DHTInterface dht(std::move(config), io_service);
+  /* Start service */
   dht.start();
-
-  auto bt_id = albert::krpc::NodeID::random();
-  LOG(info) << "BT peer ID " << bt_id.to_string();
-  albert::bt::BT bt(io_service, bt_id, bind_ip, bind_port);
-  bt.start();
-
-  albert::store::Sqlite3Store store("torrents.sqlite3");
-
-  std::ofstream ofs("ih.txt");
-  std::set<albert::krpc::NodeID> ihs;
-  dht.set_announce_peer_handler([&ofs, &ihs, &bt, &dht, &store](const albert::krpc::NodeID &ih) {
-    auto result = ihs.insert(ih);
-    if (result.second) {
-      LOG(info) << "got info_hash " << ih.to_string() << " started to resolving torrent";
-      ofs << ih.to_string() << std::endl;
-      ofs.flush();
-
-      auto ih_hex = ih.to_string();
-      auto item = store.read(ih_hex);
-      if (!item.has_value()) {
-        store.create(ih_hex, "");
-      }
-//      auto resolver = bt.resolve_torrent(ih, [ih](const albert::bencoding::DictNode &torrent) {
-//        auto file_name = ih.to_string() + ".torrent";
-//        std::ofstream f(file_name, std::ios::binary);
-//        torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
-//        LOG(info) << "torrent saved as '" << file_name;
-//      });
-//
-//      dht.get_peers(ih, [ih, resolver](uint32_t ip, uint16_t port) {
-//        if (resolver.expired()) {
-//          LOG(error) << "TorrentResolver gone before a get_peer request received";
-//        } else {
-//          resolver.lock()->add_peer(ip, port);
-//        }
-//      });
+  dht.set_announce_peer_handler([&dht, &store](const albert::krpc::NodeID &ih) {
+    auto ih_hex = ih.to_string();
+    auto item = store.read(ih_hex);
+    if (!item.has_value()) {
+      LOG(info) << "got info_hash " << ih.to_string() << ", saved to db";
+      store.create(ih_hex, "");
     }
   });
-
 
 #ifdef NDEBUG
   try {

@@ -8,12 +8,19 @@
 #include <vector>
 #include <iostream>
 
+#include <albert/config/config.hpp>
+
+namespace boost::program_options {
+class variables_map;
+}
 
 namespace albert::dht {
 
-struct Config {
-  static Config from_command_line(int argc, char **argv);
-  void serialize(std::ostream &os) const;
+struct Config :public albert::config::Config {
+  Config();
+
+  void serialize(std::ostream &os) const override;
+  void after_parse(boost::program_options::variables_map &vm) override;
 
   std::string bind_ip = "0.0.0.0";
   uint16_t bind_port = 16667;

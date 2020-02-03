@@ -17,8 +17,7 @@ add_library(
 )
 target_link_libraries(
         dht PUBLIC
-        krpc transaction routing_table bencoding public_ip log utils
-        Boost::program_options
+        krpc transaction routing_table bencoding public_ip log utils config
 )
 
 

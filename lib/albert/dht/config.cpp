@@ -13,185 +13,12 @@
 #include <boost/algorithm/string/classification.hpp>
 
 #include <albert/log/log.hpp>
+#include <albert/config/config.hpp>
 
-namespace {
 namespace po = boost::program_options;
-
-class Options {
- public:
-  explicit Options(albert::dht::Config &config) :c(config) { }
-  void parse(int argc, char** argv) {
-    std::string bootstrap_nodes;
-    std::vector<std::string> config_fnames;
-
-    po::options_description desc("General Options");
-    desc.add_options()
-        ("help,h", "Display help message")
-        ("config", po::value(&config_fnames), "Config file where options may be specified (can be specified more than once)")
-        ("debug", po::value(&c.debug), "Enable debug mode")
-        ("bind-ip", po::value(&c.bind_ip)->default_value("0.0.0.0"), "DHT Client bind IP address")
-        ("bind-port", po::value(&c.bind_port)->default_value(16667), "DHT Client bind port")
-        ("id", po::value(&c.self_node_id)->default_value(""), "DHT Client Node ID, empty string stands for random value")
-        ("bootstrap-nodes", po::value(&bootstrap_nodes)->default_value(
-            "router.utorrent.com:6881,"
-            "router.bittorrent.com:6881,"
-            "dht.transmissionbt.com:6881"), "DHT Bootstrap node list")
-        ;
-
-    po::options_description hidden;
-    hidden.add_options()
-        ("info-hash-save-path", po::value(&c.info_hash_save_path)->default_value("info_hash.txt"), "Received infohashes save path")
-        ("routing-table-save-path", po::value(&c.routing_table_save_path)->default_value("route.txt"), "Received infohashes save path")
-        ("discovery-interval-seconds", po::value(&c.discovery_interval_seconds), "DHT discovery interval in seconds")
-        ("report-interval-seconds", po::value(&c.report_interval_seconds), "DHT routing table report interval in seconds")
-        ("refresh-nodes-check-interval", po::value(&c.refresh_nodes_check_interval_seconds), "")
-        ("get-peers-refresh-interval", po::value(&c.get_peers_refresh_interval_seconds), "")
-        ("get-peers-request-expiration", po::value(&c.get_peers_request_expiration_seconds), "")
-        ("resolve-torrent-info-hash", po::value(&c.resolve_torrent_info_hash), "")
-        ("max-routing-table-bucket-size", po::value(&c.max_routing_table_bucket_size), "")
-        ("max-routing-table-known-nodes", po::value(&c.max_routing_table_known_nodes), "")
-        ("delete-good-nodes", po::value(&c.delete_good_nodes), "")
-        ("fake-id", po::value(&c.fake_id), "")
-        ("fake-id-prefix-length", po::value(&c.fake_id_prefix_length), "")
-        ("fat-routing-table", po::value(&c.fat_routing_table), "")
-        ;
-
-    po::options_description all_options;
-    all_options.add(desc);
-    all_options.add(hidden);
-
-    po::variables_map vm;
-    po::store(po::command_line_parser(argc, argv).
-                  options(all_options).
-                  run(),
-              vm);
-
-    po::positional_options_description p;
-
-    if(vm.count("help")) {
-      std::cout << make_usage_string_(basename_(argv[0]), desc, p) << std::endl;
-      throw std::invalid_argument("I'm helping you");
-    }
-
-    if(vm.count("config") > 0) {
-      config_fnames = vm["config"].as<std::vector<std::string> >();
-
-      for (auto &config_fname : config_fnames) {
-        std::ifstream ifs(config_fname.c_str());
-
-        if(ifs.fail()) {
-          throw std::invalid_argument("Error opening config file: " + config_fname);
-        }
-
-        po::store(po::parse_config_file(ifs, all_options), vm);
-      }
-    }
-
-    po::notify(vm);
-
-    std::vector<std::string> strs;
-    boost::algorithm::split(strs, bootstrap_nodes, boost::is_any_of(","));
-    if (!(strs.empty() || (strs.size() == 1 && strs[0].empty()))) {
-      for (auto s : strs) {
-        std::vector<std::string> tokens;
-        boost::algorithm::split(tokens, s, boost::is_any_of(":"));
-        if (tokens.size() != 2) {
-          throw std::invalid_argument("Invalid bootstrap nodes format '" + s + "'");
-        }
-        c.bootstrap_nodes.emplace_back(tokens[0], tokens[1]);
-      }
-    }
-
-    if (c.self_node_id.empty()) {
-      std::random_device device;
-      std::mt19937 rng{std::random_device()()};
-      std::uniform_int_distribution<uint8_t> dist;
-      std::stringstream ss_hex;
-      for (int i = 0; i < 20; i++) {
-        ss_hex << std::hex << std::setfill('0') << std::setw(2) << (int)dist(rng);
-      }
-      c.self_node_id = ss_hex.str();
-    }
-  }
-
- private:
-  static std::string basename_(const std::string& p)
-  {
-#ifdef HAVE_BOOST_FILESYSTEM
-    return boost::filesystem::path(p).stem().string();
-#else
-    size_t start = p.find_last_of('/');
-    if(start == std::string::npos)
-      start = 0;
-    else
-      ++start;
-    return p.substr(start);
-#endif
-  }
-
-  // Boost doesn't offer any obvious way to construct a usage string
-  // from an infinite list of positional parameters.  This hack
-  // should work in most reasonable cases.
-  static std::vector<std::string> get_unlimited_positional_args_(const po::positional_options_description& p) {
-    assert(p.max_total_count() == std::numeric_limits<unsigned>::max());
-
-    std::vector<std::string> parts;
-
-    // reasonable upper limit for number of positional options:
-    const int MAX = 1000;
-    const std::string& last = p.name_for_position(MAX);
-
-    for(size_t i = 0; true; ++i) {
-      const std::string& cur = p.name_for_position(i);
-      if(cur == last) {
-        parts.push_back(cur);
-        parts.push_back('[' + cur + ']');
-        parts.push_back("...");
-        return parts;
-      }
-      parts.push_back(cur);
-    }
-    return parts; // never get here
-  }
-
-  static std::string make_usage_string_(const std::string& program_name, const po::options_description& desc, po::positional_options_description& p) {
-    std::vector<std::string> parts;
-    parts.push_back("Usage: ");
-    parts.push_back(program_name);
-    size_t N = p.max_total_count();
-    if(N == std::numeric_limits<unsigned>::max()) {
-      std::vector<std::string> args = get_unlimited_positional_args_(p);
-      parts.insert(parts.end(), args.begin(), args.end());
-    }
-    else {
-      for(size_t i = 0; i < N; ++i) {
-        parts.push_back(p.name_for_position(i));
-      }
-    }
-    if(!desc.options().empty()) {
-      parts.push_back("[options]");
-    }
-    std::ostringstream oss;
-    std::copy(
-        parts.begin(),
-        parts.end(),
-        std::ostream_iterator<std::string>(oss, " "));
-    oss << '\n' << desc;
-    return oss.str();
-  }
-
- public:
-  albert::dht::Config &c;
-};
-}
 
 namespace albert::dht {
 
-Config Config::from_command_line(int argc, char **argv) {
-  Config config;
-  Options(config).parse(argc, argv);
-  return std::move(config);
-}
 void Config::serialize(std::ostream &os) const {
   os << "# DHT config" << std::endl;
   os << "bind_ip = " << bind_ip << std::endl;
@@ -226,6 +53,74 @@ void Config::serialize(std::ostream &os) const {
   os << "fake_id_prefix_length = " << fake_id_prefix_length << std::endl;
   os << "fat_routing_table = " << fat_routing_table << std::endl;
   os << "# end of config." << std::endl;
+}
+
+Config::Config() {
+  po::options_description desc("General Options");
+  desc.add_options()
+      ("help,h", "Display help message")
+      ("config", po::value<std::vector<std::string>>(), "Config file where options may be specified (can be specified more than once)")
+      ("debug", po::value(&debug), "Enable debug mode")
+      ("bind-ip", po::value(&bind_ip)->default_value("0.0.0.0"), "DHT Client bind IP address")
+      ("bind-port", po::value(&bind_port)->default_value(16667), "DHT Client bind port")
+      ("id", po::value(&self_node_id)->default_value(""), "DHT Client Node ID, empty string stands for random value")
+      ("bootstrap-nodes", po::value<std::string>()->default_value(
+          "router.utorrent.com:6881,"
+          "router.bittorrent.com:6881,"
+          "dht.transmissionbt.com:6881"), "DHT Bootstrap node list")
+      ;
+
+  po::options_description hidden;
+  hidden.add_options()
+      ("info-hash-save-path", po::value(&info_hash_save_path)->default_value("info_hash.txt"), "Received infohashes save path")
+      ("routing-table-save-path", po::value(&routing_table_save_path)->default_value("route.txt"), "Received infohashes save path")
+      ("discovery-interval-seconds", po::value(&discovery_interval_seconds), "DHT discovery interval in seconds")
+      ("report-interval-seconds", po::value(&report_interval_seconds), "DHT routing table report interval in seconds")
+      ("refresh-nodes-check-interval", po::value(&refresh_nodes_check_interval_seconds), "")
+      ("get-peers-refresh-interval", po::value(&get_peers_refresh_interval_seconds), "")
+      ("get-peers-request-expiration", po::value(&get_peers_request_expiration_seconds), "")
+      ("resolve-torrent-info-hash", po::value(&resolve_torrent_info_hash), "")
+      ("max-routing-table-bucket-size", po::value(&max_routing_table_bucket_size), "")
+      ("max-routing-table-known-nodes", po::value(&max_routing_table_known_nodes), "")
+      ("delete-good-nodes", po::value(&delete_good_nodes), "")
+      ("fake-id", po::value(&fake_id), "")
+      ("fake-id-prefix-length", po::value(&fake_id_prefix_length), "")
+      ("fat-routing-table", po::value(&fat_routing_table), "")
+      ;
+
+  all_options_ = std::make_unique<po::options_description>();
+  all_options_->add(desc);
+  all_options_->add(hidden);
+}
+
+void Config::after_parse(boost::program_options::variables_map &vm) {
+  if(vm.count("bootstrap-nodes") > 0) {
+    auto bootstrap_nodes_string = vm["bootstrap-nodes"].as<std::string>();
+    std::vector<std::string> strs;
+    boost::algorithm::split(strs, bootstrap_nodes_string, boost::is_any_of(","));
+    if (!(strs.empty() || (strs.size() == 1 && strs[0].empty()))) {
+      for (auto s : strs) {
+        std::vector<std::string> tokens;
+        boost::algorithm::split(tokens, s, boost::is_any_of(":"));
+        if (tokens.size() != 2) {
+          throw std::invalid_argument("Invalid bootstrap nodes format '" + s + "'");
+        }
+        bootstrap_nodes.emplace_back(tokens[0], tokens[1]);
+      }
+    }
+  }
+
+  if (self_node_id.empty()) {
+    std::random_device device;
+    std::mt19937 rng{std::random_device()()};
+    std::uniform_int_distribution<uint8_t> dist;
+    std::stringstream ss_hex;
+    for (int i = 0; i < 20; i++) {
+      ss_hex << std::hex << std::setfill('0') << std::setw(2) << (int)dist(rng);
+    }
+    self_node_id = ss_hex.str();
+  }
+
 }
 
 }

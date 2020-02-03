@@ -15,6 +15,10 @@ class Sqlite3OperationError :public std::runtime_error {
  public:
   Sqlite3OperationError(const std::string &s) :runtime_error(s) { }
 };
+class Sqlite3TimeoutError :public std::runtime_error {
+ public:
+  Sqlite3TimeoutError(const std::string &s) :runtime_error(s) { }
+};
 
 class Sqlite3Store :public Store {
  public:
@@ -22,8 +26,9 @@ class Sqlite3Store :public Store {
   ~Sqlite3Store() override = default;
 
   void create(const std::string &key, const std::string &value) override;
-  void update(const std::string &key, const std::string &value) override { throw Sqlite3OperationError("wtf, do not call me"); };
+  void update(const std::string &key, const std::string &value) override;;
   std::optional<std::string> read(const std::string &key) const override;
+  std::vector<std::string> get_empty_keys() const override;
  private:
   sqlite3 *db_;
 };
