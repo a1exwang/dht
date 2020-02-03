@@ -36,6 +36,7 @@ struct Config :public albert::config::Config {
   int refresh_nodes_check_interval_seconds = 5;
   int get_peers_refresh_interval_seconds = 2;
   int get_peers_request_expiration_seconds = 30;
+  int transaction_expiration_seconds = 60;
 
   size_t max_routing_table_bucket_size = 8;
   size_t max_routing_table_known_nodes = 16384;

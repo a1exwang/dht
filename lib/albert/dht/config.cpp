@@ -52,6 +52,7 @@ void Config::serialize(std::ostream &os) const {
   os << "fake_id = " << fake_id << std::endl;
   os << "fake_id_prefix_length = " << fake_id_prefix_length << std::endl;
   os << "fat_routing_table = " << fat_routing_table << std::endl;
+  os << "transaction_expiration_seconds = " << transaction_expiration_seconds << std::endl;
   os << "# end of config." << std::endl;
 }
 
@@ -84,6 +85,7 @@ Config::Config() {
       ("fake-id", po::value(&fake_id), "")
       ("fake-id-prefix-length", po::value(&fake_id_prefix_length), "")
       ("fat-routing-table", po::value(&fat_routing_table), "")
+      ("transaction-expiration-seconds", po::value(&transaction_expiration_seconds), "")
       ;
 
   all_options_ = std::make_unique<po::options_description>();

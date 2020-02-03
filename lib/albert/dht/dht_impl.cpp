@@ -190,7 +190,7 @@ void DHTImpl::sample_infohashes(std::function<void(const krpc::NodeID &info_hash
 DHT::DHT(Config config)
     : config_(std::move(config)),
       self_info_(parse_node_id(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
-      transaction_manager(),
+      transaction_manager(std::chrono::seconds(config.transaction_expiration_seconds)),
       get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
       main_routing_table_(nullptr),
       info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app) {

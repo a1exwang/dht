@@ -33,6 +33,7 @@ class TransactionError : std::runtime_error {
 
 class TransactionManager {
  public:
+  explicit TransactionManager(std::chrono::milliseconds expiration_time) :expiration_time_(expiration_time) { }
   void start(const std::function<void (Transaction &transaction)> &callback);
   void end(const std::string& id, const std::function<void (const Transaction &transaction)> &callback);
   bool has_transaction(const std::string &id) const;
@@ -42,8 +43,10 @@ class TransactionManager {
   size_t size() const { return transactions_.size(); }
  private:
   std::map<std::string, Transaction> transactions_;
-  uint64_t transaction_counter_;
+  uint64_t transaction_counter_ = 0;
   std::mutex lock_;
+
+  std::chrono::milliseconds expiration_time_;
 };
 
 }

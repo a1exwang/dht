@@ -48,7 +48,7 @@ void TransactionManager::end(
 void TransactionManager::gc() {
   std::list<std::string> to_delete;
   for (auto &item : transactions_) {
-    if (std::chrono::high_resolution_clock::now() - item.second.start_time_ > std::chrono::seconds(20)) {
+    if (std::chrono::high_resolution_clock::now() - item.second.start_time_ > expiration_time_) {
       to_delete.push_back(item.first);
     }
   }
