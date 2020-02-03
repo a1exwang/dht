@@ -58,8 +58,6 @@ void Config::serialize(std::ostream &os) const {
 Config::Config() {
   po::options_description desc("General Options");
   desc.add_options()
-      ("help,h", "Display help message")
-      ("config", po::value<std::vector<std::string>>(), "Config file where options may be specified (can be specified more than once)")
       ("debug", po::value(&debug), "Enable debug mode")
       ("bind-ip", po::value(&bind_ip)->default_value("0.0.0.0"), "DHT Client bind IP address")
       ("bind-port", po::value(&bind_port)->default_value(16667), "DHT Client bind port")

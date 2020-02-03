@@ -4,6 +4,7 @@
 #include <boost/asio/steady_timer.hpp>
 
 #include <albert/krpc/krpc.hpp>
+#include <albert/bt/config.hpp>
 
 namespace boost::asio {
 class io_context;
@@ -15,7 +16,7 @@ class TorrentResolver;
 
 class BT {
  public:
-  BT(boost::asio::io_service &io, krpc::NodeID self, uint32_t bind_ip, uint16_t bind_port);
+  BT(boost::asio::io_service &io, Config config);
   std::weak_ptr<TorrentResolver> resolve_torrent(const krpc::NodeID &info_hash, std::function<void(const bencoding::DictNode &)> handler);
   void start();
 
@@ -25,8 +26,7 @@ class BT {
   void handle_gc_timer(const boost::system::error_code &error);
   void reset_gc_timer();
  private:
-  uint32_t bind_ip_;
-  uint16_t bind_port_;
+  Config config_;
   boost::asio::io_service &io_;
   krpc::NodeID self_;
   std::map<albert::krpc::NodeID, std::shared_ptr<TorrentResolver>> resolvers_;

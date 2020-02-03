@@ -45,6 +45,15 @@ std::string Config::usage(const std::string &argv0) const {
 }
 
 std::vector<std::string> Config::from_command_line(std::vector<std::string> args) {
+
+  po::options_description global_options;
+  global_options.add_options()
+      ("help,h", "Display help message")
+      ("config", po::value<std::vector<std::string>>(),
+          "Config file where options may be specified (can be specified more than once)")
+      ;
+  all_options_->add(global_options);
+
   po::variables_map vm;
   auto parsed = po::command_line_parser(args).
       options(*all_options_).
@@ -71,12 +80,21 @@ std::vector<std::string> Config::from_command_line(std::vector<std::string> args
         throw std::invalid_argument("Error opening config file: " + config_fname);
       }
 
-      auto parsed2 = po::parse_config_file(ifs, *all_options_);
-      auto remaining_args2 = po::collect_unrecognized(
-          parsed2.options,
-          po::collect_unrecognized_mode::include_positional);
+      auto parsed2 = po::parse_config_file(ifs, *all_options_, true);
       po::store(parsed2, vm);
-      remaining_args.insert(remaining_args.end(), remaining_args2.begin(), remaining_args2.end());
+      for (const auto& o : parsed.options) {
+        if (o.unregistered) {
+          // Convert unrecognized config option to command line option format;
+          for (auto &value : o.value) {
+            remaining_args.push_back("--" + o.string_key);
+            remaining_args.push_back(value);
+          }
+        }
+      }
+
+      // preserved global config option
+      remaining_args.push_back("--config");
+      remaining_args.push_back(config_fname);
     }
   }
 
@@ -92,18 +110,22 @@ std::vector<std::string> Config::from_command_line(std::vector<std::string> args
 }
 
 Config::~Config() { }
-Config::Config(Config &&rhs) :all_options_(std::move(rhs.all_options_)) { }
+Config::Config(Config &&rhs) noexcept :all_options_(std::move(rhs.all_options_)) { }
 
 void throw_on_remaining_args(const std::vector<std::string> &rhs) {
   std::vector<std::string> args;
-  for (auto &item : rhs) {
-    if (item == "-h" || item == "--help") {
+  for (int i = 1; i < rhs.size(); i++) {
+    if (rhs[i] == "-h" || rhs[i] == "--help") {
       exit(0);
+    } else if (rhs[i].starts_with("--config=") || rhs[i] == "--config") {
+      // ignore --config arg
+      i++;
+      continue;
     }
-    args.push_back(item);
+    args.push_back(rhs[i]);
   }
 
-  if (args.size() > 1) {
+  if (args.size() > 0) {
     LOG(error) << "Unrecognized options: ";
     std::stringstream ss;
     for (int i = 1; i < rhs.size(); i++) {

@@ -17,7 +17,7 @@ std::vector<std::string> argv2args(int argc, const char *const *argv);
 
 struct Config {
   Config() = default;
-  Config(Config &&rhs);
+  Config(Config &&rhs) noexcept;
   virtual ~Config();
   virtual std::string usage(const std::string &argv0) const;
   virtual std::vector<std::string> from_command_line(std::vector<std::string> args);

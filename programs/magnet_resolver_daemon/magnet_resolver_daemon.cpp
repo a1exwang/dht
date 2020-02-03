@@ -18,6 +18,7 @@
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
 #include <albert/store/sqlite3_store.hpp>
+#include <albert/bt/config.hpp>
 
 class Scanner :public std::enable_shared_from_this<Scanner> {
  public:
@@ -97,43 +98,23 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
 
 
 int main(int argc, char* argv[]) {
+  auto args = albert::config::argv2args(argc, argv);
+
   albert::dht::Config config;
+  albert::bt::Config bt_config;
+  args = config.from_command_line(args);
+  args = bt_config.from_command_line(args);
+  albert::config::throw_on_remaining_args(args);
 
-  std::vector<std::string> args;
-  for (int i = 0; i < argc; i++) {
-    args.emplace_back(argv[i]);
-  }
-  try {
-    args = config.from_command_line(args);
-  } catch (const std::exception &e) {
-    LOG(error) << "Failed to parse command line: " << e.what();
-    exit(1);
-  }
   albert::log::initialize_logger(config.debug);
-  auto info_hash = config.resolve_torrent_info_hash;
-  if (argc >= 1) {
-    auto last_arg = argv[argc - 1];
-    if (strlen(last_arg) == albert::krpc::NodeIDLength*2) {
-      info_hash = argv[argc-1];
-      LOG(info) << "Using info_hash from command line: " << info_hash;
-    }
-  }
-
-  std::stringstream ss;
-  config.serialize(ss);
-  LOG(info) << ss.str();
-
   boost::asio::io_service io_service{};
-
-  auto bt_id = albert::krpc::NodeID::random();
-  LOG(info) << "BT peer ID " << bt_id.to_string();
-  albert::bt::BT bt(io_service, bt_id, boost::asio::ip::address_v4::from_string(config.bind_ip).to_uint(), 0);
-  bt.start();
-
   albert::dht::DHTInterface dht(std::move(config), io_service);
+  albert::bt::BT bt(io_service, std::move(bt_config));
+  auto store = std::make_unique<albert::store::Sqlite3Store>("torrents/torrents.sqlite3");
+
+  bt.start();
   dht.start();
 
-  auto store = std::make_unique<albert::store::Sqlite3Store>("torrents/torrents.sqlite3");
   size_t db_scan_interval_seconds = 10;
   auto scanner = std::make_shared<Scanner>(io_service, bt, dht, std::move(store), db_scan_interval_seconds);
   scanner->start();
