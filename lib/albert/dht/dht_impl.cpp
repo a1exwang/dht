@@ -13,6 +13,7 @@
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
 #include <albert/utils/utils.hpp>
+#include <albert/u160/u160.hpp>
 
 #include "get_peers.hpp"
 
@@ -175,7 +176,7 @@ void DHTImpl::bootstrap() {
   bootstrap_routing_table(*dht_->main_routing_table_);
 }
 
-void DHTImpl::sample_infohashes(std::function<void(const krpc::NodeID &info_hash)> handler) {
+void DHTImpl::sample_infohashes(std::function<void(const u160::U160 &info_hash)> handler) {
   if (sample_infohashes_manager_) {
     throw std::invalid_argument("Cannot sample_infohashes already in progress");
   } else {
@@ -189,7 +190,7 @@ void DHTImpl::sample_infohashes(std::function<void(const krpc::NodeID &info_hash
 
 DHT::DHT(Config config)
     : config_(std::move(config)),
-      self_info_(parse_node_id(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
+      self_info_(u160::U160::from_hex(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
       transaction_manager(std::chrono::seconds(config.transaction_expiration_seconds)),
       get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
       main_routing_table_(nullptr),
@@ -217,7 +218,7 @@ DHT::DHT(Config config)
   }
   if (!rt) {
     rt = std::make_unique<routing_table::RoutingTable>(
-        parse_node_id(config_.self_node_id),
+        u160::U160::from_hex(config_.self_node_id),
         "main",
         config_.routing_table_save_path,
         config_.max_routing_table_bucket_size,
@@ -246,13 +247,13 @@ DHTInterface::~DHTInterface() {}
 void DHTInterface::start() {
   impl_->bootstrap();
 }
-void DHTInterface::get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) {
+void DHTInterface::get_peers(const u160::U160 &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) {
   impl_->get_peers(info_hash, callback);
 }
-void DHTInterface::sample_infohashes(const std::function<void (const krpc::NodeID &)> handler) {
+void DHTInterface::sample_infohashes(const std::function<void (const u160::U160 &)> handler) {
   impl_->sample_infohashes(std::move(handler));
 }
-void DHTInterface::set_announce_peer_handler(std::function<void(const krpc::NodeID &info_hash)> handler) {
+void DHTInterface::set_announce_peer_handler(std::function<void(const u160::U160 &info_hash)> handler) {
   impl_->set_announce_peer_handler(std::move(handler));
 }
 

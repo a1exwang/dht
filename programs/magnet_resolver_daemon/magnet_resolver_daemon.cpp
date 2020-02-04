@@ -12,13 +12,14 @@
 #include <boost/bind/bind.hpp>
 
 #include <albert/bt/bt.hpp>
+#include <albert/bt/config.hpp>
 #include <albert/bt/torrent_resolver.hpp>
 #include <albert/cui/cui.hpp>
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
 #include <albert/store/sqlite3_store.hpp>
-#include <albert/bt/config.hpp>
+#include <albert/u160/u160.hpp>
 
 class Scanner :public std::enable_shared_from_this<Scanner> {
  public:
@@ -49,7 +50,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       auto result = store_->get_empty_keys();
       auto you_are_the_chosen_one = rng_() % result.size();
       auto hero = result[you_are_the_chosen_one];
-      auto super_hero = albert::krpc::NodeID::from_hex(hero);
+      auto super_hero = albert::u160::U160::from_hex(hero);
       try {
         resolve(super_hero);
       } catch (const std::runtime_error &e) {
@@ -61,7 +62,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
     db_scan_timer.async_wait(boost::bind(&Scanner::handle_timer,shared_from_this(), boost::asio::placeholders::error()));
   }
 
-  void resolve(const albert::krpc::NodeID &ih) {
+  void resolve(const albert::u160::U160 &ih) {
     auto resolver = bt.resolve_torrent(ih, [ih, that = shared_from_this()](const albert::bencoding::DictNode &torrent) {
       auto file_name = "torrents/" + ih.to_string() + ".torrent";
       std::ofstream f(file_name, std::ios::binary);
@@ -79,7 +80,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
     });
   };
 
-  void cancel(const albert::krpc::NodeID &ih) {
+  void cancel(const albert::u160::U160 &ih) {
     // TODO
     LOG(error) << "Cancelling " << ih.to_string() << ", not implemented";
   }

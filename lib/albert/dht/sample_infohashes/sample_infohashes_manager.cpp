@@ -8,6 +8,8 @@
 #include <albert/log/log.hpp>
 #include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/dht.hpp>
+#include <albert/u160/u160.hpp>
+
 #include "../dht_impl.hpp"
 
 namespace albert::dht::sample_infohashes {
@@ -16,11 +18,11 @@ SampleInfohashesManager::SampleInfohashesManager(
     boost::asio::io_service &io,
     DHT &dht,
     DHTImpl &impl,
-    std::function<void (const krpc::NodeID &)> handler)
+    std::function<void (const u160::U160 &)> handler)
     :io_(io),
      dht_(dht),
      impl_(impl),
-     current_target_(krpc::NodeID::random()),
+     current_target_(u160::U160::random()),
      handler_(handler),
      action_timer_(io, boost::asio::chrono::seconds(0)) {
 

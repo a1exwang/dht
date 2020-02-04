@@ -7,6 +7,7 @@
 #include <albert/dht/dht.hpp>
 #include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/bt/peer_connection.hpp>
+#include <albert/u160/u160.hpp>
 
 
 namespace albert::dht {
@@ -29,13 +30,13 @@ void DHTImpl::handle_get_peers_response(
           dht_->get_peers_manager_->add_peer(info_hash, ip, port);
         }
       } else {
-        auto old_prefix = krpc::NodeID::common_prefix_length(info_hash, sender_id);
+        auto old_prefix = u160::U160::common_prefix_length(info_hash, sender_id);
         dht_->get_peers_manager_->set_node_traversed(info_hash, sender_id);
         LOG(debug) << "Node traversed prefix " << old_prefix << " '"
                   << sender_id.to_string() << "'";
         for (auto &node : response.nodes()) {
           if (!dht_->get_peers_manager_->has_node_traversed(info_hash, node.id())) {
-            auto new_prefix = krpc::NodeID::common_prefix_length(info_hash, node.id());
+            auto new_prefix = u160::U160::common_prefix_length(info_hash, node.id());
             if (new_prefix >= old_prefix) {
               LOG(debug) << "Node to traverse prefix " << new_prefix << " " << node.id().to_string();
               send_get_peers_query(info_hash, node);
@@ -57,19 +58,19 @@ void DHTImpl::handle_get_peers_response(
 
 }
 
-void get_peers::GetPeersRequest::delete_node(const krpc::NodeID &id) {
+void get_peers::GetPeersRequest::delete_node(const u160::U160 &id) {
   nodes_.erase(id);
 }
-void get_peers::GetPeersRequest::add_node(const krpc::NodeID &node) {
+void get_peers::GetPeersRequest::add_node(const u160::U160 &node) {
   nodes_.insert(std::make_pair(node, NodeStatus()));
 }
-bool get_peers::GetPeersRequest::has_node(const krpc::NodeID &id) const {
+bool get_peers::GetPeersRequest::has_node(const u160::U160 &id) const {
   return nodes_.find(id) != nodes_.end();
 }
 std::set<std::tuple<uint32_t, uint16_t>> get_peers::GetPeersRequest::peers() const {
   return peers_;
 }
-bool get_peers::GetPeersRequest::has_node_traversed(const krpc::NodeID &id) const {
+bool get_peers::GetPeersRequest::has_node_traversed(const u160::U160 &id) const {
   if (nodes_.find(id) == nodes_.end()) {
     return false;
   } else {
@@ -85,7 +86,7 @@ void get_peers::GetPeersRequest::add_peer(uint32_t ip, uint16_t port) {
     }
   }
 }
-void get_peers::GetPeersRequest::set_node_traversed(const krpc::NodeID &id) {
+void get_peers::GetPeersRequest::set_node_traversed(const u160::U160 &id) {
   nodes_.at(id).traversed = true;
 }
 bool get_peers::GetPeersRequest::expired() const {
@@ -93,34 +94,34 @@ bool get_peers::GetPeersRequest::expired() const {
 }
 void get_peers::GetPeersRequest::add_callback(std::function<void(uint32_t, uint16_t)> callback) { this->callbacks_.emplace_back(std::move(callback)); }
 
-bool get_peers::GetPeersManager::has_node(const krpc::NodeID &id, const krpc::NodeID &node) const {
+bool get_peers::GetPeersManager::has_node(const u160::U160 &id, const u160::U160 &node) const {
   return requests_.at(id).has_node(node);
 }
-void get_peers::GetPeersManager::set_node_traversed(const krpc::NodeID &id, const krpc::NodeID &node) {
+void get_peers::GetPeersManager::set_node_traversed(const u160::U160 &id, const u160::U160 &node) {
   requests_.at(id).set_node_traversed(node);
 }
 void get_peers::GetPeersManager::create_request(
-    const krpc::NodeID &info_hash) {
+    const u160::U160 &info_hash) {
   requests_.emplace(
       info_hash,
       GetPeersRequest(
           info_hash,
           std::chrono::high_resolution_clock::now() + expiration_));
 }
-void get_peers::GetPeersManager::add_peer(const krpc::NodeID &id, uint32_t ip, uint16_t port) {
+void get_peers::GetPeersManager::add_peer(const u160::U160 &id, uint32_t ip, uint16_t port) {
   requests_.at(id).add_peer(ip, port);
 }
-void get_peers::GetPeersManager::add_node(const krpc::NodeID &id, const krpc::NodeID &node) {
+void get_peers::GetPeersManager::add_node(const u160::U160 &id, const u160::U160 &node) {
   requests_.at(id).add_node(node);
 }
-bool get_peers::GetPeersManager::has_node_traversed(const krpc::NodeID &id, const krpc::NodeID &node) const {
+bool get_peers::GetPeersManager::has_node_traversed(const u160::U160 &id, const u160::U160 &node) const {
   return requests_.at(id).has_node_traversed(node);
 }
-bool get_peers::GetPeersManager::has_request(const krpc::NodeID &id) const {
+bool get_peers::GetPeersManager::has_request(const u160::U160 &id) const {
   return requests_.find(id) != requests_.end();
 }
 void get_peers::GetPeersManager::gc() {
-  std::list<krpc::NodeID> to_delete;
+  std::list<u160::U160> to_delete;
   for (auto &item : requests_) {
     if (item.second.expired() > 0) {
       to_delete.push_back(item.first);
@@ -145,7 +146,7 @@ void get_peers::GetPeersManager::gc() {
   }
 }
 void get_peers::GetPeersManager::add_callback(
-    const krpc::NodeID &id,
+    const u160::U160 &id,
     const std::function<void(uint32_t, uint16_t)> &callback) {
   requests_.at(id).add_callback(callback);
 }
@@ -154,7 +155,7 @@ void DHTImpl::handle_get_peers_timer(const std::function<void()> &cancel) {
   dht_->get_peers_manager_->gc();
 }
 
-void DHTImpl::get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) {
+void DHTImpl::get_peers(const u160::U160 &info_hash, const std::function<void(uint32_t, uint16_t)> &callback) {
 
   if (!dht_->get_peers_manager_->has_request(info_hash)) {
     dht_->get_peers_manager_->create_request(info_hash);

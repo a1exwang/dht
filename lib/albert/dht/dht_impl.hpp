@@ -6,20 +6,24 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <utility>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 
+#include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
-#include <utility>
-#include <albert/dht/dht.hpp>
 
 using boost::asio::ip::udp;
 
 namespace boost::system {
 class error_code;
+}
+
+namespace albert::u160 {
+class U160;
 }
 
 namespace albert::krpc {
@@ -33,7 +37,6 @@ class FindNodeQuery;
 class GetPeersQuery;
 class AnnouncePeerQuery;
 class NodeInfo;
-class NodeID;
 }
 
 namespace albert::dht {
@@ -74,17 +77,17 @@ class DHTImpl {
 
   explicit DHTImpl(DHT *dht, boost::asio::io_service &io);
   void bootstrap();
-  void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
-  void sample_infohashes(std::function<void(const krpc::NodeID &info_hash)> handler);
+  void get_peers(const u160::U160 &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
+  void sample_infohashes(std::function<void(const u160::U160 &info_hash)> handler);
 
   /* For SampleInfohashesManager */
   void bootstrap_routing_table(routing_table::RoutingTable &routing_table);
   void send_sample_infohashes_query(
-      const krpc::NodeID &target,
+      const u160::U160 &target,
       const krpc::NodeInfo &receiver
   );
 
-  void set_announce_peer_handler(std::function<void (const krpc::NodeID &info_hash)> handler);
+  void set_announce_peer_handler(std::function<void (const u160::U160 &info_hash)> handler);
 
  private:
   friend class DHT;
@@ -119,24 +122,24 @@ class DHTImpl {
   void ping(const krpc::NodeInfo &target);
 
   [[nodiscard]]
-  krpc::NodeID self() const;
+  u160::U160 self() const;
 
   [[nodiscard]]
-  krpc::NodeID maybe_fake_self(const krpc::NodeID &target) const;
+  u160::U160 maybe_fake_self(const u160::U160 &target) const;
 
   void send_find_node_response(
       const std::string &transaction_id,
       const krpc::NodeInfo &receiver,
       const std::vector<krpc::NodeInfo> &nodes);
   void send_get_peers_query(
-      const krpc::NodeID &info_hash,
+      const u160::U160 &info_hash,
       const krpc::NodeInfo &receiver
       );
 
   void handle_send(const std::string &description, const boost::system::error_code &error, std::size_t bytes_transferred);
-  void good_sender(const krpc::NodeID &sender_id);
+  void good_sender(const u160::U160 &sender_id);
 
-  void bad_node(const krpc::NodeID &id);
+  void bad_node(const u160::U160 &id);
   // return value: If the sender is added to black list, it returns true; otherwise, it returns false.
   bool bad_sender();
 
@@ -165,7 +168,7 @@ class DHTImpl {
 
   std::vector<Timer> timers_;
 
-  std::function<void (const krpc::NodeID &info_hash)> announce_peer_handler_;
+  std::function<void (const u160::U160 &info_hash)> announce_peer_handler_;
 
 };
 }

@@ -9,14 +9,15 @@
 #include <albert/bt/torrent_resolver.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace albert::bt {
 
 BT::BT(boost::asio::io_service &io, Config config)
-    :io_(io), config_(std::move(config)), self_(krpc::NodeID::from_hex(config_.id)), gc_timer_(io) { }
+    : io_(io), config_(std::move(config)), self_(u160::U160::from_hex(config_.id)), gc_timer_(io) { }
 
 std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
-    const krpc::NodeID &info_hash,
+    const u160::U160 &info_hash,
     std::function<void(const bencoding::DictNode &)> handler) {
   if (resolvers_.find(info_hash) == resolvers_.end()) {
     auto bind_ip = boost::asio::ip::address_v4::from_string(config_.bind_ip).to_uint();
@@ -46,7 +47,7 @@ void BT::handle_gc_timer(const boost::system::error_code &error) {
     throw std::runtime_error("BT gc timer failed " + error.message());
   }
 
-  std::list<krpc::NodeID> to_delete;
+  std::list<u160::U160> to_delete;
   for (auto &resolver : resolvers_) {
     if (resolver.second->timeout()) {
       to_delete.push_back(resolver.first);

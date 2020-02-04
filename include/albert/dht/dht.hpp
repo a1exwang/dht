@@ -15,12 +15,15 @@
 #include <albert/dht/config.hpp>
 #include <albert/dht/transaction.hpp>
 
-
 namespace boost::asio {
 class io_context;
 typedef io_context io_service;
 }
 
+
+namespace albert::u160 {
+class U160;
+}
 
 namespace albert::dht {
 namespace routing_table {
@@ -55,7 +58,6 @@ class DHT {
   bool in_black_list(uint32_t ip, uint16_t port) const;
   bool add_to_black_list(uint32_t ip, uint16_t port);
  private:
-  static krpc::NodeID parse_node_id(const std::string &s);
   Config config_;
 
   // NOTE(aocheng) This must be place before routing_table
@@ -102,9 +104,9 @@ class DHTInterface {
   DHTInterface(Config config, boost::asio::io_service &io_service);
   ~DHTInterface();
   void start();
-  void get_peers(const krpc::NodeID &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
-  void sample_infohashes(const std::function<void(const krpc::NodeID &info_hash)> handler);
-  void set_announce_peer_handler(std::function<void (const krpc::NodeID &info_hash)> handler);
+  void get_peers(const u160::U160 &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
+  void sample_infohashes(const std::function<void(const u160::U160 &info_hash)> handler);
+  void set_announce_peer_handler(std::function<void (const u160::U160 &info_hash)> handler);
  private:
   std::unique_ptr<DHT> dht_;
   std::unique_ptr<DHTImpl> impl_;

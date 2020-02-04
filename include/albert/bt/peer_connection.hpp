@@ -9,6 +9,7 @@
 
 #include <albert/bt/bt.hpp>
 #include <albert/krpc/krpc.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace albert::bt::peer {
 class Peer;
@@ -59,8 +60,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
  public:
   PeerConnection(
       boost::asio::io_context &io_context,
-      const krpc::NodeID &self,
-      const krpc::NodeID &target,
+      const u160::U160 &self,
+      const u160::U160 &target,
       uint32_t bind_ip,
       uint16_t bind_port,
       uint32_t ip,
@@ -110,9 +111,9 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   Handshake sent_handshake_;
   Handshake received_handshake_;
 
-  krpc::NodeID self_;
-  krpc::NodeID target_;
-  krpc::NodeID peer_id_;
+  u160::U160 self_;
+  u160::U160 target_;
+  u160::U160 peer_id_;
 
   std::array<uint8_t, 65536> read_buffer_{};
   std::vector<uint8_t> read_ring_{};

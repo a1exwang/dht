@@ -12,13 +12,14 @@
 #include <albert/bt/peer.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace albert::bt {
 
 TorrentResolver::TorrentResolver(
     boost::asio::io_service &io,
-    krpc::NodeID info_hash,
-    krpc::NodeID self,
+    u160::U160 info_hash,
+    u160::U160 self,
     uint32_t bind_ip,
     uint16_t bind_port,
     std::chrono::high_resolution_clock::time_point expiration_at
@@ -60,7 +61,7 @@ void TorrentResolver::piece_handler(int piece, const std::vector<uint8_t> &data)
   if (finished()) {
     LOG(info) << "torrent finished " << info_hash_.to_string();
     auto info_data = merged_pieces();
-    auto calculated_hash = krpc::NodeID::hash(info_data.data(), info_data.size());
+    auto calculated_hash = u160::U160::hash(info_data.data(), info_data.size());
     if (calculated_hash == info_hash_) {
       std::stringstream ss(std::string((const char*)info_data.data(), info_data.size()));
       auto info = bencoding::Node::decode(ss);
@@ -77,7 +78,7 @@ void TorrentResolver::piece_handler(int piece, const std::vector<uint8_t> &data)
   }
 }
 
-krpc::NodeID TorrentResolver::self() const {
+u160::U160 TorrentResolver::self() const {
   return self_;
 }
 

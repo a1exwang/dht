@@ -6,29 +6,21 @@
 #include <albert/dht/config.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
+#include <albert/u160/u160.hpp>
 
 #include <boost/asio/io_service.hpp>
 
 int main(int argc, char* argv[]) {
-  // usage magnet_to_torrent --conf=dht.conf {bt_info_hash}
   albert::dht::Config config;
-  try {
-    config = albert::dht::Config::from_command_line(argc, argv);
-  } catch (const std::exception &e) {
-    LOG(error) << "Failed to parse command line: " << e.what();
-    exit(1);
-  }
+  auto args = albert::config::argv2args(argc, argv);
+  args = config.from_command_line(args);
+  albert::config::throw_on_remaining_args(args);
   albert::log::initialize_logger(config.debug);
 
-  std::stringstream ss;
-  config.serialize(ss);
-  LOG(info) << ss.str();
-
   boost::asio::io_service io_service{};
-
   albert::dht::DHTInterface dht(std::move(config), io_service);
   dht.start();
-  dht.sample_infohashes([](const albert::krpc::NodeID &info_hash) {
+  dht.sample_infohashes([](const albert::u160::U160 &info_hash) {
     LOG(info) << "got info hash " << info_hash.to_string();
   });
 

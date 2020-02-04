@@ -6,6 +6,7 @@
 #include <boost/asio/steady_timer.hpp>
 
 #include <albert/krpc/krpc.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace boost::asio {
 class io_context;
@@ -24,7 +25,7 @@ namespace albert::dht::sample_infohashes {
 class SampleInfohashesManager {
  public:
   SampleInfohashesManager(boost::asio::io_service &io, DHT &dht,
-                          DHTImpl &impl, std::function<void (const krpc::NodeID &)> handler);
+                          DHTImpl &impl, std::function<void (const u160::U160 &)> handler);
   void handle(const krpc::SampleInfohashesResponse &response);
 
  private:
@@ -35,10 +36,10 @@ class SampleInfohashesManager {
   DHTImpl &impl_;
   DHT &dht_;
 
-  krpc::NodeID current_target_;
+  u160::U160 current_target_;
   dht::routing_table::RoutingTable *routing_table_;
-  std::function<void (const krpc::NodeID &)> handler_;
-  std::set<krpc::NodeID> traversed_;
+  std::function<void (const u160::U160 &)> handler_;
+  std::set<u160::U160> traversed_;
 
   boost::asio::steady_timer action_timer_;
 };

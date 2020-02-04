@@ -1,7 +1,9 @@
 #pragma once
 #include <list>
+
 #include <albert/krpc/krpc.hpp>
 #include <albert/bt/peer_connection.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace boost::asio {
 class io_context;
@@ -13,8 +15,8 @@ class TorrentResolver {
  public:
   TorrentResolver(
       boost::asio::io_service &io,
-      krpc::NodeID info_hash,
-      krpc::NodeID self,
+      u160::U160 info_hash,
+      u160::U160 self,
       uint32_t bind_ip,
       uint16_t bind_port,
       std::chrono::high_resolution_clock::time_point expiration_at_);
@@ -31,7 +33,7 @@ class TorrentResolver {
   size_t data_got() const;
 
   [[nodiscard]]
-  krpc::NodeID self() const;
+  u160::U160 self() const;
 
   bool timeout() const {
     return std::chrono::high_resolution_clock::now() > expiration_at_;
@@ -54,8 +56,8 @@ class TorrentResolver {
   std::function<void(const bencoding::DictNode &torrent)> torrent_handler_;
 
   boost::asio::io_service &io_;
-  krpc::NodeID info_hash_;
-  krpc::NodeID self_;
+  u160::U160 info_hash_;
+  u160::U160 self_;
   std::list<std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
 
   std::chrono::high_resolution_clock::time_point expiration_at_;

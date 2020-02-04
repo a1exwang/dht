@@ -5,6 +5,7 @@
 #include <albert/dht/transaction.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
+#include <albert/u160/u160.hpp>
 
 /**
  * class dht::DHT
@@ -21,9 +22,6 @@ std::string DHT::create_query(std::shared_ptr<krpc::Query> query, routing_table:
   std::stringstream ss;
   query->encode(ss, bencoding::EncodeMode::Bencoding);
   return ss.str();
-}
-krpc::NodeID DHT::parse_node_id(const std::string &s) {
-  return krpc::NodeID::from_hex(s);
 }
 std::string DHT::create_response(const krpc::Response &query) {
   std::stringstream ss;

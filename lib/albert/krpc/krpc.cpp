@@ -1,184 +1,13 @@
 #include <albert/krpc/krpc.hpp>
 
 #include <algorithm>
-#include <utility>
 #include <sstream>
-#include <random>
-
-#include <openssl/sha.h>
 
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace albert::krpc {
-
-NodeID NodeID::random() {
-  std::random_device device;
-  std::mt19937 rng{std::random_device()()};
-  NodeID ret{};
-  std::generate(ret.data_.begin(), ret.data_.end(), rng);
-  return ret;
-}
-std::string NodeID::to_string() const {
-  std::stringstream ss;
-  for (auto c : data_) {
-    ss << std::hex << std::setfill('0') << std::setw(2) << (uint32_t)(uint8_t)c;
-  }
-  return ss.str();
-}
-NodeID NodeID::pow2m1(size_t r) {
-  assert(r > 0 && r <= NodeIDBits);
-  // NodeIDLength - ceil(r/8)
-  size_t index = NodeIDLength - ((r-1) / 8 + 1);
-  size_t bit = (r % 8 == 0) ? 8 : (r % 8);
-  NodeID ret{};
-  ret.data_[index] = (1u << bit) - 1;
-  for (size_t i = index+1; i < NodeIDLength; i++) {
-    ret.data_[i] = 0xffu;
-  }
-  return ret;
-}
-NodeID NodeID::pow2(size_t r) {
-  assert(r >= 0 && r < NodeIDBits);
-  size_t index = NodeIDLength - 1 - r / 8;
-  size_t bit = r % 8;
-  NodeID ret{};
-  ret.data_[index] = 1u << bit;
-  return ret;
-}
-NodeID NodeID::from_string(std::string s) {
-  NodeID ret{};
-  if (s.size() != NodeIDLength) {
-    throw InvalidMessage("NodeID is not NodeIDLength long");
-  }
-  std::copy(s.begin(), s.end(), ret.data_.begin());
-  return ret;
-}
-void NodeID::encode(std::ostream &os) const {
-  os.write((const char*)data_.data(), data_.size());
-}
-bool NodeID::operator<=(const NodeID &rhs) const {
-  return *this < rhs || *this == rhs;
-}
-bool NodeID::operator==(const NodeID &rhs) const {
-  return !(*this < rhs) && !(rhs < *this);
-}
-bool NodeID::operator<(const NodeID &rhs) const {
-  // data_ is big endian so we can use lexicographical_compare
-  return std::lexicographical_compare(data_.begin(), data_.end(), rhs.data_.begin(), rhs.data_.end());
-}
-NodeID NodeID::operator&(const NodeID &rhs) const {
-  NodeID ret{};
-  for (int i = 0; i < data_.size(); i++) {
-    ret.data_[i] = data_[i] & rhs.data_[i];
-  }
-  return ret;
-}
-NodeID NodeID::operator|(const NodeID &rhs) const {
-  NodeID ret{};
-  for (int i = 0; i < data_.size(); i++) {
-    ret.data_[i] = data_[i] | rhs.data_[i];
-  }
-  return ret;
-}
-NodeID NodeID::operator^(const NodeID &rhs) const {
-  NodeID ret{};
-  for (int i = 0; i < data_.size(); i++) {
-    ret.data_[i] = data_[i] ^ rhs.data_[i];
-  }
-  return ret;
-}
-uint8_t NodeID::bit(size_t r) const {
-  assert(r >= 0 && r < NodeIDBits);
-  // NodeIDLength - ceil(r/8)
-  size_t index = NodeIDLength - 1 - r / 8;
-  size_t bit = r % 8;
-  return (data_[index] >> bit) & 1u;
-}
-NodeID NodeID::decode(std::istream &is) {
-  if (is) {
-    NodeID ret{};
-    is.read((char*)ret.data_.data(), NodeIDLength);
-    if (is.good() && is.gcount() == NodeIDLength) {
-      return ret;
-    } else {
-      throw InvalidMessage("Cannot read NodeID from stream, bad stream when reading");
-    }
-  } else {
-    throw InvalidMessage("Cannot read NodeID from stream, bad stream");
-  }
-}
-NodeID NodeID::random_from_prefix(const NodeID &prefix, size_t prefix_length) {
-  // TODO: not tested
-  NodeID ret = random();
-  if (prefix_length == 0)
-    return ret;
-
-  // prefix_length >= 1
-  auto bytes = (prefix_length-1) / 8;
-  // 0 <= bytes < NodeIDLength
-  auto bits = 8 - prefix_length % 8;
-  std::copy(prefix.data_.begin(), std::next(prefix.data_.begin(), bytes), ret.data_.begin());
-  auto mask_low = ((1u << bits) - 1u);
-  auto mask_high = mask_low;
-  ret.data_[bytes] = (ret.data_[bytes] & mask_low) | (prefix.data_[bytes] & mask_high);
-  return ret;
-}
-NodeID NodeID::from_hex(const std::string &s) {
-  if (s.size() < krpc::NodeIDLength * 2) {
-    throw InvalidMessage("NodeID hex not long enough, expected " + std::to_string(krpc::NodeIDLength*2) + ", got " + std::to_string(s.size()));
-  }
-  NodeID ret;
-  for (int i = 0; i < krpc::NodeIDLength; i++) {
-    std::string part(s.data() + i * 2, 2);
-    size_t end_index = 0;
-    uint8_t b = std::stoi(part, &end_index, 16);
-    if (end_index == 0) {
-      throw InvalidMessage("Missing hex number at index " + std::to_string(i));
-    }
-    ret.data_[i] = b;
-  }
-  return ret;
-}
-size_t NodeID::common_prefix_length(const NodeID &lhs, const NodeID &rhs) {
-  for (size_t i = 0; i < NodeIDBits; i++) {
-    size_t b = NodeIDBits - i - 1;
-    if (lhs.bit(b) != rhs.bit(b)) {
-      return i;
-    }
-  }
-  return NodeIDBits;
-}
-NodeID NodeID::hash(const uint8_t *data, size_t size) {
-  NodeID ret;
-  SHA1(data, size, ret.data_.data());
-  return ret;
-}
-
-NodeID NodeID::fake(const NodeID &target, size_t prefix_length) const {
-  NodeID ret{};
-  for (size_t i = 0; i < NodeIDBits; i++) {
-    if (i < prefix_length) {
-      ret.bit(i, bit(i));
-    } else {
-      ret.bit(i, target.bit(i));
-    }
-  }
-  return ret;
-}
-
-void NodeID::bit(size_t r, size_t value) {
-  assert(r >= 0 && r < NodeIDBits);
-  // NodeIDLength - ceil(r/8)
-  size_t index = NodeIDLength - 1 - r / 8;
-  size_t bit = r % 8;
-  if (value == 0) {
-    data_[index] &= ~(1u << bit);
-  } else {
-    data_[index] |= 1u << bit;
-  }
-}
-bool NodeID::operator!=(const NodeID &rhs) const { return !((*this) == rhs); }
 
 void krpc::Message::build_bencoding_node(std::map<std::string, std::shared_ptr<bencoding::Node>> &dict) const {
   dict["t"] = std::make_shared<bencoding::StringNode>(transaction_id_);
@@ -250,17 +79,17 @@ std::shared_ptr<Message> krpc::Query::decode(
   std::string q = get_string_or_throw(dict, "q", "Query");
   auto a_dict = get_dict_or_throw(dict, "a", "Query");
   if (q == MethodNamePing) {
-    auto node_id = NodeID::from_string(
+    auto node_id = u160::U160::from_string(
         get_string_or_throw(a_dict.dict(), "id", "Query"));
     return std::make_shared<PingQuery>(t, v, node_id);
   } else if (q == MethodNameFindNode) {
     auto sender_id = get_string_or_throw(a_dict.dict(), "id", "FindNodeQuery");
     auto target_id = get_string_or_throw(a_dict.dict(), "target", "FindNodeQuery");
-    return std::make_shared<FindNodeQuery>(t, v, NodeID::from_string(sender_id), NodeID::from_string(target_id));
+    return std::make_shared<FindNodeQuery>(t, v, u160::U160::from_string(sender_id), u160::U160::from_string(target_id));
   } else if (q == MethodNameGetPeers) {
     auto sender_id = get_string_or_throw(a_dict.dict(), "id", "GetPeersQuery");
     auto info_hash = get_string_or_throw(a_dict.dict(), "info_hash", "GetPeersQuery");
-    return std::make_shared<GetPeersQuery>(t, v, NodeID::from_string(sender_id), NodeID::from_string(info_hash));
+    return std::make_shared<GetPeersQuery>(t, v, u160::U160::from_string(sender_id), u160::U160::from_string(info_hash));
   } else if (q == MethodNameAnnouncePeer) {
     auto sender_id = get_string_or_throw(a_dict.dict(), "id", "AnnouncePeerQuery");
     bool implied_port = false;
@@ -273,9 +102,9 @@ std::shared_ptr<Message> krpc::Query::decode(
     return std::make_shared<AnnouncePeerQuery>(
         t,
         v,
-        NodeID::from_string(sender_id),
+        u160::U160::from_string(sender_id),
         implied_port,
-        NodeID::from_string(info_hash),
+        u160::U160::from_string(info_hash),
         port,
         token);
   } else {
@@ -315,7 +144,7 @@ std::shared_ptr<Message> Response::decode(
   auto r_dict = r_node->dict();
   if (method_name == MethodNamePing) {
     auto id = get_string_or_throw(r_dict, "id", "PingResponse");
-    return std::make_shared<PingResponse>(t, v, NodeID::from_string(id));
+    return std::make_shared<PingResponse>(t, v, u160::U160::from_string(id));
   } else if (method_name == MethodNameFindNode) {
     auto id_str = get_string_or_throw(r_dict, "id", "FindNode");
     auto nodes_str = get_string_or_throw(r_dict, "nodes", "FindNode");
@@ -325,12 +154,12 @@ std::shared_ptr<Message> Response::decode(
     while (ss.peek() != EOF) {
       nodes.push_back(NodeInfo::decode(ss));
     }
-    return std::make_shared<FindNodeResponse>(t, v, NodeID::from_string(id_str), nodes);
+    return std::make_shared<FindNodeResponse>(t, v, u160::U160::from_string(id_str), nodes);
   } else if (method_name == MethodNameGetPeers) {
 
     auto id_str = get_string_or_throw(r_dict, "id", "GetPeersRespone");
     auto token = get_string_or_throw(r_dict, "token", "GetPeersResponse");
-    auto sender_id = krpc::NodeID::from_string(id_str);
+    auto sender_id = u160::U160::from_string(id_str);
     if (r_dict.find("nodes") != r_dict.end()) {
       auto nodes_str = get_string_or_throw(r_dict, "nodes", "GetPeersResponse");
       std::stringstream ss_nodes(nodes_str);
@@ -385,12 +214,12 @@ std::shared_ptr<Message> Response::decode(
     }
     std::stringstream ss(samples_str);
     // the stream has at least 1 character
-    std::vector<NodeID> samples;
+    std::vector<u160::U160> samples;
     while (ss.peek() != EOF) {
-      samples.push_back(NodeID::decode(ss));
+      samples.push_back(u160::U160::decode(ss));
     }
     return std::make_shared<SampleInfohashesResponse>(
-        t, v, NodeID::from_string(id_str), interval, num, samples
+        t, v, u160::U160::from_string(id_str), interval, num, samples
     );
   } else {
     throw InvalidMessage("Unknown response type: '" + method_name + "'");
@@ -411,14 +240,18 @@ std::shared_ptr<krpc::Message> krpc::Message::decode(
   auto y = get_string_or_throw(dict, "y", "Root node");
   auto v = get_string_or_empty(dict, "v", "Root node");
 
-  if (y == "q") {
-    return krpc::Query::decode(dict, t, v);
-  } else if (y == "r") {
-    return krpc::Response::decode(dict, t, v, get_method_name(t));
-  } else if (y == "e") {
-    return krpc::Error::decode(dict, t, v, get_method_name(t));
-  } else {
-    throw InvalidMessage("Root node, 'y' is not one of  {'q', 'r', 'e'}");
+  try {
+    if (y == "q") {
+      return krpc::Query::decode(dict, t, v);
+    } else if (y == "r") {
+      return krpc::Response::decode(dict, t, v, get_method_name(t));
+    } else if (y == "e") {
+      return krpc::Error::decode(dict, t, v, get_method_name(t));
+    } else {
+      throw InvalidMessage("Root node, 'y' is not one of  {'q', 'r', 'e'}");
+    }
+  } catch (const u160::InvalidFormat &e) {
+    throw InvalidMessage(std::string("Invalid u160 parsing: ") + e.what());
   }
 }
 std::shared_ptr<bencoding::Node> krpc::PingQuery::get_arguments_node() const {
@@ -430,13 +263,13 @@ std::shared_ptr<bencoding::Node> krpc::PingQuery::get_arguments_node() const {
 }
 
 NodeInfo NodeInfo::decode(std::istream &is) {
-  std::vector<char> s(NodeIDLength);
-  is.read(s.data(), NodeIDLength);
+  std::vector<char> s(u160::U160Length);
+  is.read(s.data(), u160::U160Length);
   if (!is.good()) {
     throw InvalidMessage("NodeInfo invalid");
   }
 
-  auto node_id = NodeID::from_string(std::string(s.data(), s.size()));
+  auto node_id = u160::U160::from_string(std::string(s.data(), s.size()));
 
   uint32_t ip;
   uint16_t port;

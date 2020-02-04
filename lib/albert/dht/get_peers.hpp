@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <albert/krpc/krpc.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace albert::dht::get_peers {
 
@@ -18,7 +19,7 @@ struct NodeStatus {
 class GetPeersRequest {
  public:
   GetPeersRequest(
-      albert::krpc::NodeID target,
+      albert::u160::U160 target,
       std::chrono::high_resolution_clock::time_point expiration_time)
       :target_info_hash_(target),
        expiration_time_(expiration_time) {}
@@ -31,19 +32,19 @@ class GetPeersRequest {
 
   bool expired() const;
 
-  void add_node(const krpc::NodeID &node);
+  void add_node(const u160::U160 &node);
   [[nodiscard]]
-  bool has_node(const krpc::NodeID &id) const;
-  void delete_node(const krpc::NodeID &id);
+  bool has_node(const u160::U160 &id) const;
+  void delete_node(const u160::U160 &id);
 
   [[nodiscard]]
-  bool has_node_traversed(const krpc::NodeID &id) const;
-  void set_node_traversed(const krpc::NodeID &id);
+  bool has_node_traversed(const u160::U160 &id) const;
+  void set_node_traversed(const u160::U160 &id);
 
 // private:
   std::list<std::function<void (uint32_t, uint16_t)>> callbacks_;
-  albert::krpc::NodeID target_info_hash_;
-  std::map<albert::krpc::NodeID, NodeStatus> nodes_;
+  u160::U160 target_info_hash_;
+  std::map<albert::u160::U160, NodeStatus> nodes_;
   std::set<std::tuple<uint32_t, uint16_t>> peers_;
   std::chrono::high_resolution_clock::time_point expiration_time_;
 };
@@ -51,22 +52,22 @@ class GetPeersRequest {
 class GetPeersManager {
  public:
   explicit GetPeersManager(int64_t expiration_seconds) :expiration_(expiration_seconds) {}
-  void add_peer(const krpc::NodeID &id, uint32_t ip, uint16_t port);
+  void add_peer(const u160::U160 &id, uint32_t ip, uint16_t port);
   [[nodiscard]]
-  bool has_request(const krpc::NodeID &id) const;
-  void add_callback(const krpc::NodeID &id, const std::function<void (uint32_t, uint16_t)> &callback);
-  void add_node(const krpc::NodeID &id, const krpc::NodeID &node);
+  bool has_request(const u160::U160 &id) const;
+  void add_callback(const u160::U160 &id, const std::function<void (uint32_t, uint16_t)> &callback);
+  void add_node(const u160::U160 &id, const u160::U160 &node);
   [[nodiscard]]
-  bool has_node_traversed(const krpc::NodeID &id, const krpc::NodeID &node) const;
+  bool has_node_traversed(const u160::U160 &id, const u160::U160 &node) const;
   [[nodiscard]]
-  bool has_node(const krpc::NodeID &id, const krpc::NodeID &node) const;
-  void set_node_traversed(const krpc::NodeID &id, const krpc::NodeID &node);
+  bool has_node(const u160::U160 &id, const u160::U160 &node) const;
+  void set_node_traversed(const u160::U160 &id, const u160::U160 &node);
   void create_request(
-      const krpc::NodeID &info_hash);
+      const u160::U160 &info_hash);
 
   void gc();
  private:
-  std::map<krpc::NodeID, GetPeersRequest> requests_;
+  std::map<u160::U160, GetPeersRequest> requests_;
   std::chrono::seconds expiration_;
 };
 

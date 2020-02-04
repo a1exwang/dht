@@ -12,9 +12,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <boost/asio/ip/address_v4.hpp>
-#include <utility>
+
+#include <albert/u160/u160.hpp>
 
 namespace albert::dht::routing_table {
 
@@ -23,8 +25,8 @@ const int MaxGoodNodeAliveMinutes = 15;
 class Entry {
  public:
   explicit Entry(krpc::NodeInfo info) :info_(std::move(info)) { }
-  explicit Entry(krpc::NodeID id) :info_(id, 0, 0) { }
-  Entry(krpc::NodeID id, uint32_t ip, uint16_t port)
+  explicit Entry(u160::U160 id) : info_(id, 0, 0) { }
+  Entry(u160::U160 id, uint32_t ip, uint16_t port)
       :info_(id, ip, port) { }
   Entry() = default;
 
@@ -32,7 +34,7 @@ class Entry {
   krpc::NodeInfo node_info() const { return info_; }
 
   [[nodiscard]]
-  krpc::NodeID id() const { return info_.id(); }
+  u160::U160 id() const { return info_.id(); }
 
   [[nodiscard]]
   uint32_t ip() const { return info_.ip(); }
@@ -74,11 +76,11 @@ const size_t BucketMaxItems = 32;
 class RoutingTable;
 class Bucket {
  public:
-  Bucket(krpc::NodeID self_id, const RoutingTable *owner, bool fat_mode)
+  Bucket(u160::U160 self_id, const RoutingTable *owner, bool fat_mode)
       :self_(self_id), parent_(nullptr), owner_(owner), fat_mode_(fat_mode) {}
 
   Bucket(Bucket *parent, const RoutingTable *owner)
-      :self_(parent ? parent->self_ : /* this should not happen*/krpc::NodeID()),
+      :self_(parent ? parent->self_ : /* this should not happen*/u160::U160()),
        parent_(parent),
        owner_(owner),
        fat_mode_(parent ? parent->fat_mode_ : false) {
@@ -89,23 +91,23 @@ class Bucket {
 
   // Attribute accessor
   bool self_in_bucket() const;
-  bool in_bucket(krpc::NodeID id) const;
+  bool in_bucket(u160::U160 id) const;
   bool is_leaf() const;
   bool is_full() const;
   size_t prefix_length() const;
-  krpc::NodeID prefix() const { return prefix_; }
+  u160::U160 prefix() const { return prefix_; }
   size_t leaf_count() const;
   size_t total_good_node_count() const;
   size_t good_node_count() const;
   size_t total_known_node_count() const;
   size_t known_node_count() const;
   size_t memory_size() const;
-  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
+  std::list<Entry> k_nearest_good_nodes(const u160::U160 &id, size_t k) const;
 
 
   // Node manipulating functions
   bool add_node(const Entry &entry);
-  std::optional<Entry> remove(const krpc::NodeID &id);
+  std::optional<Entry> remove(const u160::U160 &id);
   void remove(uint32_t ip, uint16_t port);
   std::tuple<size_t, size_t, size_t, std::list<krpc::NodeInfo>> gc();
 
@@ -115,8 +117,8 @@ class Bucket {
   void iterate_entries(const std::function<void (const Entry&)> &cb) const;
 
   // Node status management functions
-  bool require_response_now(const krpc::NodeID &target);
-  bool make_good_now(const krpc::NodeID &id);
+  bool require_response_now(const u160::U160 &target);
+  bool make_good_now(const u160::U160 &id);
   bool make_good_now(uint32_t ip, uint16_t port);
   void make_bad(uint32_t ip, uint16_t port);
 
@@ -126,7 +128,7 @@ class Bucket {
   void encode(std::ostream &os);
 
   [[nodiscard]]
-  std::list<std::tuple<Entry, krpc::NodeID>> find_some_node_for_filling_bucket(size_t k) const;
+  std::list<std::tuple<Entry, u160::U160>> find_some_node_for_filling_bucket(size_t k) const;
 
  private:
   static std::string indent(int n);
@@ -137,20 +139,20 @@ class Bucket {
   //  This function is quite dangerous.
   //  as changing `entry.id_` may cause the map key and value.id inconsistent
   bool dfs_w(const std::function<bool (Bucket&)> &cb);
-  Entry *search(const krpc::NodeID &id);
+  Entry *search(const u160::U160 &id);
 
   [[nodiscard]]
-  krpc::NodeID min() const;
+  u160::U160 min() const;
 
   [[nodiscard]]
-  krpc::NodeID max() const {
-    auto ret  = prefix_ | krpc::NodeID::pow2m1(krpc::NodeIDBits - prefix_length_);
+  u160::U160 max() const {
+    auto ret  = prefix_ | u160::U160::pow2m1(u160::U160Bits - prefix_length_);
     return ret;
   }
 
  private:
   // nodes are sorted in one buckets
-  std::map<krpc::NodeID, Entry> known_nodes_{};
+  std::map<u160::U160, Entry> known_nodes_{};
 
   /**
    * How `prefix`, `min` and `max` Are Related.
@@ -171,13 +173,13 @@ class Bucket {
    */
 
   // the longest common prefix length of min and max
-  krpc::NodeID prefix_{};
+  u160::U160 prefix_{};
 
   // 0 <= prefix_length < NodeIDBits
   int prefix_length_{};
   std::unique_ptr<Bucket> left_{}, right_{};
   Bucket *parent_;
-  krpc::NodeID self_{};
+  u160::U160 self_{};
   bool fat_mode_ = false;
 
   const RoutingTable *owner_;
@@ -186,7 +188,7 @@ class Bucket {
 class RoutingTable {
  public:
   explicit RoutingTable(
-      krpc::NodeID self_id, std::string name, std::string save_path, size_t max_bucket_size, size_t max_known_nodes,
+      u160::U160 self_id, std::string name, std::string save_path, size_t max_bucket_size, size_t max_known_nodes,
       bool delete_good, bool fat_mode, std::function<void(uint32_t, uint16_t)> black_list_node)
       :root_(self_id, this, fat_mode),
        self_id_(self_id),
@@ -230,30 +232,30 @@ class RoutingTable {
       bool fat_mode,
       std::function<void(uint32_t, uint16_t)> black_list_node);
 
-  std::list<std::tuple<Entry, krpc::NodeID>> select_expand_route_targets();
+  std::list<std::tuple<Entry, u160::U160>> select_expand_route_targets();
 
   // This is the only function that insert a node into routing table
   bool add_node(Entry entry);
-  std::optional<Entry> remove_node(const krpc::NodeID &target);
+  std::optional<Entry> remove_node(const u160::U160 &target);
   void remove_node(uint32_t ip, uint16_t port);
   void gc();
 
-  bool make_good_now(const krpc::NodeID &id);
+  bool make_good_now(const u160::U160 &id);
   bool make_good_now(uint32_t ip, uint16_t port);
   void make_bad(uint32_t ip, uint16_t port);
-  bool require_response_now(const krpc::NodeID &target);
+  bool require_response_now(const u160::U160 &target);
 
   void iterate_nodes(const std::function<void (const Entry &)> &callback) const;
 
   [[nodiscard]]
-  std::list<Entry> k_nearest_good_nodes(const krpc::NodeID &id, size_t k) const;
+  std::list<Entry> k_nearest_good_nodes(const u160::U160 &id, size_t k) const;
 
   [[nodiscard]]
   const std::string &name() const { return name_; }
   void name(std::string value) { name_ = std::move(value); }
 
   [[nodiscard]]
-  krpc::NodeID self() const { return self_id_; }
+  u160::U160 self() const { return self_id_; }
 
   [[nodiscard]]
   size_t max_bucket_size() const { return max_bucket_size_; }
@@ -266,7 +268,7 @@ class RoutingTable {
 
  private:
   Bucket root_;
-  krpc::NodeID self_id_;
+  u160::U160 self_id_;
   std::string save_path_;
 
   size_t total_node_added_{};
@@ -283,7 +285,7 @@ class RoutingTable {
 
   std::function<void(uint32_t, uint16_t)> black_list_node_;
 
-  std::map<std::tuple<uint32_t, uint16_t>, krpc::NodeID> reverse_map_;
+  std::map<std::tuple<uint32_t, uint16_t>, u160::U160> reverse_map_;
 };
 
 }

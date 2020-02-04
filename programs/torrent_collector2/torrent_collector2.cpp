@@ -6,6 +6,8 @@
 #include <albert/dht/dht.hpp>
 #include <albert/log/log.hpp>
 #include <albert/store/sqlite3_store.hpp>
+#include <albert/u160/u160.hpp>
+
 
 #include <boost/asio/io_service.hpp>
 
@@ -25,7 +27,7 @@ int main(int argc, const char* argv[]) {
 
   /* Start service */
   dht.start();
-  dht.set_announce_peer_handler([&dht, &store](const albert::krpc::NodeID &ih) {
+  dht.set_announce_peer_handler([&dht, &store](const albert::u160::U160 &ih) {
     auto ih_hex = ih.to_string();
     auto item = store.read(ih_hex);
     if (!item.has_value()) {

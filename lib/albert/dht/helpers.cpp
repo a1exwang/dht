@@ -7,8 +7,9 @@
 #include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/dht/sample_infohashes/sample_infohashes_manager.hpp>
 #include <albert/krpc/krpc.hpp>
-#include "get_peers.hpp"
+#include <albert/u160/u160.hpp>
 
+#include "get_peers.hpp"
 
 namespace albert::dht {
 
@@ -32,7 +33,7 @@ DHTImpl::default_handle_send(const std::string &description) {
 }
 
 [[nodiscard]]
-krpc::NodeID DHTImpl::self() const {
+u160::U160 DHTImpl::self() const {
   return dht_->self_info_.id();
 }
 
@@ -88,7 +89,7 @@ void DHTImpl::handle_send(const std::string &description, const boost::system::e
     LOG(error) << "DHTImpl: async_send_to '" << description << "' failed: " << error.message();
   }
 }
-void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
+void DHTImpl::good_sender(const u160::U160 &sender_id) {
   for (auto &rt : dht_->routing_tables_) {
     bool added = rt->add_node(
         routing_table::Entry(
@@ -101,7 +102,7 @@ void DHTImpl::good_sender(const krpc::NodeID &sender_id) {
     rt->make_good_now(sender_id);
   }
 }
-void DHTImpl::send_get_peers_query(const krpc::NodeID &info_hash, const krpc::NodeInfo &receiver) {
+void DHTImpl::send_get_peers_query(const u160::U160 &info_hash, const krpc::NodeInfo &receiver) {
   dht_->get_peers_manager_->add_node(info_hash, receiver.id());
   auto query = std::make_shared<krpc::GetPeersQuery>(
       self(),
@@ -137,7 +138,7 @@ void DHTImpl::bootstrap_routing_table(routing_table::RoutingTable &routing_table
   }
 
 }
-void DHTImpl::send_sample_infohashes_query(const krpc::NodeID &target, const krpc::NodeInfo &receiver) {
+void DHTImpl::send_sample_infohashes_query(const u160::U160 &target, const krpc::NodeInfo &receiver) {
   auto query = std::make_shared<krpc::SampleInfohashesQuery>(
       self(),
       target
@@ -148,11 +149,11 @@ void DHTImpl::send_sample_infohashes_query(const krpc::NodeID &target, const krp
       ep,
       default_handle_send("sample_infohashes"));
 }
-void DHTImpl::set_announce_peer_handler(std::function<void(const krpc::NodeID &info_hash)> handler) {
+void DHTImpl::set_announce_peer_handler(std::function<void(const u160::U160 &info_hash)> handler) {
   this->announce_peer_handler_ = std::move(handler);
 }
-krpc::NodeID DHTImpl::maybe_fake_self(const krpc::NodeID &target) const {
-  krpc::NodeID self_id;
+u160::U160 DHTImpl::maybe_fake_self(const u160::U160 &target) const {
+  u160::U160 self_id;
   if (dht_->config_.fake_id) {
     self_id = self().fake(target, dht_->config_.fake_id_prefix_length);
   } else {

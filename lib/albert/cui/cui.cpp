@@ -18,6 +18,7 @@
 #include <albert/dht/dht.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
+#include <albert/u160/u160.hpp>
 
 namespace albert::cui {
 
@@ -92,7 +93,7 @@ void CommandLineUI::start() {
 }
 void CommandLineUI::start_search() {
   this->is_searching_ = true;
-  auto ih = krpc::NodeID::from_hex(target_info_hash_);
+  auto ih = u160::U160::from_hex(target_info_hash_);
 
   auto resolver = bt_.resolve_torrent(ih, [this, ih](const bencoding::DictNode &torrent) {
     is_searching_ = false;

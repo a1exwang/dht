@@ -15,6 +15,7 @@
 #include <albert/bt/bt.hpp>
 #include <albert/bt/peer.hpp>
 #include <albert/log/log.hpp>
+#include <albert/u160/u160.hpp>
 #include <albert/utils/utils.hpp>
 
 using boost::asio::ip::tcp;
@@ -62,8 +63,8 @@ std::string make_empty_message(uint8_t message_type) {
 
 PeerConnection::PeerConnection(
     boost::asio::io_context &io_context,
-    const krpc::NodeID &self,
-    const krpc::NodeID &target,
+    const u160::U160 &self,
+    const u160::U160 &target,
     uint32_t bind_ip,
     uint16_t bind_port,
     uint32_t ip,
@@ -114,19 +115,19 @@ void PeerConnection::send_handshake() {
     std::stringstream ss;
     self_.encode(ss);
     auto s = ss.str();
-    if (s.size() != krpc::NodeIDLength) {
+    if (s.size() != u160::U160Length) {
       throw std::runtime_error("self_ Invalid node id length, s.size() != NodeIDLength");
     }
-    memcpy(sent_handshake_.sender_id, s.data(), krpc::NodeIDLength);
+    memcpy(sent_handshake_.sender_id, s.data(), u160::U160Length);
   }
   {
     std::stringstream ss;
     target_.encode(ss);
     auto s = ss.str();
-    if (s.size() != krpc::NodeIDLength) {
+    if (s.size() != u160::U160Length) {
       throw std::runtime_error("target_ Invalid node id length, s.size() != NodeIDLength");
     }
-    memcpy(sent_handshake_.info_hash, s.data(), krpc::NodeIDLength);
+    memcpy(sent_handshake_.info_hash, s.data(), u160::U160Length);
   }
 
   size_t write_size = sizeof(sent_handshake_);
@@ -377,8 +378,8 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
             pop_data(&received_handshake_, sizeof(Handshake));
             std::stringstream ss(
             std::string((char *) &received_handshake_.sender_id,
-                        sizeof(krpc::NodeID)));
-            peer_id_ = krpc::NodeID::decode(ss);
+                        sizeof(u160::U160)));
+            peer_id_ = u160::U160::decode(ss);
             handshake_completed_ = true;
           } else {
             LOG(debug) << "handshake not complete, segmented " << peer_->to_string();
