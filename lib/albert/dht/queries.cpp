@@ -14,6 +14,7 @@
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
+#include <albert/io_latency/function_latency.hpp>
 
 namespace albert::dht {
 

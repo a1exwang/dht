@@ -10,6 +10,7 @@
 #include <albert/dht/transaction.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
+#include <albert/io_latency/function_latency.hpp>
 #include "get_peers.hpp"
 
 namespace albert::dht {

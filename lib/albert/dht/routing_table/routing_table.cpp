@@ -33,34 +33,35 @@ void Bucket::split_if_required() {
 
   for (auto &item : known_nodes_) {
     if (left_->in_bucket(item.first)) {
-      left_->known_nodes_.insert(item);
+      left_->known_nodes_.emplace(item.first, std::move(item.second));
     } else {
       assert(right_->in_bucket(item.first));
-      right_->known_nodes_.insert(item);
+      right_->known_nodes_.emplace(item.first, std::move(item.second));
     }
   }
+  known_nodes_.clear();
 
   left_->split_if_required();
   right_->split_if_required();
 }
 
 
-bool Bucket::add_node(const Entry &entry) {
+bool Bucket::add_node(Entry entry) {
   assert(in_bucket(entry.id()));
   if (is_leaf()) {
     bool added = false;
 //    if (self_in_bucket() || good_node_count() < BucketMaxGoodItems) {
-      known_nodes_.insert(std::make_pair(entry.id(), entry));
+      known_nodes_.insert(std::make_pair(entry.id(), std::move(entry)));
       added = true;
 //    }
     split_if_required();
     return added;
   } else {
     if (left_->in_bucket(entry.id())) {
-      return left_->add_node(entry);
+      return left_->add_node(std::move(entry));
     } else {
       assert(right_->in_bucket(entry.id()));
-      return right_->add_node(entry);
+      return right_->add_node(std::move(entry));
     }
   }
 }
@@ -94,7 +95,7 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const u160::U160 &id, size_t k) co
   if (is_leaf()) {
     std::list<Entry> results;
     size_t i = 0;
-    for (auto item : known_nodes_) {
+    for (auto &item : known_nodes_) {
       results.push_back(item.second);
       i++;
       if (i >= k) {
@@ -126,7 +127,7 @@ std::list<std::tuple<Entry, u160::U160>> Bucket::find_some_node_for_filling_buck
   std::list<Entry> selected_nodes;
   std::list<Entry> good_nodes;
   std::list<Entry> questionable_nodes;
-  for (auto item : known_nodes_) {
+  for (auto &item : known_nodes_) {
     if (item.second.is_good()) {
       good_nodes.push_back(item.second);
     } else if (!item.second.is_bad()) {
@@ -156,7 +157,7 @@ std::list<std::tuple<Entry, u160::U160>> Bucket::find_some_node_for_filling_buck
   auto virtual_target_id =
       u160::U160::random_from_prefix(prefix_, prefix_length_);
   std::list<std::tuple<Entry, u160::U160>> results;
-  for (auto item : selected_nodes) {
+  for (auto &item : selected_nodes) {
     results.emplace_back(item, virtual_target_id);
   }
   return results;
@@ -281,7 +282,7 @@ size_t Bucket::known_node_count() const {
   return this->known_nodes_.size();
 }
 void Bucket::iterate_entries(const std::function<void(const Entry &)> &cb) const {
-  for (auto item : known_nodes_) {
+  for (auto &item : known_nodes_) {
     cb(item.second);
   }
 }
@@ -289,14 +290,13 @@ std::optional<Entry> Bucket::remove(const u160::U160 &id) {
   std::optional<Entry> ret;
   dfs_w([id, &ret](Bucket &bucket) -> bool {
     if (bucket.known_nodes_.find(id) != bucket.known_nodes_.end()) {
-      auto node = bucket.known_nodes_[id];
       ret.emplace(std::move(bucket.known_nodes_[id]));
       bucket.known_nodes_.erase(id);
       return false;
     }
     return true;
   });
-  return ret;
+  return std::move(ret);
 }
 bool Bucket::require_response_now(const u160::U160 &target) {
   auto entry = search(target);
@@ -479,7 +479,7 @@ bool RoutingTable::add_node(Entry entry) {
       LOG(debug) << "failed to add node because routing table is full";
       return false;
     } else {
-      if (root_.add_node(entry)) {
+      if (root_.add_node(std::move(entry))) {
         total_node_added_++;
         return true;
       } else {
@@ -640,17 +640,21 @@ bool Entry::is_bad() const {
   return (std::chrono::high_resolution_clock::now() - last_require_response_) > krpc::KRPCTimeout || bad_;
 }
 
-void Entry::require_response_now() {
+bool Entry::require_response_now() {
   if (!response_required) {
     response_required = true;
     this->last_require_response_ = std::chrono::high_resolution_clock::now();
     LOG(trace) << "require response " << to_string();
+    return true;
+  } else {
+    return false;
   }
 }
 
 void Entry::make_good_now() {
   this->last_seen_ = std::chrono::high_resolution_clock::now();
   this->response_required = false;
+  this->bad_ = false;
 }
 
 void Entry::make_bad() {

@@ -54,7 +54,7 @@ class Entry {
 
   void make_good_now();
   void make_bad();
-  void require_response_now();
+  bool require_response_now();
 
   [[nodiscard]]
   std::string to_string() const { return info_.to_string(); }
@@ -106,7 +106,7 @@ class Bucket {
 
 
   // Node manipulating functions
-  bool add_node(const Entry &entry);
+  bool add_node(Entry entry);
   std::optional<Entry> remove(const u160::U160 &id);
   void remove(uint32_t ip, uint16_t port);
   std::tuple<size_t, size_t, size_t, std::list<krpc::NodeInfo>> gc();

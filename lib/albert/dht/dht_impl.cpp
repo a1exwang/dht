@@ -14,6 +14,7 @@
 #include <albert/public_ip/public_ip.hpp>
 #include <albert/utils/utils.hpp>
 #include <albert/u160/u160.hpp>
+#include <albert/io_latency/function_latency.hpp>
 
 #include "get_peers.hpp"
 

@@ -10,6 +10,7 @@
 #include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
+#include <albert/io_latency/function_latency.hpp>
 
 namespace albert::dht {
 
@@ -82,18 +83,19 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
 }
 
 void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
+  FLAT;
   for (auto &rt : dht_->routing_tables_) {
     rt->gc();
 
     // try refreshing questionable nodes
-    rt->iterate_nodes([this, &rt](const routing_table::Entry &node) {
+    size_t n = 0;
+    rt->iterate_nodes([this, &rt, &n](const routing_table::Entry &node) {
       if (!node.is_good() && !node.is_bad()) {
         // FIXME: const_cast
-        const_cast<routing_table::Entry&>(node).require_response_now();
-//        if (!rt->require_response_now(node.id())) {
-//          LOG(error) << "Node gone when iterating " << node.to_string();
-//        }
-        ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
+        if (const_cast<routing_table::Entry&>(node).require_response_now()) {
+          ping(krpc::NodeInfo{node.id(), node.ip(), node.port()});
+          n++;
+        }
       }
     });
   }
