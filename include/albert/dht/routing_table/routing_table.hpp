@@ -76,16 +76,15 @@ const size_t BucketMaxItems = 32;
 class RoutingTable;
 class Bucket {
  public:
-  Bucket(u160::U160 self_id, const RoutingTable *owner, bool fat_mode)
-      :self_(self_id), parent_(nullptr), owner_(owner), fat_mode_(fat_mode) {}
+  Bucket(const RoutingTable *owner, bool fat_mode)
+      :parent_(nullptr), owner_(owner), fat_mode_(fat_mode) {}
 
   Bucket(Bucket *parent, const RoutingTable *owner)
-      :self_(parent ? parent->self_ : /* this should not happen*/u160::U160()),
-       parent_(parent),
+      :parent_(parent),
        owner_(owner),
        fat_mode_(parent ? parent->fat_mode_ : false) {
     if (parent == nullptr) {
-      throw std::invalid_argument("Bucket construct, parent should not be nullptr");
+      throw std::invalid_argument("Bucket constructor, parent should not be nullptr");
     }
   }
 
@@ -122,9 +121,6 @@ class Bucket {
   bool make_good_now(uint32_t ip, uint16_t port);
   void make_bad(uint32_t ip, uint16_t port);
 
-  // Other helper functions
-  void split_if_required();
-
   void encode(std::ostream &os);
 
   [[nodiscard]]
@@ -133,6 +129,10 @@ class Bucket {
  private:
   static std::string indent(int n);
   void encode_(std::ostream &os, int i);
+
+  // Other helper functions
+  void split_if_required();
+  void merge();
 
  private:
   // NOTE:
@@ -179,7 +179,6 @@ class Bucket {
   int prefix_length_{};
   std::unique_ptr<Bucket> left_{}, right_{};
   Bucket *parent_;
-  u160::U160 self_{};
   bool fat_mode_ = false;
 
   const RoutingTable *owner_;
@@ -190,7 +189,7 @@ class RoutingTable {
   explicit RoutingTable(
       u160::U160 self_id, std::string name, std::string save_path, size_t max_bucket_size, size_t max_known_nodes,
       bool delete_good, bool fat_mode, std::function<void(uint32_t, uint16_t)> black_list_node)
-      :root_(self_id, this, fat_mode),
+      :root_(this, fat_mode),
        self_id_(self_id),
        save_path_(std::move(save_path)),
        name_(std::move(name)),
@@ -237,7 +236,6 @@ class RoutingTable {
   // This is the only function that insert a node into routing table
   bool add_node(Entry entry);
   std::optional<Entry> remove_node(const u160::U160 &target);
-  void remove_node(uint32_t ip, uint16_t port);
   void gc();
 
   bool make_good_now(const u160::U160 &id);

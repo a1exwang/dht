@@ -10,7 +10,6 @@
 #include <albert/dht/routing_table/routing_table.hpp>
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
-#include <albert/io_latency/function_latency.hpp>
 
 namespace albert::dht {
 
@@ -83,7 +82,6 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
 }
 
 void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
-  FLAT;
   for (auto &rt : dht_->routing_tables_) {
     rt->gc();
 

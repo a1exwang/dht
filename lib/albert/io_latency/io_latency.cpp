@@ -27,9 +27,9 @@ void IOLatencyMeter::loop() {
       auto [min, max] = std::array{l2.front(), l2.back()};
       auto average = std::accumulate(l2.begin(), l2.end(), 0.0) / last_n;
       auto median = l2[l2.size() / 2];
-      LOG(info) << "Latency in last " << last_n << ": (min/max/avg/med) in ms = " << std::setprecision(2) << std::fixed
+      LOG(info) << "IOLatencyMeter: Latency in last " << last_n << ": (min/max/avg/med) in ms = " << std::setprecision(2) << std::fixed
                 << min << "/" << max << "/" << average << "/" << median;
-      LOG(info) << "Counters in last " << last_n << ": (inc/total) = "
+      LOG(info) << "IOLatencyMeter: Counters in last " << last_n << ": (inc/total) = "
                 << total - last_total << "/" << total;
       last_time = t0;
       last_total = total;
@@ -41,7 +41,7 @@ void IOLatencyMeter::loop() {
       double secs = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
       if (debug_) {
-        LOG(info) << "latency " << secs << "ms";
+        LOG(info) << "IOLatencyMeter: latency " << secs << "ms";
       }
 
       latencies[current] = secs;

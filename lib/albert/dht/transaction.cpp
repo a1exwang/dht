@@ -1,6 +1,7 @@
 #include <albert/dht/transaction.hpp>
 
 #include <list>
+#include <iomanip>
 
 #include <albert/log/log.hpp>
 
@@ -46,10 +47,10 @@ void TransactionManager::end(
 }
 
 void TransactionManager::gc() {
-  auto now = std::chrono::high_resolution_clock::now();
+  auto t0 = std::chrono::high_resolution_clock::now();
   std::vector<std::string> to_delete;
   to_delete.reserve(transactions_.size());
-  auto a = now - expiration_time_;
+  auto a = t0 - expiration_time_;
   for (auto &item : transactions_) {
     if (a > item.second.start_time_) {
       to_delete.push_back(item.first);
@@ -58,7 +59,10 @@ void TransactionManager::gc() {
   for (auto &item : to_delete) {
     transactions_.erase(item);
   }
-  LOG(info) << "TransactionManager: delete " << to_delete.size() << " expiried transactions";
+
+  auto t1 = std::chrono::high_resolution_clock::now();
+  LOG(info) << "TransactionManager: delete " << to_delete.size() << " expiried transactions in "
+            << std::fixed << std::setprecision(2) << std::chrono::duration<double,std::milli>(t1-t0).count() << "ms";
 }
 bool TransactionManager::has_transaction(const std::string &id) const {
   return transactions_.find(id) != transactions_.end();

@@ -45,6 +45,21 @@ void Bucket::split_if_required() {
   right_->split_if_required();
 }
 
+void Bucket::merge() {
+  assert(!is_leaf());
+
+  for (auto &item : left_->known_nodes_) {
+    known_nodes_.emplace(item.first, std::move(item.second));
+  }
+  for (auto &item : right_->known_nodes_) {
+    known_nodes_.emplace(item.first, std::move(item.second));
+  }
+
+  left_ = nullptr;
+  right_ = nullptr;
+}
+
+
 
 bool Bucket::add_node(Entry entry) {
   assert(in_bucket(entry.id()));
@@ -204,7 +219,7 @@ void Bucket::bfs(const std::function<void(const Bucket &)> &cb) const {
   }
 }
 bool Bucket::self_in_bucket() const {
-  return min() <= self_ && self_ <= max();
+  return min() <= owner_->self() && owner_->self() <= max();
 }
 bool Bucket::is_leaf() const {
   return left_ == nullptr && right_ == nullptr;
@@ -374,6 +389,14 @@ std::tuple<size_t, size_t, size_t, std::list<krpc::NodeInfo>> Bucket::gc() {
     std::tie(a1, b1, c1, l) = right_->gc();
     std::tie(a2, b2, c2, r) = left_->gc();
     l.merge(r);
+
+    // merge buckets when all the sub-buckets are no bigger than max/2
+    if (left_->is_leaf() && right_->is_leaf()) {
+      if (left_->known_node_count() + right_->known_node_count() < owner_->max_bucket_size() / 2) {
+        merge();
+      }
+    }
+
     return {a1 + a2, b1 + b2, c1 + c2, l};
   }
 }
@@ -495,7 +518,7 @@ bool RoutingTable::add_node(Entry entry) {
     } else {
       black_list_node(entry.ip(), entry.port());
       reverse_map_.erase({entry.ip(), entry.port()});
-      remove_node(entry.ip(), entry.port());
+      make_bad(entry.ip(), entry.port());
       LOG(info) << "banned node " << entry.to_string() << " because it has multiple node IDs";
     }
     return false;
@@ -519,7 +542,10 @@ std::optional<Entry> RoutingTable::remove_node(const u160::U160 &target) {
   }
   return node;
 }
+
 void RoutingTable::gc() {
+  auto t0 = std::chrono::high_resolution_clock::now();
+
   size_t bad{}, good{}, quest;
   std::list<krpc::NodeInfo> info;
   std::tie(good, quest, bad, info) = root_.gc();
@@ -529,6 +555,9 @@ void RoutingTable::gc() {
   for (auto &node : info) {
     reverse_map_.erase({node.ip(), node.port()});
   }
+  auto t1 = std::chrono::high_resolution_clock::now();
+  LOG(info) << "RoutingTable::gc() good/bad/questionable = " << good << "/" << bad << "/" << quest << " in "
+            << std::fixed << std::setprecision(2) << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms";
 }
 size_t RoutingTable::max_prefix_length() const {
   size_t length = 0;
@@ -612,9 +641,6 @@ void RoutingTable::black_list_node(uint32_t ip, uint16_t port) const {
   if (black_list_node_) {
     black_list_node_(ip, port);
   }
-}
-void RoutingTable::remove_node(uint32_t ip, uint16_t port) {
-  root_.remove(ip, port);
 }
 size_t RoutingTable::memory_size() const {
   size_t size = sizeof(*this);
