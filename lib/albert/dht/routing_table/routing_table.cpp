@@ -235,6 +235,7 @@ u160::U160 Bucket::min() const {
 bool Bucket::make_good_now(const u160::U160 &id) {
   bool found = false;
   Bucket *bucket = nullptr;
+  // TODO: optimize dfs to searching by id prefix
   dfs_w([&found, id, &bucket](Bucket &b) -> bool {
     if (!found && b.is_leaf()) {
       for (auto &item : b.known_nodes_) {

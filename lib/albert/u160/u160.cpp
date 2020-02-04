@@ -51,14 +51,17 @@ void U160::encode(std::ostream &os) const {
   os.write((const char*)data_.data(), data_.size());
 }
 bool U160::operator<=(const U160 &rhs) const {
-  return *this < rhs || *this == rhs;
+  return data_ <= rhs.data_;
 }
 bool U160::operator==(const U160 &rhs) const {
-  return !(*this < rhs) && !(rhs < *this);
+  return data_ == rhs.data_;
+}
+bool U160::operator!=(const U160 &rhs) const {
+  return data_ != rhs.data_;
 }
 bool U160::operator<(const U160 &rhs) const {
   // data_ is big endian so we can use lexicographical_compare
-  return std::lexicographical_compare(data_.begin(), data_.end(), rhs.data_.begin(), rhs.data_.end());
+  return data_ < rhs.data_;
 }
 U160 U160::operator&(const U160 &rhs) const {
   U160 ret{};
@@ -180,7 +183,6 @@ void U160::bit(size_t r, size_t value) {
     data_[index] |= 1u << bit;
   }
 }
-bool U160::operator!=(const U160 &rhs) const { return !((*this) == rhs); }
 
 
 }
