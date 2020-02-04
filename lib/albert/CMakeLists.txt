@@ -2,6 +2,7 @@ add_subdirectory(utils)
 
 add_subdirectory(bencoding)
 add_subdirectory(u160)
+add_subdirectory(io_latency)
 
 add_subdirectory(public_ip)
 add_subdirectory(krpc)

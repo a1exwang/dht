@@ -7,6 +7,7 @@
 #include <albert/log/log.hpp>
 #include <albert/store/sqlite3_store.hpp>
 #include <albert/u160/u160.hpp>
+#include <albert/io_latency/io_latency.hpp>
 
 
 #include <boost/asio/io_service.hpp>
@@ -20,6 +21,7 @@ int main(int argc, const char* argv[]) {
   albert::config::throw_on_remaining_args(args);
 
   /* Initialization */
+  bool debug = dht_config.debug;
   albert::log::initialize_logger(dht_config.debug);
   boost::asio::io_service io_service{};
   albert::dht::DHTInterface dht(std::move(dht_config), io_service);
@@ -36,10 +38,12 @@ int main(int argc, const char* argv[]) {
     }
   });
 
+  albert::io_latency::IOLatencyMeter meter(io_service, debug);
 #ifdef NDEBUG
   try {
 #endif
-  io_service.run();
+//  io_service.run();
+  meter.loop();
 #ifdef NDEBUG
   } catch (const std::exception &e) {
     LOG(error) << "io_service Failure: \"" << e.what() << '"';
