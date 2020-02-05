@@ -520,7 +520,7 @@ bool RoutingTable::add_node(Entry entry) {
       black_list_node(entry.ip(), entry.port());
       reverse_map_.erase({entry.ip(), entry.port()});
       make_bad(entry.ip(), entry.port());
-      LOG(info) << "banned node " << entry.to_string() << " because it has multiple node IDs";
+      LOG(debug) << "banned node " << entry.to_string() << " because it has multiple node IDs";
     }
     return false;
   }

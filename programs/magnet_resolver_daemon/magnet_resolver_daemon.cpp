@@ -45,8 +45,8 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       throw std::runtime_error("Scanner timer failure " + error.message());
     }
 
+    LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count();
     if (bt.resolver_count() < max_concurrent_resolutions_) {
-      LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count();
       auto result = store_->get_empty_keys();
       auto you_are_the_chosen_one = rng_() % result.size();
       auto hero = result[you_are_the_chosen_one];

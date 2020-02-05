@@ -122,6 +122,11 @@ bool get_peers::GetPeersManager::has_request(const u160::U160 &id) const {
 }
 void get_peers::GetPeersManager::gc() {
   std::list<u160::U160> to_delete;
+
+  size_t had_peer = 0;
+  size_t total_peers = 0;
+  size_t total_traversed = 0;
+  size_t total_nodes = 0;
   for (auto &item : requests_) {
     if (item.second.expired() > 0) {
       to_delete.push_back(item.first);
@@ -130,20 +135,26 @@ void get_peers::GetPeersManager::gc() {
       int64_t total = 0;
       for (auto &node : item.second.nodes_) {
         if (node.second.traversed) {
-          traversed++;
+          total_traversed++;
         }
-        total++;
+        total_nodes++;
       }
-      LOG(info) << item.first.to_string() << " node count,"
-                << " total=" << total << ","
-                << " traversed=" << traversed << ","
-                << " peers=" << item.second.peers().size();
+      if (item.second.peers().size() > 0) {
+        had_peer++;
+        total_peers += item.second.peers().size();
+      }
     }
   }
   for (auto &item : to_delete) {
     requests_.erase(item);
-    LOG(info) << "Deleting expired get peers request " << item.to_string();
   }
+
+  LOG(info) << "nodes/traversed/peers/valid requests/deleting "
+            << total_nodes << "/"
+            << total_traversed << "/"
+            << total_peers << "/"
+            << had_peer << "/"
+            << to_delete.size();
 }
 void get_peers::GetPeersManager::add_callback(
     const u160::U160 &id,

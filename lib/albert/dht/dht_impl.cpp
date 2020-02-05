@@ -65,10 +65,10 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
   try {
     node = bencoding::Node::decode(ss);
   } catch (const bencoding::InvalidBencoding &e) {
-    LOG(error) << "Invalid bencoding, e: '" << e.what() << "', ignored " << std::endl
+    LOG(debug) << "Invalid bencoding, e: '" << e.what() << "', ignored " << std::endl
                << albert::dht::utils::hexdump(receive_buffer.data(), bytes_transferred, true);
     if (bad_sender()) {
-      LOG(info) << "banned " << sender_endpoint << " due to invalid bencoding";
+      LOG(debug) << "banned " << sender_endpoint << " due to invalid bencoding";
     }
     continue_receive();
     return;
@@ -96,7 +96,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     node->encode(ss, bencoding::EncodeMode::JSON);
     LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
     if (bad_sender()) {
-      LOG(info) << "banned " << sender_endpoint << " due to invalid message";
+      LOG(debug) << "banned " << sender_endpoint << " due to invalid message";
     }
     continue_receive();
     return;
