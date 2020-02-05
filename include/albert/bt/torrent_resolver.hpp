@@ -35,6 +35,18 @@ class TorrentResolver {
   [[nodiscard]]
   u160::U160 self() const;
 
+  [[nodiscard]]
+  size_t connected_peers() const {
+    size_t ret = 0;
+    for (auto &item : peer_connections_) {
+      if (item->status() == peer::ConnectionStatus::Connected) {
+        ret++;
+      }
+    }
+    return ret;
+  }
+
+  [[nodiscard]]
   bool timeout() const {
     return std::chrono::high_resolution_clock::now() > expiration_at_;
   }

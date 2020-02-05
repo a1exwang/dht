@@ -54,7 +54,7 @@ constexpr const char *MetadataMessage = "ut_metadata";
 enum class ConnectionStatus {
   Connecting,
   Connected,
-  Disconnected
+  Disconnected,
 };
 class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
  public:

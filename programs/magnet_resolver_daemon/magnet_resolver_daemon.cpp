@@ -56,7 +56,10 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
         LOG(error) << "Failed to resolve info hash: " << e.what();
       }
     }
-    LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count();
+    LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count()
+              << " success " << bt.success_count()
+              << " failure " << bt.failure_count()
+              << " connected peers " << bt.connected_peers() ;
 
     db_scan_timer.expires_at(db_scan_timer.expiry() + db_scan_interval);
     db_scan_timer.async_wait(boost::bind(&Scanner::handle_timer,shared_from_this(), boost::asio::placeholders::error()));

@@ -26,6 +26,7 @@ std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
       h(torrent);
       LOG(info) << "Torrent finished, deleting resolver";
       resolvers_.erase(info_hash);
+      success_count_++;
     });
     resolvers_.emplace(info_hash, resolver);
     return resolver;
@@ -55,10 +56,19 @@ void BT::handle_gc_timer(const boost::system::error_code &error) {
   }
   for (auto &id : to_delete) {
     resolvers_.erase(id);
-    LOG(info) << "Deleted timeout resolution: " << id.to_string();
+    LOG(info) << "BT::gc Deleted timeout resolution: " << id.to_string();
   }
+  failed_count_ += to_delete.size();
 
   reset_gc_timer();
+}
+
+size_t BT::connected_peers() const {
+  size_t n = 0;
+  for (auto &item : resolvers_) {
+    n += item.second->connected_peers();
+  }
+  return n;
 }
 
 }

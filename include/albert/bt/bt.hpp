@@ -22,6 +22,9 @@ class BT {
   void start();
 
   size_t resolver_count() const { return resolvers_.size(); }
+  size_t success_count() const { return success_count_; }
+  size_t failure_count() const { return failed_count_; }
+  size_t connected_peers() const;
 
  private:
   void handle_gc_timer(const boost::system::error_code &error);
@@ -34,6 +37,9 @@ class BT {
 
   boost::asio::steady_timer gc_timer_;
   std::chrono::seconds expiration_time_ = std::chrono::seconds(30);
+
+  size_t success_count_ = 0;
+  size_t failed_count_ = 0;
 };
 
 }
