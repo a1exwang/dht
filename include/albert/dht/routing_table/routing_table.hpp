@@ -24,11 +24,12 @@ const int MaxGoodNodeAliveMinutes = 15;
 
 class Entry {
  public:
-  explicit Entry(krpc::NodeInfo info) :info_(std::move(info)) { }
-  explicit Entry(u160::U160 id) : info_(id, 0, 0) { }
-  Entry(u160::U160 id, uint32_t ip, uint16_t port)
-      :info_(id, ip, port) { }
-  Entry() = default;
+  explicit Entry(krpc::NodeInfo info, const std::string &version) :info_(std::move(info)), version_(version) { }
+  Entry(u160::U160 id, uint32_t ip, uint16_t port, const std::string &version)
+      :info_(id, ip, port), version_(version) { }
+
+  Entry(const Entry &rhs) = default;
+  Entry(Entry &&rhs) = default;
 
   [[nodiscard]]
   krpc::NodeInfo node_info() const { return info_; }
@@ -42,12 +43,15 @@ class Entry {
   [[nodiscard]]
   uint16_t port() const { return info_.port(); }
 
+  [[nodiscard]]
+  std::string version() const { return version_; }
+
   bool operator<(const Entry &rhs) const {
     return info_.id() < rhs.info_.id();
   }
 
   [[nodiscard]]
-  bool is_good() const;
+  bool is_good() const noexcept ;
 
   [[nodiscard]]
   bool is_bad() const;
@@ -57,10 +61,13 @@ class Entry {
   bool require_response_now();
 
   [[nodiscard]]
-  std::string to_string() const { return info_.to_string(); }
+  std::string to_string() const {
+    return info_.to_string() + "@" + version();
+  }
 
  private:
   const krpc::NodeInfo info_;
+  const std::string version_;
 
   std::chrono::high_resolution_clock::time_point last_seen_{};
   bool response_required = false;

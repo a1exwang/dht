@@ -8,6 +8,7 @@
 
 #include <albert/log/log.hpp>
 #include <albert/u160/u160.hpp>
+#include <albert/utils/utils.hpp>
 
 namespace albert::dht::routing_table {
 
@@ -117,13 +118,21 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const u160::U160 &id, size_t k) co
         break;
       }
     }
-    return results;
+    return std::move(results);
   } else {
+    Bucket *primary_node{}, *secondary_node{};
     if (!id.bit(u160::U160Bits - prefix_length_ - 1)) {
-      return left_->k_nearest_good_nodes(id, k);
+      primary_node = left_.get();
+      secondary_node = right_.get();
     } else {
-      return right_->k_nearest_good_nodes(id, k);
+      primary_node = right_.get();
+      secondary_node = left_.get();
     }
+    auto result = primary_node->k_nearest_good_nodes(id, k);
+    if (result.size() < k) {
+      result.merge(secondary_node->k_nearest_good_nodes(id, k));
+    }
+    return std::move(result);
   }
 }
 bool Bucket::is_full() const {
@@ -306,7 +315,7 @@ std::optional<Entry> Bucket::remove(const u160::U160 &id) {
   std::optional<Entry> ret;
   dfs_w([id, &ret](Bucket &bucket) -> bool {
     if (bucket.known_nodes_.find(id) != bucket.known_nodes_.end()) {
-      ret.emplace(std::move(bucket.known_nodes_[id]));
+      ret.emplace(std::move(bucket.known_nodes_.at(id)));
       bucket.known_nodes_.erase(id);
       return false;
     }
@@ -589,13 +598,21 @@ std::list<Entry> RoutingTable::k_nearest_good_nodes(const u160::U160 &id, size_t
 }
 
 void RoutingTable::serialize(std::ostream &os) const {
-  iterate_nodes([&os](const Entry &entry) {
+  std::vector<std::shared_ptr<bencoding::Node>> nodes;
+  auto list_node = std::make_shared<bencoding::ListNode>();
+  iterate_nodes([&os, &list_node](const Entry &entry) {
     if (entry.is_good()) {
-      os << entry.id().to_string() << " "
-         << boost::asio::ip::address_v4(entry.ip()) << " "
-         << entry.port() << std::endl;
+      auto item = bencoding::make_list(
+          entry.id().to_string(),
+          boost::asio::ip::address_v4(entry.ip()).to_string(),
+          entry.port(),
+          entry.version()
+      );
+      list_node->append(item);
     }
   });
+  bencoding::DictNode root_dict({{"nodes", list_node}});
+  root_dict.encode(os, bencoding::EncodeMode::Bencoding);
 }
 
 std::unique_ptr<RoutingTable> RoutingTable::deserialize(
@@ -604,17 +621,20 @@ std::unique_ptr<RoutingTable> RoutingTable::deserialize(
     std::function<void(uint32_t, uint16_t)> black_list_node) {
   std::string node_id;
   std::string ip;
-  uint16_t port;
+  std::string version_hex;
+  uint16_t port = 0;
   auto ret = std::make_unique<RoutingTable>(u160::U160(), std::move(name), std::move(save_path), max_bucket_size, max_known_nodes,
                                             delete_good_nodes, fat_mode, std::move(black_list_node));
-  while (is) {
-    is >> node_id >> ip >> port;
-    if (!is.good() && !is.eof()) {
-      throw std::invalid_argument("Invalid routing table format: column parsing failure");
-    }
-    auto node = u160::U160::from_hex(node_id);
-    auto ip_address = boost::asio::ip::address_v4::from_string(ip);
-    ret->add_node(Entry{krpc::NodeInfo{node, ip_address.to_uint(), port}});
+  auto root_dict = std::dynamic_pointer_cast<bencoding::DictNode>(bencoding::Node::decode(is));
+  auto node_list = bencoding::get<bencoding::ListNode>(*root_dict, "nodes");
+  for (size_t i = 0; i < node_list.size(); i++) {
+    auto node = bencoding::get<bencoding::ListNode>(node_list, i);
+    ret->add_node(Entry(
+        u160::U160::from_hex(bencoding::get<std::string>(node, 0)),
+        boost::asio::ip::address_v4::from_string(bencoding::get<std::string>(node, 1)).to_uint(),
+        bencoding::get<uint16_t>(node, 2),
+        bencoding::get<std::string>(node, 3)
+    ));
   }
   return std::move(ret);
 }
@@ -652,7 +672,7 @@ size_t RoutingTable::memory_size() const {
   return size;
 }
 
-bool Entry::is_good() const {
+bool Entry::is_good() const noexcept {
   // A good node is a node has responded to one of our queries within the last 15 minutes,
   // A node is also good if it has ever responded to one of our queries and has sent us a query within the last 15 minutes
 

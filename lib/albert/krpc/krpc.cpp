@@ -183,9 +183,9 @@ std::shared_ptr<Message> Response::decode(
               uint32_t ip;
               uint16_t port;
               memcpy(&ip, peer.data(), sizeof(ip));
-              ip = dht::utils::network_to_host(ip);
+              ip = utils::network_to_host(ip);
               memcpy(&port, peer.data() + sizeof(ip), sizeof(port));
-              port = dht::utils::network_to_host(port);
+              port = utils::network_to_host(port);
               values.emplace_back(ip, port);
             } else {
               LOG(warning) << "Invalid GetPeers response, response.values[" << i << "] is not a string";
@@ -274,9 +274,9 @@ NodeInfo NodeInfo::decode(std::istream &is) {
   uint32_t ip;
   uint16_t port;
   is.read(reinterpret_cast<char*>(&ip), sizeof(ip));
-  ip = dht::utils::network_to_host(ip);
+  ip = utils::network_to_host(ip);
   is.read(reinterpret_cast<char*>(&port), sizeof(port));
-  port = dht::utils::network_to_host(port);
+  port = utils::network_to_host(port);
 
   NodeInfo info{node_id, ip, port};
   return info;
@@ -284,14 +284,14 @@ NodeInfo NodeInfo::decode(std::istream &is) {
 
 void NodeInfo::encode(std::ostream &os) const {
   node_id_.encode(os);
-  auto ip = dht::utils::host_to_network(ip_);
+  auto ip = utils::host_to_network(ip_);
   os.write((const char*)&ip, sizeof(ip));
 
-  auto port = dht::utils::host_to_network(port_);
+  auto port = utils::host_to_network(port_);
   os.write((const char*)&port, sizeof(port));
 }
 std::string NodeInfo::to_string() const {
-  return "NodeID: '" + node_id_.to_string() + "' endpoint: '" + format_ep(ip_, port_) + "'";
+  return node_id_.to_string() + "(" + format_ep(ip_, port_) + ")";
 }
 std::tuple<uint32_t, uint16_t> NodeInfo::tuple() const { return std::make_tuple(ip_, port_); }
 bool NodeInfo::operator<(const NodeInfo &rhs) const { return this->node_id_ < rhs.node_id_; }
@@ -408,8 +408,8 @@ std::shared_ptr<bencoding::Node> GetPeersResponse::get_response_node() const {
     std::vector<std::shared_ptr<bencoding::Node>> peers_list;
     for (auto item : peers_) {
       std::tie(ip, port) = item;
-      ip = dht::utils::host_to_network(ip);
-      port = dht::utils::host_to_network(port);
+      ip = utils::host_to_network(ip);
+      port = utils::host_to_network(port);
       char tmp[sizeof(ip) + sizeof(port)];
       memcpy(tmp, &ip, sizeof(ip));
       memcpy(tmp + sizeof(ip), &port, sizeof(port));

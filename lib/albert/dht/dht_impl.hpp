@@ -137,7 +137,7 @@ class DHTImpl {
       );
 
   void handle_send(const std::string &description, const boost::system::error_code &error, std::size_t bytes_transferred);
-  void good_sender(const u160::U160 &sender_id);
+  void good_sender(const u160::U160 &sender_id, const std::string &version);
 
   void bad_node(const u160::U160 &id);
   // return value: If the sender is added to black list, it returns true; otherwise, it returns false.

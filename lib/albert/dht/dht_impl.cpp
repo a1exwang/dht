@@ -66,7 +66,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
     node = bencoding::Node::decode(ss);
   } catch (const bencoding::InvalidBencoding &e) {
     LOG(debug) << "Invalid bencoding, e: '" << e.what() << "', ignored " << std::endl
-               << albert::dht::utils::hexdump(receive_buffer.data(), bytes_transferred, true);
+               << utils::hexdump(receive_buffer.data(), bytes_transferred, true);
     if (bad_sender()) {
       LOG(debug) << "banned " << sender_endpoint << " due to invalid bencoding";
     }
@@ -87,7 +87,7 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
         std::stringstream ss;
         node->encode(ss, bencoding::EncodeMode::JSON);
         LOG(debug) << "Invalid message, transaction not found, transaction_id: '"
-                   << dht::utils::hexdump(id.data(), id.size(), false) << "', bencoding: " << ss.str();
+                   << utils::hexdump(id.data(), id.size(), false) << "', bencoding: " << ss.str();
       }
       return query_method_name;
     });
@@ -191,7 +191,10 @@ void DHTImpl::sample_infohashes(std::function<void(const u160::U160 &info_hash)>
 
 DHT::DHT(Config config)
     : config_(std::move(config)),
-      self_info_(u160::U160::from_hex(config_.self_node_id), albert::public_ip::my_v4(), config_.bind_port),
+      self_info_(
+          u160::U160::from_hex(config_.self_node_id),
+          (config_.public_ip.empty() ? albert::public_ip::my_v4() : boost::asio::ip::address_v4::from_string(config_.public_ip).to_uint()),
+          config_.bind_port),
       transaction_manager(std::chrono::seconds(config.transaction_expiration_seconds)),
       get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
       main_routing_table_(nullptr),
@@ -201,7 +204,7 @@ DHT::DHT(Config config)
   std::unique_ptr<routing_table::RoutingTable> rt;
   if (ifs) {
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
-    try {
+//    try {
       rt = routing_table::RoutingTable::deserialize(
           ifs, "main",
           config_.routing_table_save_path,
@@ -211,9 +214,9 @@ DHT::DHT(Config config)
           config_.fat_routing_table,
           boost::bind(&DHT::add_to_black_list, this, _1, _2));
       LOG(info) << "Routing table size " << rt->known_node_count();
-    } catch (const std::exception &e) {
-      LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
-    }
+//    } catch (const std::exception &e) {
+//      LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
+//    }
   } else {
     LOG(info) << "Creating empty routing table";
   }

@@ -40,6 +40,7 @@ class NodeInfo {
   void ip(uint32_t ip) { ip_ = ip; }
   void port(uint16_t port) { port_ = port; }
   bool operator<(const NodeInfo &rhs) const;
+  bool valid() const { return port_ != 0; }
  private:
   u160::U160 node_id_;
   uint32_t ip_{};
@@ -82,6 +83,8 @@ class Message {
 
   void set_transaction_id(std::string transaction_id) { this->transaction_id_ = std::move(transaction_id); }
   std::string transaction_id() const { return this->transaction_id_; }
+
+  std::string version() const { return client_version_; }
 
  private:
 

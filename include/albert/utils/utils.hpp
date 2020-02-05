@@ -4,8 +4,10 @@
 
 #include <string>
 
-namespace albert::dht::utils {
+namespace albert::utils {
 std::string hexdump(const void *ptr, size_t length, bool verbose);
+std::string hexdump(const std::string &data, bool verbose);
+std::string hexload(const std::string &hex_string);
 
 template <typename T>
 T host_to_network(T input);

@@ -6,7 +6,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace albert::dht::utils {
+namespace albert::utils {
 
 /**
  * NOTE:
@@ -27,7 +27,12 @@ int fastlog2(size_t length) {
 std::string hexdump(const void *ptr, size_t length, bool verbose) {
   std::stringstream ss;
   auto p = static_cast<const uint8_t *>(ptr);
-  auto hex_digits = size_t(ceil((double)fastlog2(length) / 4));
+  size_t hex_digits;
+  if (length == 0) {
+    hex_digits = 1;
+  } else {
+    hex_digits = size_t(ceil((double)fastlog2(length*8+1) / 4));
+  }
   const size_t column_width = 16;
   std::stringstream line;
   size_t i = 0;
@@ -67,6 +72,23 @@ std::string hexdump(const void *ptr, size_t length, bool verbose) {
   }
   return ss.str();
 }
+
+std::string hexload(const std::string &hex_string) {
+  std::stringstream ss;
+  if (hex_string.size() % 2 != 0) {
+    throw std::invalid_argument("hex string length cannot be divided by 2, '" + hex_string + "'");
+  }
+
+  for (int i = 0; i < hex_string.size()/2; i++) {
+    if (!(std::isxdigit(hex_string[2*i]) && std::isxdigit(hex_string[2*i+1]))) {
+      throw std::invalid_argument("hex string is not hex number: '" + hex_string + "'");
+    }
+    uint8_t value = std::stoi(hex_string.substr(2*i, 2), nullptr, 16);
+    ss << static_cast<char>(value);
+  }
+  return ss.str();
+}
+
 template<>
 uint32_t host_to_network<uint32_t>(uint32_t input) {
   uint64_t rval;
@@ -104,6 +126,10 @@ std::string pretty_size(size_t size) {
   double size_d = (float)size + (float)rem / 1024.0;
   ss << std::fixed << std::setprecision(2) << size_d << SIZES[div];
   return ss.str();
+}
+
+std::string hexdump(const std::string &data, bool verbose) {
+  return hexdump(data.data(), data.size(), verbose);
 }
 
 template uint32_t network_to_host(uint32_t input);

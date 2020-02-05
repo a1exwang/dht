@@ -51,7 +51,7 @@ void DHTImpl::send_find_node_response(
   socket.async_send_to(
       boost::asio::buffer(dht_->create_response(*response)),
       ep,
-      default_handle_send("find_node " + receiver.to_string()));
+      default_handle_send("find_node to " + receiver.to_string()));
   dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 }
 void DHTImpl::ping(const krpc::NodeInfo &target) {
@@ -76,12 +76,9 @@ void DHTImpl::find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep
           dht_->create_query(find_node_query, &rt)
       ),
       ep,
-      boost::bind(
-          &DHTImpl::handle_send,
-          this,
-          std::string("find_self"),
-          boost::asio::placeholders::error,
-          boost::asio::placeholders::bytes_transferred));
+      default_handle_send(
+          std::string("find_self to " + ep.address().to_string() + ":" + std::to_string(ep.port())))
+  );
 }
 
 void DHTImpl::handle_send(const std::string &description, const boost::system::error_code &error, std::size_t bytes_transferred) {
@@ -89,13 +86,14 @@ void DHTImpl::handle_send(const std::string &description, const boost::system::e
     LOG(error) << "DHTImpl: async_send_to '" << description << "' failed: " << error.message();
   }
 }
-void DHTImpl::good_sender(const u160::U160 &sender_id) {
+void DHTImpl::good_sender(const u160::U160 &sender_id, const std::string &version) {
   for (auto &rt : dht_->routing_tables_) {
     bool added = rt->add_node(
         routing_table::Entry(
             sender_id,
             sender_endpoint.address().to_v4().to_uint(),
-            sender_endpoint.port()));
+            sender_endpoint.port(),
+            version));
     if (added) {
       LOG(debug) << "DHTImpl: good sender " << sender_id.to_string();
     }
@@ -112,7 +110,7 @@ void DHTImpl::send_get_peers_query(const u160::U160 &info_hash, const krpc::Node
   socket.async_send_to(
       boost::asio::buffer(dht_->create_query(query, dht_->main_routing_table_)),
       ep,
-      default_handle_send("get_peers " + info_hash.to_string()));
+      default_handle_send("get_peers " + info_hash.to_string() + ", to " + receiver.to_string()));
 }
 void DHTImpl::bootstrap_routing_table(routing_table::RoutingTable &routing_table) {
   // send bootstrap message to bootstrap nodes

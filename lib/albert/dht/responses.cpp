@@ -17,7 +17,7 @@ namespace albert::dht {
 
 void DHTImpl::handle_ping_response(const krpc::PingResponse &response) {
   LOG(trace) << "received ping response from '" << response.node_id().to_string() << "'";
-  good_sender(response.node_id());
+  good_sender(response.node_id(), response.version());
   dht_->total_ping_response_received_++;
 }
 
@@ -26,7 +26,7 @@ void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response, 
     if (target_node.id() == self()) {
       LOG(info) << "got self id by find_node response from " << sender_endpoint << ", " << response.sender_id().to_string();
     } else {
-      dht::routing_table::Entry entry(target_node);
+      dht::routing_table::Entry entry(target_node, response.version());
       // not self and not in black list
       if (!(target_node.id() == self()) &&
           !(target_node.ip() == dht_->self_info_.ip() && target_node.port() == dht_->self_info_.port()) &&
@@ -36,7 +36,7 @@ void DHTImpl::handle_find_node_response(const krpc::FindNodeResponse &response, 
       }
     }
   }
-  good_sender(response.sender_id());
+  good_sender(response.sender_id(), response.version());
 }
 
 void DHTImpl::handle_sample_infohashes_response(
@@ -45,7 +45,7 @@ void DHTImpl::handle_sample_infohashes_response(
   // TODO
 //  sample_infohashes_manager_->handle(response);
 
-  good_sender(response.sender_id());
+  good_sender(response.sender_id(), response.version());
 }
 
 }

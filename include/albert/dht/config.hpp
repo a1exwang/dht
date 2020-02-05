@@ -22,6 +22,7 @@ struct Config :public albert::config::Config {
   void serialize(std::ostream &os) const override;
   void after_parse(boost::program_options::variables_map &vm) override;
 
+  std::string public_ip = "0.0.0.0";
   std::string bind_ip = "0.0.0.0";
   uint16_t bind_port = 16667;
 

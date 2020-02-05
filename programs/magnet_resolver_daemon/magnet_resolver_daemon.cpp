@@ -45,7 +45,6 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       throw std::runtime_error("Scanner timer failure " + error.message());
     }
 
-    LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count();
     if (bt.resolver_count() < max_concurrent_resolutions_) {
       auto result = store_->get_empty_keys();
       auto you_are_the_chosen_one = rng_() % result.size();
@@ -57,6 +56,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
         LOG(error) << "Failed to resolve info hash: " << e.what();
       }
     }
+    LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count();
 
     db_scan_timer.expires_at(db_scan_timer.expiry() + db_scan_interval);
     db_scan_timer.async_wait(boost::bind(&Scanner::handle_timer,shared_from_this(), boost::asio::placeholders::error()));

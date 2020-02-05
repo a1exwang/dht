@@ -35,7 +35,7 @@ void DHTImpl::handle_get_peers_response(
         LOG(debug) << "Node traversed prefix " << old_prefix << " '"
                   << sender_id.to_string() << "'";
         for (auto &node : response.nodes()) {
-          if (!dht_->get_peers_manager_->has_node_traversed(info_hash, node.id())) {
+          if (!dht_->get_peers_manager_->has_node_traversed(info_hash, node.id()) && node.valid()) {
             auto new_prefix = u160::U160::common_prefix_length(info_hash, node.id());
             if (new_prefix >= old_prefix) {
               LOG(debug) << "Node to traverse prefix " << new_prefix << " " << node.id().to_string();
@@ -54,8 +54,7 @@ void DHTImpl::handle_get_peers_response(
     LOG(debug) << "GetPeersRequest manager failed, info_hash not found";
   }
 
-  good_sender(response.sender_id());
-
+  good_sender(response.sender_id(), response.version());
 }
 
 void get_peers::GetPeersRequest::delete_node(const u160::U160 &id) {
@@ -149,7 +148,7 @@ void get_peers::GetPeersManager::gc() {
     requests_.erase(item);
   }
 
-  LOG(info) << "nodes/traversed/peers/valid requests/deleting "
+  LOG(info) << "GetPeersManager: nodes/traversed/peers/valid requests/deleting "
             << total_nodes << "/"
             << total_traversed << "/"
             << total_peers << "/"
@@ -180,7 +179,9 @@ void DHTImpl::get_peers(const u160::U160 &info_hash, const std::function<void(ui
 
   dht_->get_peers_manager_->add_callback(info_hash, callback);
 
-  std::list<routing_table::Entry> targets = dht_->main_routing_table_->k_nearest_good_nodes(info_hash, 100);
+  std::list<routing_table::Entry> targets = dht_->main_routing_table_->k_nearest_good_nodes(
+      info_hash,
+      dht_->main_routing_table_->max_bucket_size());
 //  dht_->main_routing_table_->iterate_nodes([&targets](const routing_table::Entry &entry) {
 //    targets.push_back(entry);
 //  });

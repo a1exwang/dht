@@ -21,6 +21,7 @@ namespace albert::dht {
 
 void Config::serialize(std::ostream &os) const {
   os << "# DHT config" << std::endl;
+  os << "public_ip = " << public_ip << std::endl;
   os << "bind_ip = " << bind_ip << std::endl;
   os << "bind_port = " << bind_port << std::endl;
   os << "self_node_id = " << self_node_id << std::endl;
@@ -60,6 +61,7 @@ Config::Config() {
   po::options_description desc("General Options");
   desc.add_options()
       ("debug", po::value(&debug), "Enable debug mode")
+      ("public-ip", po::value(&public_ip), "My public IP address. Set this to skip public IP resolution")
       ("bind-ip", po::value(&bind_ip)->default_value("0.0.0.0"), "DHT Client bind IP address")
       ("bind-port", po::value(&bind_port)->default_value(16667), "DHT Client bind port")
       ("id", po::value(&self_node_id)->default_value(""), "DHT Client Node ID, empty string stands for random value")

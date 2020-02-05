@@ -84,6 +84,12 @@ std::shared_ptr<Node> Node::decode(std::istream &is) {
 
   }
 }
+std::ostream &Node::make_indent(std::ostream &os, size_t depth) {
+  for (size_t i = 0; i < depth; i++) {
+    os << "  ";
+  }
+  return os;
+}
 
 static std::string json_string(const std::string& s) {
   std::stringstream ss;
@@ -97,8 +103,8 @@ static std::string json_string(const std::string& s) {
         ss.put(c);
       } else {
         std::stringstream ss2;
-        ss2 << std::hex << std::setfill('0') << std::setw(2) << (uint32_t)(uint8_t)c;
-        ss << "\\x" << ss2.str();
+        ss2 << std::hex << std::setfill('0') << std::setw(4) << (uint32_t)(uint8_t)c;
+        ss << "\\u" << ss2.str();
       }
     }
   }
@@ -106,7 +112,7 @@ static std::string json_string(const std::string& s) {
   return ss.str();
 }
 
-void StringNode::encode(std::ostream &os, EncodeMode mode) const {
+void StringNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
   if (mode == EncodeMode::Bencoding) {
     os << s_.size() << ":" << s_;
   } else if (mode == EncodeMode::JSON) {
@@ -114,30 +120,33 @@ void StringNode::encode(std::ostream &os, EncodeMode mode) const {
   }
 }
 
-void ListNode::encode(std::ostream &os, EncodeMode mode) const {
+void ListNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
   if (mode == EncodeMode::Bencoding) {
     os << 'l';
-    for (auto node : list_) {
-      node->encode(os, mode);
+    for (auto &node : list_) {
+      node->encode(os, mode, depth+1);
     }
     os << 'e';
   } else if (mode == EncodeMode::JSON) {
     os << '[';
+    os << std::endl;
     for (int i = 0; i < list_.size(); i++) {
-      list_[i]->encode(os, mode);
+      make_indent(os, depth+1);
+      list_[i]->encode(os, mode, depth+1);
       if (i != list_.size() - 1) {
         os << ", ";
       }
+      os << std::endl;
     }
-    os << ']';
+    make_indent(os, depth) << ']';
   }
 }
-void DictNode::encode(std::ostream &os, EncodeMode mode) const {
+void DictNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
   if (mode == EncodeMode::Bencoding) {
     os << 'd';
     for (const auto& item : dict_) {
       os << item.first.size() << ":" << item.first;
-      item.second->encode(os, mode);
+      item.second->encode(os, mode, depth+1);
     }
     os << 'e';
   } else if (mode == EncodeMode::JSON) {
@@ -145,13 +154,14 @@ void DictNode::encode(std::ostream &os, EncodeMode mode) const {
     for (auto it = dict_.begin(); it != dict_.end(); it++) {
       if (it != dict_.begin())
         os << ", " << std::endl;
-      os << json_string(it->first) << ": ";
-      it->second->encode(os, mode);
+      make_indent(os, depth+1) << json_string(it->first) << ": ";
+      it->second->encode(os, mode, depth+1);
+      os << std::endl;
     }
-    os << std::endl << '}';
+    make_indent(os, depth) << '}';
   }
 }
-void IntNode::encode(std::ostream &os, EncodeMode mode) const {
+void IntNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
   if (mode == EncodeMode::Bencoding) {
     os << 'i' << i_ << 'e';
   } else if (mode == EncodeMode::JSON) {

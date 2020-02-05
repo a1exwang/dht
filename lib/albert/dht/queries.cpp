@@ -29,7 +29,7 @@ void DHTImpl::handle_ping_query(const krpc::PingQuery &query) {
       default_handle_send("ping query to " + query.sender_id().to_string()));
   dht_->total_ping_query_received_++;
 
-  good_sender(query.sender_id());
+  good_sender(query.sender_id(), query.version());
 }
 
 void DHTImpl::handle_find_node_query(const krpc::FindNodeQuery &query) {
@@ -48,7 +48,7 @@ void DHTImpl::handle_find_node_query(const krpc::FindNodeQuery &query) {
       },
       info
   );
-  good_sender(query.sender_id());
+  good_sender(query.sender_id(), query.version());
 }
 
 void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
@@ -81,8 +81,8 @@ void DHTImpl::handle_get_peers_query(const krpc::GetPeersQuery &query) {
   dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 
   LOG(debug) << "get_peers query received from " << sender_endpoint
-            << " token: '" << albert::dht::utils::hexdump(token.data(), token.size(), false) << "'";
-  good_sender(query.sender_id());
+            << " token: '" << albert::utils::hexdump(token.data(), token.size(), false) << "'";
+  good_sender(query.sender_id(), query.version());
 }
 void DHTImpl::handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {
   if (announce_peer_handler_) {
@@ -98,7 +98,7 @@ void DHTImpl::handle_announce_peer_query(const krpc::AnnouncePeerQuery &query) {
       default_handle_send("announce_peer query " + query.sender_id().to_string()));
   dht_->message_counters_[krpc::MessageTypeResponse + ":"s + krpc::MethodNameFindNode]++;
 
-  good_sender(query.sender_id());
+  good_sender(query.sender_id(), query.version());
 }
 
 }

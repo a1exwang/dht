@@ -172,7 +172,7 @@ void PeerConnection::send_handshake() {
 uint32_t PeerConnection::read_size() {
   uint32_t ret;
   pop_data(&ret, sizeof(uint32_t));
-  return dht::utils::network_to_host(ret);
+  return utils::network_to_host(ret);
 }
 void PeerConnection::pop_data(void *output, size_t size) {
   memcpy(output, read_ring_.data(), size);
