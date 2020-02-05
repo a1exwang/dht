@@ -13,21 +13,26 @@
 
 int main(int argc, char* argv[]) {
   // usage magnet_to_torrent --conf=dht.conf {bt_info_hash}
-  albert::dht::Config config;
-  albert::bt::Config bt_config;
-  auto args = albert::config::argv2args(argc, argv);
-  args = config.from_command_line(args);
-  args = bt_config.from_command_line(args);
-  albert::config::throw_on_remaining_args(args);
-  albert::log::initialize_logger(config.debug);
-  auto info_hash = config.resolve_torrent_info_hash;
-
+  std::string info_hash;
   if (argc >= 1) {
     auto last_arg = argv[argc - 1];
     if (strlen(last_arg) == albert::u160::U160Length*2) {
       info_hash = argv[argc-1];
       LOG(info) << "Using info_hash from command line: " << info_hash;
     }
+  }
+
+  albert::dht::Config config;
+  albert::bt::Config bt_config;
+
+  // skip last arg
+  auto args = albert::config::argv2args(argc - 1, argv);
+  args = config.from_command_line(args);
+  args = bt_config.from_command_line(args);
+  albert::config::throw_on_remaining_args(args);
+  albert::log::initialize_logger(config.debug);
+  if (info_hash.empty()) {
+    info_hash = config.resolve_torrent_info_hash;
   }
 
   boost::asio::io_service io_service{};
