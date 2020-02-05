@@ -62,7 +62,7 @@ std::string hexdump(const void *ptr, size_t length, bool verbose) {
       }
     }
   }
-  if (verbose && i%column_width != column_width-1) {
+  if (verbose && i%column_width != column_width-1 && length > 0) {
     for (size_t k = 0; k < column_width-(i%column_width); k++) {
       ss << "   ";
     }

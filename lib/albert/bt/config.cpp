@@ -32,7 +32,7 @@ void Config::serialize(std::ostream &os) const {
   os << "bt-bind-ip: " << bind_ip << std::endl;
   os << "bt-bind-port: " << bind_port << std::endl;
   os << "bt-id: " << id << std::endl;
-  os << "bt-resolve-torrent-expiration-seconds" << resolve_torrent_expiration_seconds << std::endl;
+  os << "bt-resolve-torrent-expiration-seconds: " << resolve_torrent_expiration_seconds << std::endl;
   os << "# end of bt::Config";
 }
 
