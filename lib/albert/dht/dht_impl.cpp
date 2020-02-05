@@ -92,11 +92,13 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       return query_method_name;
     });
   } catch (const krpc::InvalidMessage &e) {
-    std::stringstream ss;
-    node->encode(ss, bencoding::EncodeMode::JSON);
-    LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
-    if (bad_sender()) {
-      LOG(debug) << "banned " << sender_endpoint << " due to invalid message";
+    if (!try_to_handle_unknown_message(node)) {
+      std::stringstream ss;
+      node->encode(ss, bencoding::EncodeMode::JSON);
+      LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
+      if (bad_sender()) {
+        LOG(debug) << "banned " << sender_endpoint << " due to invalid message";
+      }
     }
     continue_receive();
     return;

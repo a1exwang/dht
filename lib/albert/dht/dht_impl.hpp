@@ -111,6 +111,8 @@ class DHTImpl {
 
   void handle_receive_from(const boost::system::error_code &error, std::size_t bytes_transferred);
 
+  bool try_to_handle_unknown_message(std::shared_ptr<bencoding::Node> node);
+
   /**
    * Helper functions
    */

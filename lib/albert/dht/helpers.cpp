@@ -164,5 +164,64 @@ bool DHTImpl::bad_sender() {
   uint16_t port = sender_endpoint.port();
   return dht_->add_to_black_list(ip, port);
 }
+bool DHTImpl::try_to_handle_unknown_message(std::shared_ptr<bencoding::Node> node) {
+  // libtorrent/utorrent extension:
+  // According to https://www.libtorrent.org/dht_extensions.html,
+  // any message which is not recognized but has either an info_hash or target argument is interpreted as find node
+  if (auto dict_node = std::dynamic_pointer_cast<bencoding::DictNode>(node); !dict_node) {
+    return false;
+  } else {
+    auto &dict = dict_node->dict();
+    std::string target;
+
+    if (dict.find("info_hash") != dict.end()) {
+      if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at("info_hash")); s) {
+        target = *s;
+      }
+    } else if (dict.find("target") != dict.end()) {
+      if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at("target")); s) {
+        target = *s;
+      }
+    }
+
+    std::string transaction_id = "unknown tx";
+    if (dict.find("t") != dict.end()) {
+      if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at("t")); s) {
+        transaction_id = *s;
+      }
+    }
+
+    u160::U160 sender_id;
+    if (dict.find("id") != dict.end()) {
+      if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at("id")); s) {
+        transaction_id = *s;
+      }
+    }
+
+    u160::U160 target_id;
+    try {
+      target_id = u160::U160::from_hex(target);
+    } catch (const u160::InvalidFormat &) {
+      return false;
+    }
+
+    auto nodes = dht_->main_routing_table_->k_nearest_good_nodes(target_id, routing_table::BucketMaxGoodItems);
+    std::vector<krpc::NodeInfo> info{};
+    for (auto &n : nodes) {
+      info.push_back(n.node_info());
+    }
+
+    send_find_node_response(
+        transaction_id,
+        krpc::NodeInfo(
+            maybe_fake_self(sender_id),
+            sender_endpoint.address().to_v4().to_uint(),
+            sender_endpoint.port()
+        ),
+        info
+    );
+  }
+  return true;
+}
 
 }

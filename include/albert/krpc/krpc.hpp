@@ -294,27 +294,27 @@ class GetPeersResponse :public Response {
       : Response(std::move(transaction_id), std::move(client_version)),
         sender_id_(sender_id),
         token_(std::move(std::move(token))),
-        has_peers_(false),
         nodes_(std::move(nodes)) { }
+
   GetPeersResponse(
       std::string transaction_id,
       std::string client_version,
       u160::U160 sender_id,
       std::string token,
-      std::vector<std::tuple<uint32_t, uint16_t>> peers)
+      std::vector<std::tuple<uint32_t, uint16_t>> peers,
+      std::vector<NodeInfo> nodes)
       : Response(std::move(transaction_id), std::move(client_version)),
         sender_id_(sender_id),
         token_(std::move(token)),
-        has_peers_(true),
-        peers_(std::move(peers)) { }
+        peers_(std::move(peers)),
+        nodes_(std::move(nodes)) { }
   const u160::U160 &sender_id() const { return sender_id_; }
-  bool has_peers() const { return has_peers_; }
+  bool has_peers() const { return peers_.size() > 0; }
   std::vector<NodeInfo> nodes() const { return nodes_; };
   std::vector<std::tuple<uint32_t, uint16_t>> peers() const { return peers_; };
  protected:
   std::shared_ptr<bencoding::Node> get_response_node() const override;
  private:
-  bool has_peers_;
   u160::U160 sender_id_;
   std::string token_;
   std::vector<NodeInfo> nodes_;

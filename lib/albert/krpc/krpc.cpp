@@ -156,48 +156,45 @@ std::shared_ptr<Message> Response::decode(
     }
     return std::make_shared<FindNodeResponse>(t, v, u160::U160::from_string(id_str), nodes);
   } else if (method_name == MethodNameGetPeers) {
-
     auto id_str = get_string_or_throw(r_dict, "id", "GetPeersRespone");
     auto token = get_string_or_throw(r_dict, "token", "GetPeersResponse");
     auto sender_id = u160::U160::from_string(id_str);
+
+    // We support libtorrent/utorrent extension here
+    //  ref: https://www.libtorrent.org/dht_extensions.html
+    std::vector<std::tuple<uint32_t, uint16_t>> values;
+    std::vector<NodeInfo> nodes;
+
+    if (r_dict.find("values") != r_dict.end()) {
+      auto values_list = std::dynamic_pointer_cast<bencoding::ListNode>(r_dict.at("values"));
+      if (!values_list) {
+        throw InvalidMessage("Invalid GetPeers response, values is not list");
+      }
+      for (int i = 0; i < values_list->size(); i++) {
+        auto peer_info = (*values_list)[i];
+        if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(peer_info); s) {
+          std::string peer = *s;
+          uint32_t ip;
+          uint16_t port;
+          memcpy(&ip, peer.data(), sizeof(ip));
+          ip = utils::network_to_host(ip);
+          memcpy(&port, peer.data() + sizeof(ip), sizeof(port));
+          port = utils::network_to_host(port);
+          values.emplace_back(ip, port);
+        } else {
+          LOG(warning) << "Invalid GetPeers response, response.values[" << i << "] is not a string, ignored";
+        }
+      }
+    }
     if (r_dict.find("nodes") != r_dict.end()) {
       auto nodes_str = get_string_or_throw(r_dict, "nodes", "GetPeersResponse");
       std::stringstream ss_nodes(nodes_str);
       // the stream has at least 1 character
-      std::vector<NodeInfo> nodes;
       while (ss_nodes.peek() != EOF) {
         nodes.push_back(NodeInfo::decode(ss_nodes));
       }
-      return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, nodes);
-    } else {
-      if (r_dict.find("values") == r_dict.end()) {
-        throw InvalidMessage("Invalid GetPeers response, neither 'nodes' nor 'values' is found");
-      } else {
-        auto values_list = std::dynamic_pointer_cast<bencoding::ListNode>(r_dict.at("values"));
-        if (values_list) {
-          std::vector<std::tuple<uint32_t, uint16_t>> values;
-          for (int i = 0; i < values_list->size(); i++) {
-            auto peer_info = (*values_list)[i];
-            if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(peer_info); s) {
-              std::string peer = *s;
-              uint32_t ip;
-              uint16_t port;
-              memcpy(&ip, peer.data(), sizeof(ip));
-              ip = utils::network_to_host(ip);
-              memcpy(&port, peer.data() + sizeof(ip), sizeof(port));
-              port = utils::network_to_host(port);
-              values.emplace_back(ip, port);
-            } else {
-              LOG(warning) << "Invalid GetPeers response, response.values[" << i << "] is not a string";
-            }
-          }
-          return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, values);
-        } else {
-          throw InvalidMessage("Invalid GetPeers response, values is not list");
-        }
-      }
     }
-
+    return std::make_shared<krpc::GetPeersResponse>(t, v, sender_id, token, values, nodes);
   } else if (method_name == MethodNameAnnouncePeer) {
     // TODO
     LOG(warning) << "AnnouncePeer response received, ignored";
@@ -402,30 +399,29 @@ std::shared_ptr<bencoding::Node> GetPeersResponse::get_response_node() const {
   response_dict["id"] = std::make_shared<bencoding::StringNode>(ss.str());
 
   response_dict["token"] = std::make_shared<bencoding::StringNode>(token_);
-  if (has_peers_) {
-    uint32_t ip{};
-    uint16_t port{};
-    std::vector<std::shared_ptr<bencoding::Node>> peers_list;
-    for (auto item : peers_) {
-      std::tie(ip, port) = item;
-      ip = utils::host_to_network(ip);
-      port = utils::host_to_network(port);
-      char tmp[sizeof(ip) + sizeof(port)];
-      memcpy(tmp, &ip, sizeof(ip));
-      memcpy(tmp + sizeof(ip), &port, sizeof(port));
-      peers_list.push_back(std::make_shared<bencoding::StringNode>(std::string(tmp, sizeof(tmp))));
-    }
+  uint32_t ip{};
+  uint16_t port{};
+  std::vector<std::shared_ptr<bencoding::Node>> peers_list;
+  for (auto item : peers_) {
+    std::tie(ip, port) = item;
+    ip = utils::host_to_network(ip);
+    port = utils::host_to_network(port);
+    char tmp[sizeof(ip) + sizeof(port)];
+    memcpy(tmp, &ip, sizeof(ip));
+    memcpy(tmp + sizeof(ip), &port, sizeof(port));
+    peers_list.push_back(std::make_shared<bencoding::StringNode>(std::string(tmp, sizeof(tmp))));
+  }
+  if (peers_.size() > 0) {
     response_dict["values"] = std::make_shared<bencoding::ListNode>(peers_list);
-  } else {
-    std::stringstream ss2;
-    for (auto node : nodes_) {
-      node.encode(ss2);
-    }
-    response_dict["nodes"] = std::make_shared<bencoding::StringNode>(ss2.str());
   }
 
-  return std::make_shared<bencoding::DictNode>(response_dict);
+  std::stringstream ss2;
+  for (auto node : nodes_) {
+    node.encode(ss2);
+  }
+  response_dict["nodes"] = std::make_shared<bencoding::StringNode>(ss2.str());
 
+  return std::make_shared<bencoding::DictNode>(response_dict);
 }
 std::shared_ptr<bencoding::Node> SampleInfohashesQuery::get_arguments_node() const {
   std::map<std::string, std::shared_ptr<bencoding::Node>> arguments_dict;

@@ -95,9 +95,9 @@ static std::string json_string(const std::string& s) {
   std::stringstream ss;
   ss << '"';
   for (char c : s) {
-    if (c == '"') {
+    if (c == '"' || c == '\\') {
       // this works for utf-8 string
-      ss << "\\\"";
+      ss << "\\" << c;
     } else {
       if (std::isprint(c)) {
         ss.put(c);
