@@ -8,6 +8,7 @@
 #include <boost/asio/ip/tcp.hpp>
 
 #include <albert/bt/bt.hpp>
+#include <albert/bt/transport.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/u160/u160.hpp>
 
@@ -65,14 +66,14 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       uint32_t bind_ip,
       uint16_t bind_port,
       uint32_t ip,
-      uint16_t port);
+      uint16_t port,
+      bool use_utp,
+      std::function<void(int, const std::vector<uint8_t> &)> piece_handler,
+      std::function<void(int, size_t)> handshake_handler);
   ~PeerConnection();
   void connect();
   ConnectionStatus status() const { return connection_status_; }
   void close();
-
-  void set_piece_data_handler(std::function<void(int, const std::vector<uint8_t> &)> handler);
-  void set_metadata_handshake_handler(std::function<void(int, size_t)> handler);
 
   const Peer &peer() { return *peer_; }
 
@@ -106,7 +107,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   uint8_t get_peer_extended_message_id(const std::string &message_name);
  private:
   // boost asio stuff
-  boost::asio::ip::tcp::socket socket_;
+//  boost::asio::ip::tcp::socket socket_;
+  std::shared_ptr<transport::Socket> socket_;
 
   Handshake sent_handshake_;
   Handshake received_handshake_;

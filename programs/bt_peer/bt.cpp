@@ -31,7 +31,9 @@ int main(int argc, char **argv) {
       0,
       0,
       ip,
-      port);
+      port,true,
+      [](int piece, const std::vector<uint8_t> &data) { },
+      [](int piece, size_t size) { });
 
 
   try {

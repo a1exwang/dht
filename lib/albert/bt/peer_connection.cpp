@@ -5,6 +5,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -18,7 +19,9 @@
 #include <albert/u160/u160.hpp>
 #include <albert/utils/utils.hpp>
 
+
 using boost::asio::ip::tcp;
+using boost::asio::ip::udp;
 
 namespace {
 
@@ -68,19 +71,32 @@ PeerConnection::PeerConnection(
     uint32_t bind_ip,
     uint16_t bind_port,
     uint32_t ip,
-    uint16_t port)
-    :socket_(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port)),
-     self_(self),
+    uint16_t port,
+    bool use_utp,
+    std::function<void(int, const std::vector<uint8_t>&)> piece_handler,
+    std::function<void(int, size_t)> metadata_handshake_handler)
+    :self_(self),
      target_(target),
-     peer_(std::make_unique<Peer>(ip, port))
-{ }
+     peer_(std::make_unique<Peer>(ip, port)),
+     piece_data_handler_(std::move(piece_handler)),
+     metadata_handshake_handler_(std::move(metadata_handshake_handler)) {
+
+  if (use_utp) {
+    socket_ = std::make_shared<transport::UTPSocket>(io_context, udp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port));
+  } else {
+    throw std::runtime_error("not implemented");
+//    socket_ = std::make_unique<transport::TCPSocket>(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port))/
+  }
+}
 
 void PeerConnection::connect() {
   // Start the asynchronous connect operation.
 
+  LOG(info) << "PeerConnection::connect, connecting to " << peer_->to_string();
   // Why using shared_from_this(). https://stackoverflow.com/a/35469759
-  socket_.async_connect(
-      tcp::endpoint(boost::asio::ip::address_v4(peer_->ip()), peer_->port()),
+  socket_->async_connect(
+      boost::asio::ip::address_v4(peer_->ip()),
+      peer_->port(),
       boost::bind(
           &PeerConnection::handle_connect,
           shared_from_this(),
@@ -90,7 +106,7 @@ void PeerConnection::connect() {
 
 void PeerConnection::handle_connect(
     const boost::system::error_code &ec) {
-  if (!socket_.is_open()) {
+  if (!socket_->is_open()) {
     LOG(debug) << "Connect timed out " << this->peer_->to_string();
   } else if (ec) {
     LOG(debug) << "Connect error: " << this->peer_->to_string() << " " << ec.message();
@@ -99,9 +115,8 @@ void PeerConnection::handle_connect(
     connection_status_ = ConnectionStatus::Connected;
     LOG(info) << "PeerConnection: connected to " << this->peer_->to_string();
 
-    socket_.async_receive(
+    socket_->async_receive(
         boost::asio::buffer(read_buffer_.data(), read_buffer_.size()),
-        0,
         boost::bind(
             &PeerConnection::handle_receive,
             shared_from_this(),
@@ -135,9 +150,8 @@ void PeerConnection::send_handshake() {
       (char*)&sent_handshake_,
       (char*)&sent_handshake_ + sizeof(sent_handshake_),
       write_buffer_.begin());
-  socket_.async_send(
+  socket_->async_send(
       boost::asio::buffer(write_buffer_.data(), write_size),
-      0,
       [](const boost::system::error_code &err, size_t bytes_transferred) {
         if (err) {
           throw std::runtime_error("Failed to write to socket " + err.message());
@@ -159,9 +173,8 @@ void PeerConnection::send_handshake() {
                 {"reqq", newint(500)},
                 {"v", std::make_shared<bencoding::StringNode>("wtf/0.0")}
             }));
-  socket_.async_send(
+  socket_->async_send(
       boost::asio::buffer(make_extended(node, 0)),
-      0,
       [](const boost::system::error_code &err, size_t bytes_transferred) {
         if (err) {
           throw std::runtime_error("Failed to write to socket " + err.message());
@@ -313,11 +326,15 @@ void PeerConnection::handle_extended_message(
 
   }
 }
+
 void PeerConnection::handle_receive(const boost::system::error_code &err, size_t bytes_transferred) {
   // we may arrive here if the torrent download complete before handle_receive() is called
   if (status() == ConnectionStatus::Disconnected) {
     return;
   }
+
+//  LOG(info) << "PeerConnection: received " << bytes_transferred << std::endl
+//        << utils::hexdump(read_buffer_.data(), bytes_transferred, true);
 
   if (err == boost::asio::error::eof) {
     connection_status_ = ConnectionStatus::Disconnected;
@@ -394,9 +411,8 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
       LOG(error) << "Invalid peer message " << e.what();
       close();
     }
-    socket_.async_receive(
+    socket_->async_receive(
         boost::asio::buffer(read_buffer_.data(), read_buffer_.size()),
-        0,
         boost::bind(
             &PeerConnection::handle_receive,
             shared_from_this(),
@@ -425,9 +441,8 @@ void PeerConnection::send_metadata_request(int64_t piece) {
                         newint(piece),
                     }
                 }));
-      socket_.async_send(
+      socket_->async_send(
           boost::asio::buffer(make_extended(node, extended_id)),
-          0,
           [](const boost::system::error_code &err, size_t bytes_transferred) {
             if (err) {
               throw std::runtime_error("Failed to write to socket " + err.message());
@@ -441,14 +456,9 @@ uint8_t PeerConnection::get_peer_extended_message_id(const std::string &message_
   return get_int64_or_throw(m_dict_, message_name, "PeerConenction::get_peer_extended_message_id");
 }
 void PeerConnection::close() {
-  socket_.close();
+  socket_->close();
   connection_status_ = ConnectionStatus::Disconnected;
 }
-void PeerConnection::set_piece_data_handler(
-    std::function<void(int, const std::vector<uint8_t> &)> handler) {
-  this->piece_data_handler_ = std::move(handler);
-}
-void PeerConnection::set_metadata_handshake_handler(std::function<void(int, size_t)> handler) { metadata_handshake_handler_ = handler; }
 uint8_t PeerConnection::has_peer_extended_message(const std::string &message_name) const {
   return extended_handshake_->dict().find(message_name) == extended_handshake_->dict().end();
 }

@@ -1,5 +1,6 @@
 add_subdirectory(b2j)
 add_subdirectory(bt_peer)
+add_subdirectory(get_torrent_from_peer)
 add_subdirectory(magnet_resolver_daemon)
 add_subdirectory(magnet_to_torrent)
 add_subdirectory(torrent_collector)

@@ -136,106 +136,128 @@ void Socket::async_connect(
 
   setup();
 
-  Connection c;
-  c.ep = ep;
-  c.connect_handler = std::move(handler);
+  auto c = std::make_shared<Connection>();
+  c->ep = ep;
+  c->connect_handler = std::move(handler);
   connections_.emplace(ep, c);
-  send_syn(connections_[ep]);
+  send_syn(*c);
 }
 
 void Socket::handle_receive_from(const boost::system::error_code &error, size_t size) {
   if (error) {
-    LOG(info) << "utp::Socket::handle_receive_from: " << error.message();
     if (error == boost::asio::error::operation_aborted) {
       return;
     } else {
-      close();
+      LOG(info) << "utp::Socket::handle_receive_from: " << error.message();
+      close(receive_ep_);
     }
     return;
   }
 
+  std::stringstream ss(std::string((char*)receive_buffer_.data(), size));
+  auto packet = Packet::decode(ss);
+  LOG(debug) <<"received packet from " << receive_ep_ << std::endl
+             << packet.pretty() << std::endl;
+
   if (connections_.find(receive_ep_) == connections_.end()) {
-    // new connection
-    LOG(error) << "New connection, not implemented";
+    if (packet.type == UTPTypeFin) {
+      // ignore
+    } else {
+      LOG(error) << "New connection, not implemented";
+    }
   } else {
     auto &connection = connections_[this->receive_ep_];
 
-    if (connection.status_ == Status::Closed) {
+    if (connection->status_ == Status::Closed) {
       return;
     }
 
-    std::stringstream ss(std::string((char*)receive_buffer_.data(), size));
-    auto packet = Packet::decode(ss);
-    LOG(info) <<"received packet from " << receive_ep_ << std::endl
-              << packet.pretty() << std::endl;
-
-    if (connection.status_ == Status::SynSent) {
-      if (packet.connection_id != connection.conn_id_recv) {
+    if (connection->status_ == Status::SynSent) {
+      if (packet.connection_id != connection->conn_id_recv) {
         LOG(error) << "Multiple connections with one ep not implemented, ignored";
       } else {
         if (packet.type == UTPTypeState) {
-          connection.status_ = Status::Connected;
-          connection.ack_nr = packet.seq_nr - 1;
-//          send_state(connection);
-          LOG(info) << "Connected ack_nr: " << packet.seq_nr;
+          connection->status_ = Status::Connected;
+          // NOTE:
+          // This "ack_nr = seq_nr - 1" is not written in BEP, but by capture packets from qbittorrent
+          connection->ack_nr = packet.seq_nr - 1;
 
-          if (connection.connect_handler) {
-            connection.connect_handler(boost::system::error_code());
-            connection.connect_handler = nullptr;
+          if (connection->connect_handler) {
+            connection->connect_handler(boost::system::error_code());
+            connection->connect_handler = nullptr;
           }
         } else {
           LOG(error) << "Invalid status, closing connection";
-          close();
+          close(connection->ep);
           return;
         }
       }
-    } else if (connection.status_ == Status::Connecting) {
+    } else if (connection->status_ == Status::Connecting) {
       LOG(error) << "connection not implemented, ignored";
-    } else if (connection.status_ == Status::Connected) {
+    } else if (connection->status_ == Status::Connected) {
       if (packet.type == UTPTypeData) {
-        connection.ack_nr = packet.seq_nr;
-        connection.buffered_received_packets.emplace_back(std::move(packet.data));
+        connection->ack_nr = packet.seq_nr;
+        connection->buffered_received_packets.emplace_back(std::move(packet.data));
         poll_receive(connection);
-        send_state(connection);
+        send_state(*connection);
       } else if (packet.type == UTPTypeFin) {
         poll_receive(connection);
-        if (connection.receive_handler) {
-          connection.receive_handler(boost::asio::error::eof, 0);
-        }
-        connection.status_ = Status::Closed;
-        close();
+        LOG(error) << "FIN received from " << receive_ep_ << " closing connection";
+        close(connection->ep);
         return;
+      } else if (packet.type == UTPTypeReset) {
+        poll_receive(connection);
+        LOG(error) << "RST received from " << receive_ep_ << " closing connection";
+        reset(connection->ep);
+        return;
+      } else if (packet.type == UTPTypeState) {
+        connection->acked = packet.ack_nr;
       } else {
         LOG(error) << "connected, not implemented type " << int(packet.type);
       }
+      connection->acked = packet.ack_nr;
     }
 
-    connection.timeout_at = std::chrono::high_resolution_clock::now() + std::chrono::seconds(1);
+    connection->timeout_at = std::chrono::high_resolution_clock::now() + std::chrono::seconds(1);
   }
 
-
-  socket_.async_receive_from(
-      boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
-      receive_ep_,
-      boost::bind(&Socket::handle_receive_from, shared_from_this(),
-                  boost::asio::placeholders::error(),
-                  boost::asio::placeholders::bytes_transferred));
+  if (socket_.is_open()) {
+//    LOG(info) << "Socket::handle_receive_from handle_receive_from handler";
+    socket_.async_receive_from(
+        boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
+        receive_ep_,
+        boost::bind(&Socket::handle_receive_from, shared_from_this(),
+                    boost::asio::placeholders::error(),
+                    boost::asio::placeholders::bytes_transferred));
+  }
 }
 
-void Socket::close() {
-  // TODO:
-  socket_.cancel();
-  socket_.close();
+void Socket::close(boost::asio::ip::udp::endpoint ep) {
+  if (connections_.find(ep) != connections_.end()) {
+    auto &c = connections_.at(ep);
+    c->status_ = Status::Closed;
+
+    if (c->connect_handler) {
+      c->connect_handler(boost::asio::error::eof);
+    }
+    if (c->receive_handler) {
+      c->receive_handler(boost::asio::error::eof, 0);
+    }
+    send_fin(*connections_.at(ep));
+  }
 }
+
 void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
   if (error) {
     LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
   }
   if (connections_.find(ep) == connections_.end()) {
-    LOG(error) << "unknown handle_send_to ep " << ep;
+    LOG(debug) << "unknown handle_send_to ep " << ep << " success";
   }
 }
+
 void Socket::setup() {
+//  LOG(debug) << "Socket::setup handle_receive_from handler";
   socket_.async_receive_from(
       boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
       receive_ep_,
@@ -275,7 +297,7 @@ void Socket::send_syn(Connection &connection) {
 
   std::stringstream ss;
   packet.encode(ss);
-  LOG(info) << "utp::Socket send to " << connection.ep << std::endl << packet.pretty();
+  LOG(debug) << "utp::Socket SYNC send to " << connection.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
       boost::asio::buffer(ss.str()),
@@ -300,7 +322,7 @@ void Socket::send_data(Connection &c, boost::asio::const_buffer data) {
   std::stringstream ss;
   pkg.encode(ss);
 
-  LOG(info) << "utp::Socket send to " << c.ep << std::endl << pkg.pretty();
+  LOG(debug) << "utp::Socket send data to " << c.ep << std::endl << pkg.pretty();
 
   socket_.async_send_to(
       boost::asio::buffer(ss.str()),
@@ -312,31 +334,53 @@ void Socket::async_receive(boost::asio::mutable_buffer buffer,
                            std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) {
 
   for (auto &c : connections_) {
-    c.second.receive_handler = handler;
-    c.second.receive_buffer = buffer;
+    c.second->receive_handler = handler;
+    c.second->user_buffer = buffer;
     poll_receive(c.second);
   }
 
 }
-bool Socket::poll_receive(Connection &c) {
+bool Socket::poll_receive(std::shared_ptr<Connection> c) {
   bool handler_called = false;
-  while (!c.buffered_received_packets.empty() && c.receive_handler) {
-    if (c.receive_buffer_data_size > 0) {
-      // do nothing, poll success
-    } else {
-      auto &data = c.buffered_received_packets.front();
-      if (c.receive_buffer.size() < data.size()) {
-        throw SystemError("receive buffer not big enough, " + std::to_string(c.receive_buffer.size()) + " of "
-                              + std::to_string(data.size()));
+
+  bool data_exhausted = false;
+  while (c->receive_handler && !data_exhausted) {
+    bool user_buffer_full = false;
+    // fill the user buffer as much as possible
+    while (true) {
+      if (c->buffered_received_packets.empty()) {
+        data_exhausted = true;
+        break;
+      } else {
+        auto &data = c->buffered_received_packets.front();
+        size_t user_buffer_remaining = c->user_buffer.size() - c->user_buffer_data_size;
+        if (user_buffer_remaining <= data.size()) {
+          // receive buffer full
+          std::copy(
+              data.begin(),
+              std::next(data.begin(), user_buffer_remaining),
+              (uint8_t *) c->user_buffer.data() + user_buffer_remaining);
+          c->user_buffer_data_size = c->user_buffer.size();
+          user_buffer_full = true;
+          data = std::vector<uint8_t>(std::next(data.begin(), user_buffer_remaining), data.end());
+          break;
+        } else {
+          // pop one packet
+          std::copy(data.begin(), data.end(), (uint8_t *) c->user_buffer.data()+c->user_buffer_data_size);
+          c->user_buffer_data_size += data.size();
+          c->buffered_received_packets.pop_front();
+        }
       }
-      c.receive_buffer_data_size = data.size();
-      std::copy(data.begin(), data.end(), (uint8_t *) c.receive_buffer.data());
-      c.buffered_received_packets.pop_front();
     }
-    c.receive_handler(boost::system::error_code(), c.receive_buffer_data_size);
-    c.receive_handler = nullptr;
-    c.receive_buffer_data_size = 0;
-    handler_called = true;
+    // if user_buffer.size() == 0 && data.size() == 0, we call the user handle once
+    if (c->user_buffer_data_size > 0 || user_buffer_full) {
+      auto handler = std::move(c->receive_handler);
+      c->receive_handler = nullptr;
+      auto bytes_transfered = c->user_buffer_data_size;
+      c->user_buffer_data_size = 0;
+      handler(boost::system::error_code(), bytes_transfered);
+      handler_called = true;
+    }
   }
   return handler_called;
 }
@@ -347,8 +391,8 @@ void Socket::handle_timer(const boost::system::error_code &error) {
   }
 
   for (auto &c : connections_) {
-    if (std::chrono::high_resolution_clock::now() > c.second.timeout_at) {
-      timeout(c.second);
+    if (std::chrono::high_resolution_clock::now() > c.second->timeout_at) {
+      timeout(*c.second);
     }
   }
 
@@ -370,7 +414,7 @@ void Socket::send_state(Connection &c) {
 
   std::stringstream ss;
   packet.encode(ss);
-  LOG(info) << "utp::Socket send to " << c.ep << std::endl << packet.pretty();
+  LOG(debug) << "utp::Socket send STATE to " << c.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
       boost::asio::buffer(ss.str()),
@@ -382,13 +426,71 @@ void Socket::async_send(boost::asio::const_buffer buffer,
 
   for (auto &item : connections_) {
     auto &c = item.second;
-    if (c.status_ != Status::Connected) {
-      throw InvalidStatus("Invalid status, cannot send in status " + std::to_string(int(c.status_)));
+    if (c->status_ != Status::Connected) {
+      throw InvalidStatus("Invalid status, cannot send in status " + std::to_string(int(c->status_)));
     }
 
-    send_data(c, buffer);
+    send_data(*c, buffer);
   }
 
+}
+void Socket::close() {
+  std::list<boost::asio::ip::udp::endpoint> keys;
+  for (auto &item : connections_) {
+    keys.push_back(item.first);
+  }
+  for (const auto& key : keys) {
+    close(key);
+  }
+}
+Socket::~Socket() {
+  close();
+}
+void Socket::send_fin(Connection &c) {
+  auto usec = get_usec();
+  Packet pkg{
+      UTPTypeFin, UTPVersion, c.conn_id_send,
+      usec, 0,
+      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      c.seq_nr, c.ack_nr};
+
+  std::stringstream ss;
+  pkg.encode(ss);
+
+  LOG(debug) << "utp::Socket send FIN to " << c.ep << std::endl << pkg.pretty();
+  socket_.async_send_to(
+      boost::asio::buffer(ss.str()),
+      c.ep,
+      boost::bind(&Socket::handle_send_to_fin, this, c.ep, boost::asio::placeholders::error()));
+}
+void Socket::handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
+  if (error) {
+    LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
+  }
+  if (connections_.find(ep) != connections_.end()) {
+    cleanup(ep);
+  }
+}
+void Socket::cleanup(boost::asio::ip::udp::endpoint ep) {
+  connections_.erase(ep);
+  if (connections_.empty()) {
+    socket_.cancel();
+    socket_.close();
+  }
+}
+void Socket::reset(boost::asio::ip::udp::endpoint ep) {
+  if (connections_.find(ep) != connections_.end()) {
+    auto &c = connections_.at(ep);
+    c->status_ = Status::Closed;
+
+    if (c->connect_handler) {
+      c->connect_handler(boost::asio::error::connection_reset);
+    }
+    if (c->receive_handler) {
+      c->receive_handler(boost::asio::error::connection_reset, 0);
+    }
+    cleanup(ep);
+  }
 }
 
 }

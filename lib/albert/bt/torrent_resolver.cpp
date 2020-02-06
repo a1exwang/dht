@@ -36,12 +36,11 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
           bind_ip_,
           bind_port_,
           ip,
-          port));
+          port,
+          true,
+          boost::bind(&TorrentResolver::piece_handler, this, _1, _2),
+          boost::bind(&TorrentResolver::handshake_handler, this, _1, _2)));
   auto &pc = peer_connections_.back();
-  pc->set_piece_data_handler(
-      boost::bind(
-          &TorrentResolver::piece_handler, this, _1, _2));
-  pc->set_metadata_handshake_handler(boost::bind(&TorrentResolver::handshake_handler, this, _1, _2));
   pc->connect();
 }
 

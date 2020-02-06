@@ -206,7 +206,7 @@ DHT::DHT(Config config)
   std::unique_ptr<routing_table::RoutingTable> rt;
   if (ifs) {
     LOG(info) << "Loading routing table from '" << config_.routing_table_save_path << "'";
-//    try {
+    try {
       rt = routing_table::RoutingTable::deserialize(
           ifs, "main",
           config_.routing_table_save_path,
@@ -216,9 +216,9 @@ DHT::DHT(Config config)
           config_.fat_routing_table,
           boost::bind(&DHT::add_to_black_list, this, _1, _2));
       LOG(info) << "Routing table size " << rt->known_node_count();
-//    } catch (const std::exception &e) {
-//      LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
-//    }
+    } catch (const std::exception &e) {
+      LOG(info) << "Failed to load routing table, '" << e.what() << "', Creating empty routing table";
+    }
   } else {
     LOG(info) << "Creating empty routing table";
   }

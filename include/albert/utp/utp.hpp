@@ -74,13 +74,15 @@ struct Connection {
   uint16_t conn_id_recv = 0;
   Status status_ = Status::SynSent;
 
+  uint16_t acked = 0;
+
   boost::asio::ip::udp::endpoint ep;
 
   std::function<void(const boost::system::error_code &error)> connect_handler;
 
   std::function<void(const boost::system::error_code &, size_t)> receive_handler;
-  boost::asio::mutable_buffer receive_buffer;
-  size_t receive_buffer_data_size = 0;
+  boost::asio::mutable_buffer user_buffer;
+  size_t user_buffer_data_size = 0;
   std::list<std::vector<uint8_t>> buffered_received_packets;
 
   std::chrono::high_resolution_clock::time_point timeout_at;
@@ -96,6 +98,7 @@ class Socket :public std::enable_shared_from_this<Socket> {
  public:
   Socket(boost::asio::io_service &io,
          boost::asio::ip::udp::endpoint bind_ep);
+  ~Socket();
 
   void async_connect(
       boost::asio::ip::udp::endpoint ep,
@@ -109,26 +112,41 @@ class Socket :public std::enable_shared_from_this<Socket> {
       boost::asio::const_buffer buffer,
       std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler);
 
+  bool is_open() const {
+    for (auto &item : connections_) {
+      if (item.second->status_ != Status::Connected) {
+        return false;
+      }
+    }
+    return true;
+  }
+  void close();
+
  private:
   void setup();
-  void close();
-  bool poll_receive(Connection &c);
+  void close(boost::asio::ip::udp::endpoint ep);
+  void cleanup(boost::asio::ip::udp::endpoint ep);
+  void reset(boost::asio::ip::udp::endpoint ep);
+  bool poll_receive(std::shared_ptr<Connection> c);
   void timeout(Connection &c);
 
   void handle_receive_from(const boost::system::error_code &error, size_t size);
   void handle_send_to(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error);
   void handle_timer(const boost::system::error_code &error);
 
+  void handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error);
+
   void send_syn(Connection &c);
   void send_state(Connection &c);
   void send_data(Connection &c, boost::asio::const_buffer data);
+  void send_fin(Connection &c);
  private:
   boost::asio::io_service &io_;
   boost::asio::ip::udp::socket socket_;
 
   boost::asio::ip::udp::endpoint bind_ep_;
   boost::asio::ip::udp::endpoint receive_ep_;
-  std::map<boost::asio::ip::udp::endpoint, Connection> connections_;
+  std::map<boost::asio::ip::udp::endpoint, std::shared_ptr<Connection>> connections_;
 
   std::vector<uint8_t> receive_buffer_ = std::vector<uint8_t>(65536, 0);
   size_t receive_buffer_offset_ = 0;
