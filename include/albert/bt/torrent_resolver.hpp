@@ -19,6 +19,7 @@ class TorrentResolver {
       u160::U160 self,
       uint32_t bind_ip,
       uint16_t bind_port,
+      bool use_utp,
       std::chrono::high_resolution_clock::time_point expiration_at_);
   ~TorrentResolver();
   void add_peer(uint32_t ip, uint16_t port);
@@ -62,6 +63,7 @@ class TorrentResolver {
  private:
   uint32_t bind_ip_;
   uint16_t bind_port_;
+  bool use_utp_;
   std::vector<std::vector<uint8_t>> pieces_;
   size_t metadata_size_;
 

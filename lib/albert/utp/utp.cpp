@@ -155,9 +155,16 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
   }
 
   std::stringstream ss(std::string((char*)receive_buffer_.data(), size));
-  auto packet = Packet::decode(ss);
-  LOG(debug) <<"received packet from " << receive_ep_ << std::endl
-             << packet.pretty() << std::endl;
+  Packet packet;
+  try {
+    packet = Packet::decode(ss);
+    LOG(debug) << "received packet from " << receive_ep_ << std::endl
+               << packet.pretty() << std::endl;
+  } catch (const InvalidHeader &e) {
+    LOG(error) << "invalid header received from " << receive_ep_;
+    reset(receive_ep_);
+    return;
+  }
 
   if (connections_.find(receive_ep_) == connections_.end()) {
     if (packet.type == UTPTypeFin) {

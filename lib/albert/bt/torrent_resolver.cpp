@@ -22,9 +22,10 @@ TorrentResolver::TorrentResolver(
     u160::U160 self,
     uint32_t bind_ip,
     uint16_t bind_port,
+    bool use_utp,
     std::chrono::high_resolution_clock::time_point expiration_at
     )
-    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port), expiration_at_(expiration_at) { }
+    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port), use_utp_(use_utp), expiration_at_(expiration_at) { }
 
 void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
   using namespace boost::placeholders;
@@ -37,7 +38,7 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
           bind_port_,
           ip,
           port,
-          true,
+          use_utp_,
           boost::bind(&TorrentResolver::piece_handler, this, _1, _2),
           boost::bind(&TorrentResolver::handshake_handler, this, _1, _2)));
   auto &pc = peer_connections_.back();

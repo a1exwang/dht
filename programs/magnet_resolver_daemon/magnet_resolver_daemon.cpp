@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
   bt.start();
   dht.start();
 
-  size_t db_scan_interval_seconds = 10;
+  size_t db_scan_interval_seconds = 2;
   auto scanner = std::make_shared<Scanner>(io_service, bt, dht, std::move(store), db_scan_interval_seconds);
   scanner->start();
 

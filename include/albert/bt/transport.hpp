@@ -67,5 +67,39 @@ class UTPSocket :public Socket {
   std::shared_ptr<utp::Socket> socket_;
 };
 
+class TCPSocket :public Socket {
+ public:
+  TCPSocket(boost::asio::io_service &io,
+            boost::asio::ip::tcp::endpoint bind_ep) :socket_(io, bind_ep) { }
+
+  void async_connect(
+      boost::asio::ip::address ip,
+      uint16_t port,
+      std::function<void(const boost::system::error_code &error)> handler) override {
+    socket_.async_connect(boost::asio::ip::tcp::endpoint(ip, port), std::move(handler));
+  }
+
+  void async_receive(
+      boost::asio::mutable_buffer buffer,
+      std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) override {
+    socket_.async_receive(buffer, std::move(handler));
+  }
+
+  void async_send(
+      boost::asio::const_buffer buffer,
+      std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) override {
+    socket_.async_send(buffer, std::move(handler));
+  }
+
+  void close() override {
+    socket_.close();
+  }
+  bool is_open() const override {
+    return socket_.is_open();
+  }
+ private:
+  boost::asio::ip::tcp::socket socket_;
+};
+
 
 }

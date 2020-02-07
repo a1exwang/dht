@@ -84,15 +84,14 @@ PeerConnection::PeerConnection(
   if (use_utp) {
     socket_ = std::make_shared<transport::UTPSocket>(io_context, udp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port));
   } else {
-    throw std::runtime_error("not implemented");
-//    socket_ = std::make_unique<transport::TCPSocket>(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port))/
+    socket_ = std::make_unique<transport::TCPSocket>(io_context, tcp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port));
   }
 }
 
 void PeerConnection::connect() {
   // Start the asynchronous connect operation.
 
-  LOG(info) << "PeerConnection::connect, connecting to " << peer_->to_string();
+  LOG(debug) << "PeerConnection::connect, connecting to " << peer_->to_string();
   // Why using shared_from_this(). https://stackoverflow.com/a/35469759
   socket_->async_connect(
       boost::asio::ip::address_v4(peer_->ip()),
