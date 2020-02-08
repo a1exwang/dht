@@ -119,8 +119,8 @@ PeerConnection::PeerConnection(
 }
 
 void PeerConnection::connect(
-    std::function<void(std::shared_ptr<PeerConnection>)> connect_handler,
-    std::function<void(std::shared_ptr<PeerConnection>, int, size_t)> extended_handshake_handler) {
+    std::function<void()> connect_handler,
+    std::function<void(int, size_t)> extended_handshake_handler) {
   // Start the asynchronous connect operation.
   connect_handler_ = std::move(connect_handler);
   extended_handshake_handler_ = std::move(extended_handshake_handler);
@@ -231,14 +231,42 @@ void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vect
   if (type == MessageTypeChoke) {
     peer_choke_ = true;
   } else if (type == MessageTypeUnchoke) {
-    LOG(debug) << "peer " << peer_->to_string() << " unchoke";
-    peer_choke_ = false;
+    if (peer_choke_) {
+      LOG(info) << "peer " << peer_->to_string() << " unchoke";
+      peer_choke_ = false;
+      if (unchoke_handler_) {
+        unchoke_handler_();
+      }
+    }
   } else if (type == MessageTypeInterested) {
-    LOG(debug) << "peer " << peer_->to_string() << " interested";
+    LOG(info) << "peer " << peer_->to_string() << " interested";
     peer_interested_ = true;
   } else if (type == MessageTypeNotInterested) {
-    LOG(debug) << "peer " << peer_->to_string() << " interested";
+    LOG(info) << "peer " << peer_->to_string() << " interested";
     peer_interested_ = false;
+  } else if (type == MessageTypeBitfield) {
+    LOG(debug) << "Bitfield: " << utils::hexdump(data.data(), data.size(), true);
+    peer_bitfield_ = data;
+  } else if (type == MessageTypeHave) {
+    if (data.size() != sizeof(uint32_t)) {
+      LOG(error) << "invalid have message, data length != " << sizeof(uint32_t);
+    } else {
+      auto piece = utils::host_to_network(*(uint32_t*)data.data());
+      set_peer_has_piece(piece);
+    }
+  } else if (type == MessageTypeRequest) {
+    LOG(info) << "Request ";
+  } else if (type == MessageTypePiece) {
+    std::stringstream ss(std::string((const char*)data.data(), (const char*)data.data()+2*sizeof(uint32_t)));
+    uint32_t index = 0, begin = 0;
+    ss.read((char*)&index, sizeof(index));
+    index = utils::network_to_host(index);
+    ss.read((char*)&begin, sizeof(begin));
+    begin = utils::network_to_host(begin);
+    size_t block_size = data.size() - 2*sizeof(uint32_t);
+    if (block_handler_) {
+      block_handler_(index, begin, std::vector<uint8_t>(std::next(data.begin(), 2*sizeof(uint32_t)), data.end()));
+    }
   } else if (type == MessageTypeExtended) {
     if (size > 0) {
       uint8_t extended_id = data[0];
@@ -280,7 +308,7 @@ void PeerConnection::handle_extended_message(
     auto total_size = get_int64_or_throw(dict, "metadata_size", "ut_metadata");
     m_dict_ = get_dict_or_throw(dict, "m", "ut_metadata");
     piece_count_ = ceil(double(total_size) / MetadataPieceSize);
-    extended_handshake_handler_(shared_from_this(), piece_count_, total_size);
+    extended_handshake_handler_(piece_count_, total_size);
 
     if (piece_count_ == 0) {
       close();
@@ -303,7 +331,7 @@ void PeerConnection::handle_extended_message(
         } else if (msg_type == ExtendedMessageTypeData) {
           auto piece = get_int64_or_throw(dict, "piece", "ut_metadata");
 //          auto total_size = get_int64_or_throw(dict, "total_size", "ut_metadata");
-          piece_data_handler_(shared_from_this(), piece, appended_data);
+          piece_data_handler_(piece, appended_data);
         } else if (msg_type == ExtendedMessageTypeReject) {
           LOG(error) << "msg_type reject not implemented";
         } else {
@@ -396,7 +424,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
 //              return;
 //            } else {
               if (connect_handler_) {
-                connect_handler_(shared_from_this());
+                connect_handler_();
               }
 //            }
           } else {
@@ -468,7 +496,6 @@ uint8_t PeerConnection::has_peer_extended_message(const std::string &message_nam
 
 void PeerConnection::start_metadata_transfer(
     std::function<void(
-        std::shared_ptr<PeerConnection>,
         int piece,
         const std::vector<uint8_t> &piece_data
     )> piece_data_handler) {
@@ -488,5 +515,66 @@ void PeerConnection::start_metadata_transfer(
   }
 }
 
+void PeerConnection::send_peer_message(uint8_t type, std::vector<uint8_t> data) {
+  uint32_t packet_size = data.size() + sizeof(uint8_t);
+  uint32_t total_size = packet_size + sizeof(uint32_t);
+  std::stringstream ss;
+  auto send_write_size = utils::host_to_network(packet_size);
+  ss.write((const char*)&send_write_size, sizeof(send_write_size));
+  ss.put(type);
+  ss.write((const char*)data.data(), data.size());
+
+  assert(total_size < write_buffer_.size());
+
+  auto s = ss.str();
+  std::copy(
+      s.begin(),
+      s.end(),
+      write_buffer_.begin());
+  socket_->async_send(
+      boost::asio::buffer(write_buffer_.data(), total_size),
+      [](const boost::system::error_code &err, size_t bytes_transferred) {
+        if (err) {
+          throw std::runtime_error("Failed to write to socket " + err.message());
+        }
+      });
+
+}
+
+void PeerConnection::interest(std::function<void()> unchoke_handler) {
+  unchoke_handler_ = std::move(unchoke_handler);
+  send_peer_message(MessageTypeInterested, {});
+  if (!peer_choke_) {
+    unchoke_handler_();
+  }
+}
+void PeerConnection::request(size_t index, size_t begin, size_t length) {
+  std::stringstream ss;
+
+  auto index_n = utils::host_to_network<uint32_t>(index);
+  ss.write((const char*)&index_n, sizeof(index_n));
+  auto begin_n = utils::host_to_network<uint32_t>(begin);
+  ss.write((const char*)&begin_n, sizeof(index_n));
+  auto length_n = utils::host_to_network<uint32_t>(length);
+  ss.write((const char*)&length_n, sizeof(index_n));
+
+  auto s = ss.str();
+  std::vector<uint8_t> data((const uint8_t*)s.data(), (const uint8_t*)s.data() + ss.str().size());
+  LOG(info) << "requesting piece " << index << " " << begin << " " << length;
+  send_peer_message(MessageTypeRequest, data);
+}
+void PeerConnection::set_peer_has_piece(size_t piece) {
+  size_t byte = 0;
+  if (piece != 0) {
+    byte = (piece-1u) / 8u + 1u;
+  }
+  auto bit = 7u - (piece % 8u);
+
+  if (byte < peer_bitfield_.size()) {
+    peer_bitfield_[byte] |= 1u << bit;
+  } else {
+    LOG(error) << "cannot set piece " << piece << ", out of range: " << (peer_bitfield_.size()*8);
+  }
+}
 
 }

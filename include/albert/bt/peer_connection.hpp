@@ -21,6 +21,10 @@ constexpr uint8_t MessageTypeInterested = 2;
 constexpr uint8_t MessageTypeNotInterested = 3;
 constexpr uint8_t MessageTypeHave = 4;
 constexpr uint8_t MessageTypeBitfield = 5;
+constexpr uint8_t MessageTypeRequest = 6;
+constexpr uint8_t MessageTypePiece = 7;
+constexpr uint8_t MessageTypeCancel = 8;
+constexpr uint8_t MessageTypePort = 9;
 constexpr uint8_t MessageTypeExtended = 20;
 constexpr uint8_t ExtendedMessageTypeRequest = 0;
 constexpr uint8_t ExtendedMessageTypeData = 1;
@@ -70,19 +74,21 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       bool use_utp);
   ~PeerConnection();
   void connect(
-      std::function<void(std::shared_ptr<PeerConnection>)> connect_handler =
-      [](std::shared_ptr<peer::PeerConnection>) { },
-      std::function<void(std::shared_ptr<PeerConnection>, int, size_t)> extended_handshake_handler =
-      [](std::shared_ptr<PeerConnection>, int, size_t) { }
+      std::function<void()> connect_handler = []() { },
+      std::function<void(int, size_t)> extended_handshake_handler = [](int, size_t) { }
   );
   ConnectionStatus status() const { return connection_status_; }
   void close();
+
+  void interest(std::function<void()> unchoke_handler);
+
+  void set_block_handler(std::function<void(size_t piece, size_t offset, std::vector<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
+  void request(size_t index, size_t begin, size_t length);
 
   const Peer &peer() { return *peer_; }
 
   void start_metadata_transfer(
       std::function<void(
-          std::shared_ptr<PeerConnection>,
           int piece,
           const std::vector<uint8_t> &piece_data
       )> piece_data_handler
@@ -106,6 +112,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
    */
   void send_handshake();
   void send_metadata_request(int64_t piece);
+  void send_peer_message(uint8_t type, std::vector<uint8_t> data);
+
 
   /**
    * helper functions
@@ -113,6 +121,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   uint32_t read_size();
   bool has_data(size_t size) const { return this->read_ring_.size() >= size; }
   void pop_data(void *output, size_t size);
+
+  void set_peer_has_piece(size_t piece);
 
   uint8_t has_peer_extended_message(const std::string &message_name) const;
   uint8_t get_peer_extended_message_id(const std::string &message_name);
@@ -128,34 +138,41 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   u160::U160 target_;
   u160::U160 peer_id_;
 
+  // buffers
   std::array<uint8_t, 65536> read_buffer_{};
   std::vector<uint8_t> read_ring_{};
   std::array<uint8_t, 65536> write_buffer_{};
 
+  // connection status
   std::unique_ptr<Peer> peer_;
   ConnectionStatus connection_status_ = ConnectionStatus::Connecting;
   bool handshake_completed_ = false;
   bool message_segmented = false;
 
+  // Peer status
   bool peer_interested_ = false;
   bool peer_choke_ = true;
-
-  uint32_t last_message_size_ = 0;
-  size_t piece_count_ = 0;
-
+  std::vector<uint8_t> peer_bitfield_;
   std::shared_ptr<bencoding::DictNode> extended_handshake_;
   std::map<std::string, std::shared_ptr<bencoding::Node>> m_dict_;
   std::map<uint8_t, std::string> extended_message_id_ = {
       {2, MetadataMessage}
   };
 
+  // stats
+  uint32_t last_message_size_ = 0;
+  size_t piece_count_ = 0;
+
+  // handlers
   std::function<void(
-      std::shared_ptr<PeerConnection>,
       int piece,
       const std::vector<uint8_t> &piece_data
   )> piece_data_handler_;
-  std::function<void(std::shared_ptr<PeerConnection>, int total_pieces, size_t total_size)> extended_handshake_handler_;
-  std::function<void(std::shared_ptr<PeerConnection>)> connect_handler_;
+  std::function<void(int total_pieces, size_t total_size)> extended_handshake_handler_;
+  std::function<void()> connect_handler_;
+
+  std::function<void()> unchoke_handler_;
+  std::function<void(size_t piece, size_t offset, std::vector<uint8_t> data)> block_handler_;
 };
 
 }

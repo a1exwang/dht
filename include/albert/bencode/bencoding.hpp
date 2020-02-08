@@ -44,7 +44,7 @@ class StringNode :public Node {
   operator std::string() const {
     return s_;
   }
-  void encode(std::ostream &os, EncodeMode mode, size_t depth = 0) const override;
+  void encode(std::ostream &os, EncodeMode mode = EncodeMode::Bencoding, size_t depth = 0) const override;
  private:
   std::string s_;
 };
@@ -68,6 +68,9 @@ class ListNode :public Node {
   std::shared_ptr<Node> operator[](size_t i) {
     return list_[i];
   }
+  operator const std::vector<std::shared_ptr<Node>>&() const {
+    return list_;
+  }
   void append(std::shared_ptr<Node> item) { return list_.push_back(item); }
  private:
   std::vector<std::shared_ptr<Node>> list_;
@@ -80,6 +83,9 @@ class DictNode :public Node {
     return dict_;
   }
   void encode(std::ostream &os, EncodeMode mode, size_t depth = 0) const override;
+  operator const std::map<std::string, std::shared_ptr<Node>>&() const {
+    return dict_;
+  }
  private:
   std::map<std::string, std::shared_ptr<Node>> dict_;
 };
@@ -93,23 +99,33 @@ template <typename T, typename = void>
 struct GetNodeType { };
 
 template <typename T>
-struct GetNodeType<T, typename std::enable_if<std::is_same<std::string, std::remove_reference_t<T>>::value>::type> {
+struct GetNodeType<T, typename std::enable_if<std::is_same_v<std::string, std::remove_reference_t<T>>>::type> {
   typedef StringNode type;
 };
 
 template <typename T>
-struct GetNodeType<T, typename std::enable_if<std::is_integral<std::remove_reference_t<T>>::value>::type> {
+struct GetNodeType<T, typename std::enable_if<std::is_integral_v<std::remove_reference_t<T>>>::type> {
   typedef IntNode type;
 };
 
 template <typename T>
-struct GetNodeType<T, typename std::enable_if<std::is_same<std::vector<std::shared_ptr<Node>>, std::remove_reference_t<T>>::value>::type> {
+struct GetNodeType<T, typename std::enable_if<std::is_same_v<std::vector<std::shared_ptr<Node>>, std::remove_reference_t<T>>>::type> {
   typedef ListNode type;
 };
 
 template <typename T>
-struct GetNodeType<T, typename std::enable_if<std::is_same<ListNode, std::remove_reference_t<T>>::value>::type> {
+struct GetNodeType<T, typename std::enable_if<std::is_same_v<ListNode, std::remove_reference_t<T>>>::type> {
   typedef ListNode type;
+};
+
+template <typename T>
+struct GetNodeType<T, typename std::enable_if<std::is_same_v<std::map<std::string, std::shared_ptr<Node>>, std::remove_reference_t<T>>>::type> {
+  typedef DictNode type;
+};
+
+template <typename T>
+struct GetNodeType<T, typename std::enable_if<std::is_same_v<DictNode, std::remove_reference_t<T>>>::type> {
+  typedef DictNode type;
 };
 
 //
@@ -148,7 +164,12 @@ auto get(const DictNode &dict, const std::string &key) {
   if (!node) {
     throw std::invalid_argument("bencoding::get(DictNode, " + key + "), item is not " + typeid(T).name());
   }
-  return *node;
+
+  if constexpr(std::is_same_v<std::remove_reference_t<U>, std::remove_reference_t<T>>) {
+    return *node;
+  } else {
+    return T(*node);
+  }
 }
 
 template <typename T, typename U = typename GetNodeType<T>::type>

@@ -62,8 +62,8 @@ class TorrentResolver {
 
   void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
  private:
-  void piece_handler(std::shared_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data);
-  void handshake_handler(std::shared_ptr<peer::PeerConnection> pc, int total_pieces, size_t metdata_size);
+  void piece_handler(std::weak_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data);
+  void handshake_handler(std::weak_ptr<peer::PeerConnection> pc, int total_pieces, size_t metdata_size);
 
   [[nodiscard]]
   std::vector<uint8_t> merged_pieces() const;

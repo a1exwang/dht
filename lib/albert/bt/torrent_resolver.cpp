@@ -52,12 +52,12 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
           use_utp_));
   auto pc = peer_connections_.back();
   pc->connect(
-      [](std::shared_ptr<peer::PeerConnection>) { },
-      std::bind(&TorrentResolver::handshake_handler, this, _1, _2, _3)
+      []() { },
+      std::bind(&TorrentResolver::handshake_handler, this, pc->weak_from_this(), _1, _2)
       );
 }
 
-void TorrentResolver::piece_handler(std::shared_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data) {
+void TorrentResolver::piece_handler(std::weak_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data) {
   if (piece >= 0 && piece < pieces_.size()) {
     if (pieces_[piece].empty()) {
       pieces_[piece] = data;
@@ -109,15 +109,19 @@ bool TorrentResolver::finished() const {
 void TorrentResolver::set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler) {
   torrent_handler_ = std::move(handler);
 }
-void TorrentResolver::handshake_handler(std::shared_ptr<peer::PeerConnection> pc, int total_pieces, size_t metadata_size) {
+void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> pc, int total_pieces, size_t metadata_size) {
   using namespace boost::placeholders;
   if (total_pieces == 0) {
     throw std::invalid_argument("Invalid argument, total_pieces cannot be zero");
   }
   this->pieces_.resize(total_pieces);
   this->metadata_size_ = metadata_size;
-  pc->start_metadata_transfer(
-      boost::bind(&TorrentResolver::piece_handler, this, _1, _2, _3));
+  if (pc.expired()) {
+    LOG(error) << "PeerConnection gone before handshake was handled info_hash: " << this->info_hash_.to_string();
+  } else {
+    pc.lock()->start_metadata_transfer(
+        boost::bind(&TorrentResolver::piece_handler, this, pc, _1, _2));
+  }
 }
 TorrentResolver::~TorrentResolver() {
   for (auto &pc : peer_connections_) {
