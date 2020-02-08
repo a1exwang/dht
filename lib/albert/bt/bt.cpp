@@ -14,14 +14,16 @@
 namespace albert::bt {
 
 BT::BT(boost::asio::io_service &io, Config config)
-    : io_(io), config_(std::move(config)), self_(u160::U160::from_hex(config_.id)), gc_timer_(io) { }
+    : io_(io), config_(std::move(config)), self_(u160::U160::from_hex(config_.id)), gc_timer_(io),
+      expiration_time_(config_.resolve_torrent_expiration_seconds) { }
 
 std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
     const u160::U160 &info_hash,
     std::function<void(const bencoding::DictNode &)> handler) {
   if (resolvers_.find(info_hash) == resolvers_.end()) {
     auto bind_ip = boost::asio::ip::address_v4::from_string(config_.bind_ip).to_uint();
-    auto resolver = std::make_shared<TorrentResolver>(io_, info_hash, self_, bind_ip, config_.bind_port, config_.use_utp, std::chrono::high_resolution_clock::now() + expiration_time_);
+    auto resolver = std::make_shared<TorrentResolver>(io_, info_hash, self_, bind_ip, config_.bind_port, config_.use_utp,
+        std::chrono::high_resolution_clock::now() + expiration_time_);
     resolver->set_torrent_handler([h{std::move(handler)}, info_hash, this](const bencoding::DictNode &torrent) {
       h(torrent);
       LOG(info) << "Torrent finished, deleting resolver";

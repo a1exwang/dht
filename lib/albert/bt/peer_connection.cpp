@@ -32,9 +32,43 @@ auto newdict(const bdict &dic) {
 auto newint(int64_t i) {
   return std::make_shared<albert::bencoding::IntNode>(i);
 };
+
 }
 
 namespace albert::bt::peer {
+static std::string get_string_or_throw(
+    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
+  if (dict.find(key) == dict.end()) {
+    throw InvalidPeerMessage(context + ", '" + key + "' not found");
+  }
+  auto node = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at(key));
+  if (!node) {
+    throw InvalidPeerMessage(context + ", '" + key + "' is not a string");
+  }
+  return *node;
+}
+static int64_t get_int64_or_throw(
+    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
+  if (dict.find(key) == dict.end()) {
+    throw InvalidPeerMessage(context + ", '" + key + "' not found");
+  }
+  auto node = std::dynamic_pointer_cast<bencoding::IntNode>(dict.at(key));
+  if (!node) {
+    throw InvalidPeerMessage(context + ", '" + key + "' is not a int");
+  }
+  return *node;
+}
+static std::map<std::string, std::shared_ptr<bencoding::Node>> get_dict_or_throw(
+    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
+  if (dict.find(key) == dict.end()) {
+    throw InvalidPeerMessage(context + ", '" + key + "' not found");
+  }
+  auto node = std::dynamic_pointer_cast<bencoding::DictNode>(dict.at(key));
+  if (!node) {
+    throw InvalidPeerMessage(context + ", '" + key + "' is not a int");
+  }
+  return node->dict();
+}
 namespace {
 std::string make_message(uint8_t type, const uint8_t *data, size_t size) {
   std::stringstream ss;
@@ -72,14 +106,10 @@ PeerConnection::PeerConnection(
     uint16_t bind_port,
     uint32_t ip,
     uint16_t port,
-    bool use_utp,
-    std::function<void(int, const std::vector<uint8_t>&)> piece_handler,
-    std::function<void(int, size_t)> metadata_handshake_handler)
-    :self_(self),
-     target_(target),
-     peer_(std::make_unique<Peer>(ip, port)),
-     piece_data_handler_(std::move(piece_handler)),
-     metadata_handshake_handler_(std::move(metadata_handshake_handler)) {
+    bool use_utp)
+    : self_(self),
+      target_(target),
+      peer_(std::make_unique<Peer>(ip, port)) {
 
   if (use_utp) {
     socket_ = std::make_shared<transport::UTPSocket>(io_context, udp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port));
@@ -88,8 +118,12 @@ PeerConnection::PeerConnection(
   }
 }
 
-void PeerConnection::connect() {
+void PeerConnection::connect(
+    std::function<void(std::shared_ptr<PeerConnection>)> connect_handler,
+    std::function<void(std::shared_ptr<PeerConnection>, int, size_t)> extended_handshake_handler) {
   // Start the asynchronous connect operation.
+  connect_handler_ = std::move(connect_handler);
+  extended_handshake_handler_ = std::move(extended_handshake_handler);
 
   LOG(debug) << "PeerConnection::connect, connecting to " << peer_->to_string();
   // Why using shared_from_this(). https://stackoverflow.com/a/35469759
@@ -231,39 +265,6 @@ void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vect
   }
 }
 
-static std::string get_string_or_throw(
-    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
-  if (dict.find(key) == dict.end()) {
-    throw InvalidPeerMessage(context + ", '" + key + "' not found");
-  }
-  auto node = std::dynamic_pointer_cast<bencoding::StringNode>(dict.at(key));
-  if (!node) {
-    throw InvalidPeerMessage(context + ", '" + key + "' is not a string");
-  }
-  return *node;
-}
-static int64_t get_int64_or_throw(
-    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
-  if (dict.find(key) == dict.end()) {
-    throw InvalidPeerMessage(context + ", '" + key + "' not found");
-  }
-  auto node = std::dynamic_pointer_cast<bencoding::IntNode>(dict.at(key));
-  if (!node) {
-    throw InvalidPeerMessage(context + ", '" + key + "' is not a int");
-  }
-  return *node;
-}
-static std::map<std::string, std::shared_ptr<bencoding::Node>> get_dict_or_throw(
-    const std::map<std::string, std::shared_ptr<bencoding::Node>> &dict, const std::string &key, const std::string &context) {
-  if (dict.find(key) == dict.end()) {
-    throw InvalidPeerMessage(context + ", '" + key + "' not found");
-  }
-  auto node = std::dynamic_pointer_cast<bencoding::DictNode>(dict.at(key));
-  if (!node) {
-    throw InvalidPeerMessage(context + ", '" + key + "' is not a int");
-  }
-  return node->dict();
-}
 void PeerConnection::handle_extended_message(
     uint8_t extended_id,
     std::shared_ptr<bencoding::DictNode> msg,
@@ -279,27 +280,17 @@ void PeerConnection::handle_extended_message(
     auto total_size = get_int64_or_throw(dict, "metadata_size", "ut_metadata");
     m_dict_ = get_dict_or_throw(dict, "m", "ut_metadata");
     piece_count_ = ceil(double(total_size) / MetadataPieceSize);
-    metadata_handshake_handler_(piece_count_, total_size);
+    extended_handshake_handler_(shared_from_this(), piece_count_, total_size);
 
-    LOG(debug) << "Extended handshake: from " << peer_->to_string() << std::endl
-              << "total pieces: " << piece_count_
-              << "data: " << ss.str();
     if (piece_count_ == 0) {
       close();
       throw InvalidPeerMessage("piece count cannot be zero");
     }
 
-    // start metadata pieces transfer, but in a random order, to increase concurrency
-    std::vector<int> piece_ids;
-    for (int i = 0; i < piece_count_; i++) {
-      piece_ids.push_back(i);
-    }
-    std::shuffle(piece_ids.begin(), piece_ids.end(), std::random_device{});
+    LOG(debug) << "Extended handshake: from " << peer_->to_string() << std::endl
+               << "total pieces: " << piece_count_
+               << "data: " << ss.str();
 
-    for (auto i : piece_ids) {
-      LOG(debug) << "sending metadata request to " << peer_->to_string() << ", " << i;
-      send_metadata_request(i);
-    }
   } else {
     if (extended_message_id_.find(extended_id) == extended_message_id_.end()) {
       LOG(error) << "Invalid extended message, unknown exteneded id " << extended_id;
@@ -312,7 +303,7 @@ void PeerConnection::handle_extended_message(
         } else if (msg_type == ExtendedMessageTypeData) {
           auto piece = get_int64_or_throw(dict, "piece", "ut_metadata");
 //          auto total_size = get_int64_or_throw(dict, "total_size", "ut_metadata");
-          piece_data_handler_(piece, appended_data);
+          piece_data_handler_(shared_from_this(), piece, appended_data);
         } else if (msg_type == ExtendedMessageTypeReject) {
           LOG(error) << "msg_type reject not implemented";
         } else {
@@ -397,6 +388,17 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
                         sizeof(u160::U160)));
             peer_id_ = u160::U160::decode(ss);
             handshake_completed_ = true;
+            auto ss1 = std::stringstream(std::string((char *) &received_handshake_.sender_id, sizeof(u160::U160)));
+            auto received_info_hash = u160::U160::decode(ss1);
+//            if (received_info_hash != target_) {
+//              LOG(error) << "Peer info_hash not matched, closing connection. target: " << target_.to_string() << ", peer: " << received_info_hash.to_string();
+//              close();
+//              return;
+//            } else {
+              if (connect_handler_) {
+                connect_handler_(shared_from_this());
+              }
+//            }
           } else {
             LOG(debug) << "handshake not complete, segmented " << peer_->to_string();
             break;
@@ -454,12 +456,37 @@ PeerConnection::~PeerConnection() = default;
 uint8_t PeerConnection::get_peer_extended_message_id(const std::string &message_name) {
   return get_int64_or_throw(m_dict_, message_name, "PeerConenction::get_peer_extended_message_id");
 }
+
 void PeerConnection::close() {
   socket_->close();
   connection_status_ = ConnectionStatus::Disconnected;
 }
+
 uint8_t PeerConnection::has_peer_extended_message(const std::string &message_name) const {
   return extended_handshake_->dict().find(message_name) == extended_handshake_->dict().end();
 }
+
+void PeerConnection::start_metadata_transfer(
+    std::function<void(
+        std::shared_ptr<PeerConnection>,
+        int piece,
+        const std::vector<uint8_t> &piece_data
+    )> piece_data_handler) {
+
+  piece_data_handler_ = std::move(piece_data_handler);
+
+  // start metadata pieces transfer, but in a random order, to increase concurrency
+  std::vector<int> piece_ids;
+  for (int i = 0; i < piece_count_; i++) {
+    piece_ids.push_back(i);
+  }
+  std::shuffle(piece_ids.begin(), piece_ids.end(), std::random_device{});
+
+  for (auto i : piece_ids) {
+    LOG(debug) << "sending metadata request to " << peer_->to_string() << ", " << i;
+    send_metadata_request(i);
+  }
+}
+
 
 }

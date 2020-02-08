@@ -67,15 +67,26 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       uint16_t bind_port,
       uint32_t ip,
       uint16_t port,
-      bool use_utp,
-      std::function<void(int, const std::vector<uint8_t> &)> piece_handler,
-      std::function<void(int, size_t)> handshake_handler);
+      bool use_utp);
   ~PeerConnection();
-  void connect();
+  void connect(
+      std::function<void(std::shared_ptr<PeerConnection>)> connect_handler =
+      [](std::shared_ptr<peer::PeerConnection>) { },
+      std::function<void(std::shared_ptr<PeerConnection>, int, size_t)> extended_handshake_handler =
+      [](std::shared_ptr<PeerConnection>, int, size_t) { }
+  );
   ConnectionStatus status() const { return connection_status_; }
   void close();
 
   const Peer &peer() { return *peer_; }
+
+  void start_metadata_transfer(
+      std::function<void(
+          std::shared_ptr<PeerConnection>,
+          int piece,
+          const std::vector<uint8_t> &piece_data
+      )> piece_data_handler
+  );
 
  private:
   /**
@@ -83,13 +94,13 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
    */
   void handle_connect(
       const boost::system::error_code& ec);
+  void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
+
   void handle_message(uint32_t size, uint8_t type, const std::vector<uint8_t> &data);
   void handle_extended_message(
       uint8_t extended_id,
       std::shared_ptr<bencoding::DictNode> msg,
       const std::vector<uint8_t> &appended_data);
-  void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
-
   /**
    * Send helpers
    */
@@ -139,10 +150,12 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   };
 
   std::function<void(
+      std::shared_ptr<PeerConnection>,
       int piece,
       const std::vector<uint8_t> &piece_data
   )> piece_data_handler_;
-  std::function<void(int total_pieces, size_t total_size)> metadata_handshake_handler_;
+  std::function<void(std::shared_ptr<PeerConnection>, int total_pieces, size_t total_size)> extended_handshake_handler_;
+  std::function<void(std::shared_ptr<PeerConnection>)> connect_handler_;
 };
 
 }

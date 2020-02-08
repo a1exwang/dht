@@ -19,6 +19,7 @@ class BT {
  public:
   BT(boost::asio::io_service &io, Config config);
   std::weak_ptr<TorrentResolver> resolve_torrent(const u160::U160 &info_hash, std::function<void(const bencoding::DictNode &)> handler);
+  std::weak_ptr<TorrentResolver> file_transfer(const u160::U160 &info_hash, const bencoding::DictNode &info);
   void start();
 
   size_t resolver_count() const { return resolvers_.size(); }
