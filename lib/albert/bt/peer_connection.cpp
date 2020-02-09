@@ -390,17 +390,22 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
         } else if (handshake_completed_) {
           if (has_data(sizeof(uint32_t))) {
             auto message_size = read_size();
-            if (has_data(message_size + sizeof(uint8_t))) {
-              uint8_t message_type;
-              pop_data(&message_type, 1);
-              std::vector<uint8_t> data(message_size-1);
-              pop_data(data.data(), message_size-1);
-              handle_message(message_size-1, message_type, data);
+            if (message_size == 0) {
+              // This is a keep alive message
+              handle_keep_alive();
             } else {
-              last_message_size_ = message_size;
-              message_segmented = true;
-              LOG(debug) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
-              break;
+              if (has_data(message_size + sizeof(uint8_t))) {
+                uint8_t message_type;
+                pop_data(&message_type, 1);
+                std::vector<uint8_t> data(message_size-1);
+                pop_data(data.data(), message_size-1);
+                handle_message(message_size-1, message_type, data);
+              } else {
+                last_message_size_ = message_size;
+                message_segmented = true;
+                LOG(debug) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
+                break;
+              }
             }
           } else {
             LOG(debug) << "message size not complete, segmented " << peer_->to_string();
@@ -575,6 +580,35 @@ void PeerConnection::set_peer_has_piece(size_t piece) {
   } else {
     LOG(error) << "cannot set piece " << piece << ", out of range: " << (peer_bitfield_.size()*8);
   }
+}
+bool PeerConnection::has_piece(size_t piece) const {
+  size_t byte = 0;
+  if (piece != 0) {
+    // 0-7 => 0
+    //   0 -> 7
+    //   1 -> 6
+    //   7 -> 0
+    // 8-15 => 1
+    byte = piece / 8u;
+  }
+  auto bit = 7u - (piece % 8u);
+
+  if (byte < peer_bitfield_.size()) {
+    return (peer_bitfield_[byte] >> bit) & 1u;
+  } else {
+    throw std::invalid_argument("cannot get piece " + std::to_string(piece) + ", out of range: " + std::to_string(peer_bitfield_.size()*8));
+  }
+}
+size_t PeerConnection::next_valid_piece(size_t piece) const {
+  for (size_t i = piece; i < piece_count_; i++) {
+    if (has_piece(i)) {
+      return i;
+    }
+  }
+  return piece_count_;
+}
+void PeerConnection::handle_keep_alive() {
+  LOG(info) << "Peer keep alive " << peer_->to_string();
 }
 
 }

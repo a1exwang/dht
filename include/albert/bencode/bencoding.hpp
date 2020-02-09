@@ -56,6 +56,8 @@ class IntNode :public Node {
  private:
   int64_t i_;
 };
+
+class DictNode;
 class ListNode :public Node {
  public:
   explicit ListNode(std::vector<std::shared_ptr<Node>> nodes = {}) :Node(Type::List), list_(std::move(nodes)) { }
@@ -71,6 +73,7 @@ class ListNode :public Node {
   operator const std::vector<std::shared_ptr<Node>>&() const {
     return list_;
   }
+  operator std::vector<std::shared_ptr<DictNode>>() const;
   void append(std::shared_ptr<Node> item) { return list_.push_back(item); }
  private:
   std::vector<std::shared_ptr<Node>> list_;
@@ -110,6 +113,11 @@ struct GetNodeType<T, typename std::enable_if<std::is_integral_v<std::remove_ref
 
 template <typename T>
 struct GetNodeType<T, typename std::enable_if<std::is_same_v<std::vector<std::shared_ptr<Node>>, std::remove_reference_t<T>>>::type> {
+  typedef ListNode type;
+};
+
+template <typename T>
+struct GetNodeType<T, typename std::enable_if<std::is_same_v<std::vector<std::shared_ptr<DictNode>>, std::remove_reference_t<T>>>::type> {
   typedef ListNode type;
 };
 

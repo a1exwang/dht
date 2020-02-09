@@ -81,6 +81,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   void close();
 
   void interest(std::function<void()> unchoke_handler);
+  bool has_piece(size_t piece) const;
+  size_t next_valid_piece(size_t piece) const;
 
   void set_block_handler(std::function<void(size_t piece, size_t offset, std::vector<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
   void request(size_t index, size_t begin, size_t length);
@@ -93,7 +95,6 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
           const std::vector<uint8_t> &piece_data
       )> piece_data_handler
   );
-
  private:
   /**
    * Handlers
@@ -107,6 +108,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       uint8_t extended_id,
       std::shared_ptr<bencoding::DictNode> msg,
       const std::vector<uint8_t> &appended_data);
+  void handle_keep_alive();
   /**
    * Send helpers
    */
