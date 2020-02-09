@@ -148,13 +148,7 @@ void PeerConnection::handle_connect(
     connection_status_ = ConnectionStatus::Connected;
     LOG(info) << "PeerConnection: connected to " << this->peer_->to_string();
 
-    socket_->async_receive(
-        boost::asio::buffer(read_buffer_.data(), read_buffer_.size()),
-        boost::bind(
-            &PeerConnection::handle_receive,
-            shared_from_this(),
-            boost::asio::placeholders::error,
-            boost::asio::placeholders::bytes_transferred));
+    continue_receive();
     send_handshake();
   }
 }
@@ -214,20 +208,7 @@ void PeerConnection::send_handshake() {
         }
       });
 }
-
-uint32_t PeerConnection::read_size() {
-  uint32_t ret;
-  pop_data(&ret, sizeof(uint32_t));
-  return utils::network_to_host(ret);
-}
-void PeerConnection::pop_data(void *output, size_t size) {
-  memcpy(output, read_ring_.data(), size);
-  auto tmp = std::vector<uint8_t>(
-      std::next(read_ring_.begin(), size) ,
-      read_ring_.end());
-  read_ring_ = tmp;
-}
-void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vector<uint8_t> &data) {
+void PeerConnection::handle_message(uint8_t type, std::span<uint8_t> data) {
   if (type == MessageTypeChoke) {
     peer_choke_ = true;
   } else if (type == MessageTypeUnchoke) {
@@ -246,7 +227,7 @@ void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vect
     peer_interested_ = false;
   } else if (type == MessageTypeBitfield) {
     LOG(debug) << "Bitfield: " << utils::hexdump(data.data(), data.size(), true);
-    peer_bitfield_ = data;
+    peer_bitfield_ = std::vector(data.begin(), data.end());
   } else if (type == MessageTypeHave) {
     if (data.size() != sizeof(uint32_t)) {
       LOG(error) << "invalid have message, data length != " << sizeof(uint32_t);
@@ -265,12 +246,12 @@ void PeerConnection::handle_message(uint32_t size, uint8_t type, const std::vect
     begin = utils::network_to_host(begin);
     size_t block_size = data.size() - 2*sizeof(uint32_t);
     if (block_handler_) {
-      block_handler_(index, begin, std::vector<uint8_t>(std::next(data.begin(), 2*sizeof(uint32_t)), data.end()));
+      block_handler_(index, begin, std::span<uint8_t>(data.data()+2*sizeof(uint32_t), data.size()-2*sizeof(uint32_t)));
     }
   } else if (type == MessageTypeExtended) {
-    if (size > 0) {
+    if (data.size() > 0) {
       uint8_t extended_id = data[0];
-      auto content_size = size - 1;
+      auto content_size = data.size() - 1;
       std::stringstream ss(std::string((const char*)data.data() + 1, content_size));
       auto node = bencoding::Node::decode(ss);
 
@@ -356,104 +337,97 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
 
   if (err == boost::asio::error::eof) {
     connection_status_ = ConnectionStatus::Disconnected;
+    return;
   } else if (err == boost::asio::error::connection_reset) {
     LOG(warning) << "Peer reset the connection " << peer_->to_string() << ", id " << peer_id_.to_string();
     connection_status_ = ConnectionStatus::Disconnected;
+    return;
   } else if (err) {
     throw std::runtime_error("Unhandled error when reading to from socket " + err.message());
-  } else {
-    if (connection_status_ == ConnectionStatus::Connecting) {
-      connection_status_ = ConnectionStatus::Connected;
-    }
+  }
 
-    try {
-      read_ring_.reserve(read_ring_.size() + bytes_transferred);
-      for (int i = 0; i < bytes_transferred; i++) {
-        read_ring_.push_back(read_buffer_[i]);
-      }
-      while (true) {
-        if (message_segmented) {
-          auto message_size = last_message_size_;
-          if (has_data(message_size)) {
-            LOG(debug) << "message content complete, segmentation done " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
-            uint8_t message_id;
-            auto content_size = message_size - 1;
-            pop_data(&message_id, 1);
-            std::vector<uint8_t> data(content_size);
-            pop_data(data.data(), content_size);
-            message_segmented = false;
-            handle_message(content_size, message_id, data);
-          } else {
-            LOG(debug) << "message content not complete, segmented again " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
-            break;
-          }
-        } else if (handshake_completed_) {
-          if (has_data(sizeof(uint32_t))) {
-            auto message_size = read_size();
-            if (message_size == 0) {
-              // This is a keep alive message
-              handle_keep_alive();
-            } else {
-              if (has_data(message_size + sizeof(uint8_t))) {
-                uint8_t message_type;
-                pop_data(&message_type, 1);
-                std::vector<uint8_t> data(message_size-1);
-                pop_data(data.data(), message_size-1);
-                handle_message(message_size-1, message_type, data);
-              } else {
-                last_message_size_ = message_size;
-                message_segmented = true;
-                LOG(debug) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.size() << "/" << message_size;
-                break;
-              }
-            }
-          } else {
-            LOG(debug) << "message size not complete, segmented " << peer_->to_string();
-            break;
-          }
-        } else {
-          // Not segmented && no handshake
-          if (has_data(sizeof(Handshake))) {
-            // pop front sizeof(Handshake)
-            pop_data(&received_handshake_, sizeof(Handshake));
-            std::stringstream ss(
-            std::string((char *) &received_handshake_.sender_id,
-                        sizeof(u160::U160)));
-            peer_id_ = u160::U160::decode(ss);
-            handshake_completed_ = true;
-            auto ss1 = std::stringstream(std::string((char *) &received_handshake_.sender_id, sizeof(u160::U160)));
-            auto received_info_hash = u160::U160::decode(ss1);
+  if (connection_status_ == ConnectionStatus::Connecting) {
+    connection_status_ = ConnectionStatus::Connected;
+  }
+
+  read_ring_.appended(bytes_transferred);
+
+  try {
+    while (read_ring_.data_size() > 0) {
+      // Handle handshake
+      if (!handshake_completed_) {
+        if (read_ring_.has_data(sizeof(Handshake))) {
+          // pop front sizeof(Handshake)
+          read_ring_.pop_data(&received_handshake_, sizeof(Handshake));
+          std::stringstream ss(
+          std::string((char *) &received_handshake_.sender_id,
+                      sizeof(u160::U160)));
+          peer_id_ = u160::U160::decode(ss);
+          handshake_completed_ = true;
+          auto ss1 = std::stringstream(std::string((char *) &received_handshake_.sender_id, sizeof(u160::U160)));
+          auto received_info_hash = u160::U160::decode(ss1);
 //            if (received_info_hash != target_) {
 //              LOG(error) << "Peer info_hash not matched, closing connection. target: " << target_.to_string() << ", peer: " << received_info_hash.to_string();
 //              close();
 //              return;
 //            } else {
-              if (connect_handler_) {
-                connect_handler_();
-              }
+          if (connect_handler_) {
+            connect_handler_();
+          }
 //            }
+        } else {
+          LOG(debug) << "handshake not complete, segmented " << peer_->to_string();
+          break;
+        }
+      } else {
+        uint32_t message_size = 0;
+        bool need_skip_message_size = false;
+        if (message_segmented) {
+          message_size = last_message_size_;
+        } else {
+          if (read_ring_.has_data(sizeof(uint32_t))) {
+            read_ring_.pop_data(&message_size, sizeof(uint32_t));
+            message_size = utils::network_to_host<uint32_t>(message_size);
           } else {
-            LOG(debug) << "handshake not complete, segmented " << peer_->to_string();
+            LOG(debug) << "message size not complete, segmented " << peer_->to_string();
+            break;
+          }
+        }
+
+        if (message_size == 0) {
+          // This is a keep alive message
+          handle_keep_alive();
+          read_ring_.stat();
+        } else {
+          if (read_ring_.has_data(message_size)) {
+            uint8_t message_type;
+            read_ring_.pop_data(&message_type, sizeof(message_type));
+            auto content_size = message_size - sizeof(message_type);
+            auto buf = read_ring_.use_data(content_size);
+            handle_message(message_type, buf);
+            read_ring_.skip_data(content_size);
+            message_segmented = false;
+          } else {
+            last_message_size_ = message_size;
+            message_segmented = true;
+            LOG(debug) << "message content not complete, segmented " << peer_->to_string() << " " << read_ring_.data_size() << "/" << message_size;
             break;
           }
         }
       }
-    } catch (const bencoding::InvalidBencoding &e) {
-      LOG(error) << "parse BT handshake: Invalid bencoding: " << e.what();
-      close();
-    } catch (const InvalidPeerMessage &e){
-      LOG(error) << "Invalid peer message " << e.what();
-      close();
     }
-    socket_->async_receive(
-        boost::asio::buffer(read_buffer_.data(), read_buffer_.size()),
-        boost::bind(
-            &PeerConnection::handle_receive,
-            shared_from_this(),
-            boost::asio::placeholders::error,
-            boost::asio::placeholders::bytes_transferred));
-
+    if (read_ring_.data_size() == 0) {
+      LOG(info) << "message handler done, because read_ring is empty";
+    }
+  } catch (const bencoding::InvalidBencoding &e) {
+    LOG(error) << "parse BT handshake: Invalid bencoding: " << e.what();
+    close();
+  } catch (const InvalidPeerMessage &e){
+    LOG(error) << "Invalid peer message " << e.what();
+    close();
   }
+
+  continue_receive();
 }
 void PeerConnection::send_metadata_request(int64_t piece) {
   if (!extended_handshake_) {
@@ -609,6 +583,16 @@ size_t PeerConnection::next_valid_piece(size_t piece) const {
 }
 void PeerConnection::handle_keep_alive() {
   LOG(info) << "Peer keep alive " << peer_->to_string();
+}
+void PeerConnection::continue_receive() {
+  auto buf = read_ring_.use_for_append(MCU);
+  socket_->async_receive(
+      boost::asio::buffer(buf.data(), buf.size()),
+      boost::bind(
+          &PeerConnection::handle_receive,
+          shared_from_this(),
+          boost::asio::placeholders::error,
+          boost::asio::placeholders::bytes_transferred));
 }
 
 }

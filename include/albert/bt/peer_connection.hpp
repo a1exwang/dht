@@ -4,6 +4,7 @@
 
 #include <array>
 #include <memory>
+#include <span>
 
 #include <boost/asio/ip/tcp.hpp>
 
@@ -11,6 +12,7 @@
 #include <albert/bt/transport.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/u160/u160.hpp>
+#include <albert/bt/ring_buffer.hpp>
 
 namespace albert::bt::peer {
 class Peer;
@@ -30,6 +32,8 @@ constexpr uint8_t ExtendedMessageTypeRequest = 0;
 constexpr uint8_t ExtendedMessageTypeData = 1;
 constexpr uint8_t ExtendedMessageTypeReject = 2;
 constexpr size_t MetadataPieceSize = 16 * 1024;
+
+constexpr size_t MCU = 65536;
 
 class InvalidPeerMessage :public std::runtime_error {
  public:
@@ -84,10 +88,11 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   bool has_piece(size_t piece) const;
   size_t next_valid_piece(size_t piece) const;
 
-  void set_block_handler(std::function<void(size_t piece, size_t offset, std::vector<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
+  void set_block_handler(std::function<void(size_t piece, size_t offset, std::span<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
   void request(size_t index, size_t begin, size_t length);
 
   const Peer &peer() { return *peer_; }
+  const u160::U160 &peer_id() const { return peer_id_; }
 
   void start_metadata_transfer(
       std::function<void(
@@ -103,7 +108,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       const boost::system::error_code& ec);
   void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
 
-  void handle_message(uint32_t size, uint8_t type, const std::vector<uint8_t> &data);
+  void handle_message(uint8_t type, const std::span<uint8_t> data);
   void handle_extended_message(
       uint8_t extended_id,
       std::shared_ptr<bencoding::DictNode> msg,
@@ -116,13 +121,13 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   void send_metadata_request(int64_t piece);
   void send_peer_message(uint8_t type, std::vector<uint8_t> data);
 
+  void continue_receive();
 
-  /**
-   * helper functions
-   */
-  uint32_t read_size();
-  bool has_data(size_t size) const { return this->read_ring_.size() >= size; }
-  void pop_data(void *output, size_t size);
+  uint32_t read_size() {
+    uint32_t ret;
+    read_ring_.pop_data(&ret, sizeof(uint32_t));
+    return utils::network_to_host(ret);
+  }
 
   void set_peer_has_piece(size_t piece);
 
@@ -141,9 +146,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   u160::U160 peer_id_;
 
   // buffers
-  std::array<uint8_t, 65536> read_buffer_{};
-  std::vector<uint8_t> read_ring_{};
   std::array<uint8_t, 65536> write_buffer_{};
+  ring_buffer::RingBuffer read_ring_;
 
   // connection status
   std::unique_ptr<Peer> peer_;
@@ -174,7 +178,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   std::function<void()> connect_handler_;
 
   std::function<void()> unchoke_handler_;
-  std::function<void(size_t piece, size_t offset, std::vector<uint8_t> data)> block_handler_;
+  std::function<void(size_t piece, size_t offset, std::span<uint8_t> data)> block_handler_;
 };
 
 }
