@@ -1,10 +1,11 @@
+#include <fstream>
+#include <iostream>
+
 #include <boost/asio/signal_set.hpp>
 
 #include <albert/bt/peer_connection.hpp>
 #include <albert/log/log.hpp>
-
 #include <albert/bencode/bencoding.hpp>
-#include <backward.hpp>
 
 using namespace albert;
 
@@ -14,7 +15,6 @@ int main (int argc, char **argv) {
     exit(1);
   }
 
-  backward::SignalHandling sh;
   boost::asio::io_service io;
 
   albert::log::initialize_logger(argc >= 5);

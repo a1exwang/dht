@@ -1,4 +1,8 @@
+#include <sstream>
+#include <cassert>
+
 #include <albert/bt/ring_buffer.hpp>
+#include <albert/log/log.hpp>
 
 template <class ElementType>
 using span = gsl::span<ElementType>;
