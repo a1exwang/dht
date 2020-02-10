@@ -130,7 +130,6 @@ void get_peers::GetPeersManager::gc() {
     if (item.second.expired() > 0) {
       to_delete.push_back(item.first);
     } else {
-      int64_t traversed = 0;
       int64_t total = 0;
       for (auto &node : item.second.nodes_) {
         if (node.second.traversed) {

@@ -135,8 +135,6 @@ class BlockManager {
   size_t piece_size_;
   size_t total_size_;
 
-  std::map<size_t, std::set<size_t>> unavailable_blocks;
-
   // piece -> <block_offset -> list of peer ids>
   std::map<size_t, std::map<size_t, std::set<u160::U160>>> available_blocks;
   // <piece, block_offset> -> list of peer ids
@@ -223,7 +221,7 @@ class Task {
 
   sp<bt::peer::PeerConnection> pc;
   sp<BlockManager> block_manager_;
-  size_t max_queue_size = 10;
+  size_t max_queue_size = 16;
 
   Torrent torrent;
   bool use_utp = false;

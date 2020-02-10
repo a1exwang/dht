@@ -416,9 +416,6 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
         }
       }
     }
-    if (read_ring_.data_size() == 0) {
-      LOG(info) << "message handler done, because read_ring is empty";
-    }
   } catch (const bencoding::InvalidBencoding &e) {
     LOG(error) << "parse BT handshake: Invalid bencoding: " << e.what();
     close();
