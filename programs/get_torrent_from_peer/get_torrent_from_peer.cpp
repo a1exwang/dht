@@ -37,7 +37,7 @@ int main (int argc, char **argv) {
   std::vector<int> piece_ok;
 
   std::shared_ptr<albert::bt::peer::PeerConnection> pc;
-  auto piece_handler = [&piece_ok, &metadata, &target](std::shared_ptr<albert::bt::peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data) {
+  auto piece_handler = [&piece_ok, &metadata, &target, pc](int piece, const std::vector<uint8_t> &data) {
     LOG(info) << "got piece data " << piece << ", size " << data.size();
     std::copy(data.begin(), data.end(), std::next(metadata.begin(), piece * 16 * 1024));
     piece_ok[piece] = 1;
@@ -70,8 +70,7 @@ int main (int argc, char **argv) {
       pc->close();
     }
   };
-  auto extended_handshake_handler = [&metadata, &piece_ok, &piece_handler](
-      std::shared_ptr<albert::bt::peer::PeerConnection> pc, int piece, size_t size) {
+  auto extended_handshake_handler = [&metadata, &piece_ok, &piece_handler, &pc](int piece, size_t size) {
     LOG(info) << "got metadata info, pieces: " << piece << " total size " << size;
     metadata.resize(size);
     piece_ok.resize(piece);
@@ -81,9 +80,8 @@ int main (int argc, char **argv) {
   pc = std::make_shared<albert::bt::peer::PeerConnection>(
       io, self, target, 0, 0, peer_ip.to_uint(), peer_port, true);
 
-  pc->connect([](std::shared_ptr<albert::bt::peer::PeerConnection> pc) {
-    LOG(info) << "BitTorrent protocol: Connected to peer";
-  }, extended_handshake_handler);
+  pc->connect([]() {LOG(info) << "BitTorrent protocol: Connected to peer";},
+      extended_handshake_handler);
 
   io.run();
 }

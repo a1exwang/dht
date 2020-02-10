@@ -4,7 +4,7 @@
 
 #include <array>
 #include <memory>
-#include <span>
+#include <gsl/span>
 
 #include <boost/asio/ip/tcp.hpp>
 
@@ -88,7 +88,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   bool has_piece(size_t piece) const;
   size_t next_valid_piece(size_t piece) const;
 
-  void set_block_handler(std::function<void(size_t piece, size_t offset, std::span<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
+  void set_block_handler(std::function<void(size_t piece, size_t offset, gsl::span<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
   void request(size_t index, size_t begin, size_t length);
 
   const Peer &peer() { return *peer_; }
@@ -108,7 +108,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       const boost::system::error_code& ec);
   void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
 
-  void handle_message(uint8_t type, const std::span<uint8_t> data);
+  void handle_message(uint8_t type, const gsl::span<uint8_t> data);
   void handle_extended_message(
       uint8_t extended_id,
       std::shared_ptr<bencoding::DictNode> msg,
@@ -178,7 +178,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   std::function<void()> connect_handler_;
 
   std::function<void()> unchoke_handler_;
-  std::function<void(size_t piece, size_t offset, std::span<uint8_t> data)> block_handler_;
+  std::function<void(size_t piece, size_t offset, gsl::span<uint8_t> data)> block_handler_;
 };
 
 }

@@ -196,7 +196,7 @@ class Task {
 
  private:
 
-  void block_handler(size_t piece, size_t offset, std::span<uint8_t> data) {
+  void block_handler(size_t piece, size_t offset, gsl::span<uint8_t> data) {
     total_got += data.size();
     LOG(info) << "got block, " << piece << " " << offset/block_size << "/" << torrent.piece_length/block_size << " "
           << " size " << data.size() << " "

@@ -208,22 +208,22 @@ void PeerConnection::send_handshake() {
         }
       });
 }
-void PeerConnection::handle_message(uint8_t type, std::span<uint8_t> data) {
+void PeerConnection::handle_message(uint8_t type, gsl::span<uint8_t> data) {
   if (type == MessageTypeChoke) {
     peer_choke_ = true;
   } else if (type == MessageTypeUnchoke) {
     if (peer_choke_) {
-      LOG(info) << "peer " << peer_->to_string() << " unchoke";
+      LOG(debug) << "peer " << peer_->to_string() << " unchoke";
       peer_choke_ = false;
       if (unchoke_handler_) {
         unchoke_handler_();
       }
     }
   } else if (type == MessageTypeInterested) {
-    LOG(info) << "peer " << peer_->to_string() << " interested";
+    LOG(debug) << "peer " << peer_->to_string() << " interested";
     peer_interested_ = true;
   } else if (type == MessageTypeNotInterested) {
-    LOG(info) << "peer " << peer_->to_string() << " interested";
+    LOG(debug) << "peer " << peer_->to_string() << " interested";
     peer_interested_ = false;
   } else if (type == MessageTypeBitfield) {
     LOG(debug) << "Bitfield: " << utils::hexdump(data.data(), data.size(), true);
@@ -246,7 +246,7 @@ void PeerConnection::handle_message(uint8_t type, std::span<uint8_t> data) {
     begin = utils::network_to_host(begin);
     size_t block_size = data.size() - 2*sizeof(uint32_t);
     if (block_handler_) {
-      block_handler_(index, begin, std::span<uint8_t>(data.data()+2*sizeof(uint32_t), data.size()-2*sizeof(uint32_t)));
+      block_handler_(index, begin, gsl::span<uint8_t>(data.data()+2*sizeof(uint32_t), data.size()-2*sizeof(uint32_t)));
     }
   } else if (type == MessageTypeExtended) {
     if (data.size() > 0) {

@@ -2,7 +2,7 @@
 
 #include <array>
 #include <memory>
-#include <span>
+#include <gsl/span>
 #include <vector>
 
 #include <albert/utils/utils.hpp>
@@ -12,6 +12,7 @@ namespace albert::ring_buffer {
 
 constexpr size_t BufSize = 65536 * 2;
 
+
 class RingBuffer {
  public:
   RingBuffer() = default;
@@ -19,11 +20,11 @@ class RingBuffer {
   bool has_data(size_t size) const;
   void pop_data(void *output, size_t size);
 
-  std::span<uint8_t> use_data(size_t size);
+  gsl::span<uint8_t> use_data(size_t size);
 
   void appended(size_t size);
 
-  std::span<uint8_t> use_for_append(size_t append_size);
+  gsl::span<uint8_t> use_for_append(size_t append_size);
 
   void skip_data(size_t size);
 

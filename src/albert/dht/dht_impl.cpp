@@ -136,10 +136,10 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
       LOG(error) << "Warning! query type not supported";
     }
   } else if (auto dht_error = std::dynamic_pointer_cast<krpc::Error>(message); dht_error) {
-    LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "' method: " << query_method_name;
-    if (bad_sender()) {
-      LOG(info) << "banned " << sender_endpoint << " due to error message";
-    }
+    LOG(error) << "DHT Error message from " << sender_endpoint << ", '" << dht_error->message() << "' method: " << query_method_name << ", ignored";
+//    if (bad_sender()) {
+//      LOG(info) << "banned " << sender_endpoint << " due to error message";
+//    }
   } else {
     LOG(error) << "Unknown message type";
     if (bad_sender()) {

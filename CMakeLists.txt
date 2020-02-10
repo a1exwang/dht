@@ -21,14 +21,20 @@ else()
     add_definitions(-DBOOST_LOG_DYN_LINK=1)
 endif()
 
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 include_directories(include)
 
 find_package(Boost REQUIRED COMPONENTS system log program_options)
 find_package(OpenSSL REQUIRED)
 find_package(SQLite3 REQUIRED)
 add_subdirectory(3rdparty/backward-cpp)
+add_subdirectory(3rdparty/GSL)
+link_libraries(GSL)
 
-add_subdirectory(lib/albert)
+add_subdirectory(src/albert)
 
 add_subdirectory(programs)
 

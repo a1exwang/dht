@@ -1,5 +1,8 @@
 #include <albert/bt/ring_buffer.hpp>
 
+template <class ElementType>
+using span = gsl::span<ElementType>;
+
 namespace albert::ring_buffer {
 
 bool RingBuffer::has_data(size_t size) const {
@@ -10,15 +13,16 @@ void RingBuffer::pop_data(void *output, size_t size) {
   std::copy(p.begin(), p.end(), (char*)output);
   skip_data(size);
 }
-std::span<uint8_t> RingBuffer::use_data(size_t size) {
+
+span<uint8_t> RingBuffer::use_data(size_t size) {
   assert(size <= data_size());
   if (data_start() + size < main_buf().size()) {
-    return std::span<uint8_t>(main_buf().data() + data_start(), size);
+    return span<uint8_t>(main_buf().data() + data_start(), size);
   } else {
     auto data_size_in_side_buf = data_start() + size - main_buf().size();
     std::copy(std::next(main_buf().begin(), data_start()), main_buf().end(), cross_buf().begin());
     std::copy(side_buf().begin(), std::next(side_buf().begin(), data_size_in_side_buf), std::next(cross_buf().begin(), main_buf().size() - data_start()));
-    return std::span(cross_buf().data(), size);
+    return span<uint8_t>(cross_buf().data(), size);
   }
 }
 void RingBuffer::appended(size_t size) {
@@ -40,12 +44,12 @@ void RingBuffer::appended(size_t size) {
   }
   stat();
 }
-std::span<uint8_t> RingBuffer::use_for_append(size_t append_size) {
+span<uint8_t> RingBuffer::use_for_append(size_t append_size) {
   if (main_buf_remaining_size() == 0) {
     if (append_size <= side_buf_remaining_size()) {
       cross_buf_w_has_data_ = false;
 //        LOG(info) << "use_for_append to side buffer " << append_size << " " << stat();
-      return std::span<uint8_t>(side_buf().data()+(data_start()+data_size()-main_buf().size()), append_size);
+      return span<uint8_t>(side_buf().data()+(data_start()+data_size()-main_buf().size()), append_size);
     } else {
       throw std::overflow_error("Overflow, appended size " + std::to_string(append_size) + " > "
                                     + "remaining size " + std::to_string(side_buf_remaining_size()));
@@ -53,11 +57,11 @@ std::span<uint8_t> RingBuffer::use_for_append(size_t append_size) {
   } else if (main_buf_remaining_size() < append_size) {
 //      LOG(info) << "use_for_append to cross buffer " << append_size << " " << stat();
     cross_buf_w_has_data_ = true;
-    return std::span<uint8_t>(cross_buf_w().data(), append_size);
+    return span<uint8_t>(cross_buf_w().data(), append_size);
   } else {
 //      LOG(info) << "use_for_append to main buffer " << append_size << " " << stat();
     cross_buf_w_has_data_ = false;
-    return std::span<uint8_t>(main_buf().data() + data_start() + data_size(), append_size);
+    return span<uint8_t>(main_buf().data() + data_start() + data_size(), append_size);
   }
 }
 void RingBuffer::skip_data(size_t size) {
