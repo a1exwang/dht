@@ -174,6 +174,7 @@ void DHTImpl::get_peers(const u160::U160 &info_hash, const std::function<void(ui
 
   } else {
     LOG(debug) << "get_peers() already searched for " << info_hash.to_string();
+    return;
   }
 
   dht_->get_peers_manager_->add_callback(info_hash, callback);

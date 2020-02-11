@@ -52,7 +52,7 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
           use_utp_));
   auto pc = peer_connections_.back();
   pc->connect(
-      []() {},
+      [](const boost::system::error_code &) {},
       std::bind(&TorrentResolver::handshake_handler, this, pc, _1, _2)
       );
 }

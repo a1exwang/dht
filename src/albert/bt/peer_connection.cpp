@@ -119,7 +119,7 @@ PeerConnection::PeerConnection(
 }
 
 void PeerConnection::connect(
-    std::function<void()> connect_handler,
+    std::function<void(const boost::system::error_code &)> connect_handler,
     std::function<void(int, size_t)> extended_handshake_handler) {
   // Start the asynchronous connect operation.
   connect_handler_ = std::move(connect_handler);
@@ -141,9 +141,11 @@ void PeerConnection::handle_connect(
     const boost::system::error_code &ec) {
   if (!socket_->is_open()) {
     LOG(debug) << "Connect timed out " << this->peer_->to_string();
+    connect_handler_(boost::asio::error::timed_out);
   } else if (ec) {
     LOG(debug) << "Connect error: " << this->peer_->to_string() << " " << ec.message();
     close();
+    connect_handler_(ec);
   } else {
     connection_status_ = ConnectionStatus::Connected;
     LOG(info) << "PeerConnection: connected to " << this->peer_->to_string();
@@ -372,7 +374,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
 //              return;
 //            } else {
           if (connect_handler_) {
-            connect_handler_();
+            connect_handler_(boost::system::error_code());
           }
 //            }
         } else {
@@ -415,6 +417,9 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
           }
         }
       }
+    }
+    if (read_ring_.data_size() == 0) {
+      LOG(debug) << "handle_receive complete because read_ring_ is empty";
     }
   } catch (const bencoding::InvalidBencoding &e) {
     LOG(error) << "parse BT handshake: Invalid bencoding: " << e.what();

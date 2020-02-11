@@ -78,7 +78,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       bool use_utp);
   ~PeerConnection();
   void connect(
-      std::function<void()> connect_handler = []() { },
+      std::function<void(const boost::system::error_code &)> connect_handler = [](const boost::system::error_code&) { },
       std::function<void(int, size_t)> extended_handshake_handler = [](int, size_t) { }
   );
   ConnectionStatus status() const { return connection_status_; }
@@ -175,7 +175,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       const std::vector<uint8_t> &piece_data
   )> piece_data_handler_;
   std::function<void(int total_pieces, size_t total_size)> extended_handshake_handler_;
-  std::function<void()> connect_handler_;
+  std::function<void(const boost::system::error_code &)> connect_handler_;
 
   std::function<void()> unchoke_handler_;
   std::function<void(size_t piece, size_t offset, gsl::span<uint8_t> data)> block_handler_;
