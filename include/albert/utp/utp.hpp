@@ -68,6 +68,12 @@ enum class Status {
 };
 
 struct Connection {
+
+  void reset_timeout_from_now() {
+    timeout_at = std::chrono::high_resolution_clock::now() + std::chrono::seconds(1);
+  }
+
+
   uint16_t seq_nr = 1;
   uint16_t ack_nr = 0;
   uint16_t conn_id_send = 0;
@@ -127,6 +133,8 @@ class Socket :public std::enable_shared_from_this<Socket> {
   void close(boost::asio::ip::udp::endpoint ep);
   void cleanup(boost::asio::ip::udp::endpoint ep);
   void reset(boost::asio::ip::udp::endpoint ep);
+
+  // Exhaunst either receive buffer or user's buffer
   bool poll_receive(std::shared_ptr<Connection> c);
   void timeout(Connection &c);
 

@@ -124,6 +124,13 @@ std::string Packet::pretty() const {
 Socket::Socket(boost::asio::io_service &io,
                boost::asio::ip::udp::endpoint bind_ep)
     : io_(io), socket_(io, bind_ep), bind_ep_(bind_ep), timer_(io) {
+
+  timer_.expires_at(timer_.expiry() + boost::asio::chrono::seconds(1));
+  timer_.async_wait(boost::bind(&Socket::handle_timer, this, boost::asio::placeholders::error));
+}
+
+Socket::~Socket() {
+  close();
 }
 
 void Socket::async_connect(
@@ -141,6 +148,47 @@ void Socket::async_connect(
   c->connect_handler = std::move(handler);
   connections_.emplace(ep, c);
   send_syn(*c);
+}
+
+
+void Socket::async_receive(boost::asio::mutable_buffer buffer,
+                           std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) {
+
+  for (auto &c : connections_) {
+    c.second->receive_handler = handler;
+    c.second->user_buffer = buffer;
+    poll_receive(c.second);
+  }
+
+}
+
+void Socket::async_send(boost::asio::const_buffer buffer,
+                        std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) {
+
+  for (auto &item : connections_) {
+    auto &c = item.second;
+    if (c->status_ != Status::Connected) {
+      throw InvalidStatus("Invalid status, cannot send in status " + std::to_string(int(c->status_)));
+    }
+
+    send_data(*c, buffer);
+  }
+
+}
+
+void Socket::close(boost::asio::ip::udp::endpoint ep) {
+  if (connections_.find(ep) != connections_.end()) {
+    auto &c = connections_.at(ep);
+    c->status_ = Status::Closed;
+
+    if (c->connect_handler) {
+      c->connect_handler(boost::asio::error::eof);
+    }
+    if (c->receive_handler) {
+      c->receive_handler(boost::asio::error::eof, 0);
+    }
+    send_fin(*connections_.at(ep));
+  }
 }
 
 void Socket::handle_receive_from(const boost::system::error_code &error, size_t size) {
@@ -193,6 +241,7 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
             connection->connect_handler(boost::system::error_code());
             connection->connect_handler = nullptr;
           }
+          connection->reset_timeout_from_now();
         } else {
           LOG(error) << "Invalid status, closing connection";
           close(connection->ep);
@@ -203,10 +252,20 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
       LOG(error) << "connection not implemented, ignored";
     } else if (connection->status_ == Status::Connected) {
       if (packet.type == UTPTypeData) {
-        connection->ack_nr = packet.seq_nr;
-        connection->buffered_received_packets.emplace_back(std::move(packet.data));
-        poll_receive(connection);
-        send_state(*connection);
+        auto diff = static_cast<int32_t>(packet.seq_nr - connection->ack_nr);
+        if (diff == 1) {
+          connection->ack_nr = packet.seq_nr;
+          connection->buffered_received_packets.emplace_back(std::move(packet.data));
+          poll_receive(connection);
+          send_state(*connection);
+        } else if (diff < 1) {
+          // duplicate packet
+          send_state(*connection);
+        } else if (diff > 1) {
+          // TODO use extension selective ack
+          // NAK [ack_nr + 1, packet.seq_nr - 1]
+          send_state(*connection);
+        }
       } else if (packet.type == UTPTypeFin) {
         poll_receive(connection);
         LOG(error) << "FIN received from " << receive_ep_ << " closing connection";
@@ -222,10 +281,12 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
       } else {
         LOG(error) << "connected, not implemented type " << int(packet.type);
       }
-      connection->acked = packet.ack_nr;
+      if (packet.ack_nr > connection->acked) {
+        connection->acked = packet.ack_nr;
+      }
     }
 
-    connection->timeout_at = std::chrono::high_resolution_clock::now() + std::chrono::seconds(1);
+    connection->reset_timeout_from_now();
   }
 
   if (socket_.is_open()) {
@@ -239,21 +300,6 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
   }
 }
 
-void Socket::close(boost::asio::ip::udp::endpoint ep) {
-  if (connections_.find(ep) != connections_.end()) {
-    auto &c = connections_.at(ep);
-    c->status_ = Status::Closed;
-
-    if (c->connect_handler) {
-      c->connect_handler(boost::asio::error::eof);
-    }
-    if (c->receive_handler) {
-      c->receive_handler(boost::asio::error::eof, 0);
-    }
-    send_fin(*connections_.at(ep));
-  }
-}
-
 void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
   if (error) {
     LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
@@ -263,15 +309,36 @@ void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, const boost::syst
   }
 }
 
-void Socket::setup() {
-//  LOG(debug) << "Socket::setup handle_receive_from handler";
-  socket_.async_receive_from(
-      boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
-      receive_ep_,
-      boost::bind(&Socket::handle_receive_from, shared_from_this(),
-                  boost::asio::placeholders::error(),
-                  boost::asio::placeholders::bytes_transferred));
+void Socket::handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
+  if (error) {
+    LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
+  }
+  if (connections_.find(ep) != connections_.end()) {
+    cleanup(ep);
+  }
+}
 
+void Socket::handle_timer(const boost::system::error_code &error) {
+  if (error) {
+    LOG(error) << "Socket timer error " << error.message();
+    return;
+  }
+
+  for (auto &c : connections_) {
+    if (c.second->status_ == Status::Connected && std::chrono::high_resolution_clock::now() > c.second->timeout_at) {
+      timeout(*c.second);
+    }
+  }
+
+  timer_.expires_at(timer_.expiry() + boost::asio::chrono::seconds(1));
+  timer_.async_wait(boost::bind(&Socket::handle_timer, this, boost::asio::placeholders::error));
+}
+void Socket::timeout(Connection &c) {
+  // TODO:
+//  send_data(c, {});
+  LOG(debug) << "Connection timeout, closing connection to " << c.ep;
+  poll_receive(connections_[c.ep]);
+  close(c.ep);
 }
 
 #include <sys/time.h>
@@ -337,20 +404,91 @@ void Socket::send_data(Connection &c, boost::asio::const_buffer data) {
       boost::bind(&Socket::handle_send_to, this, c.ep, boost::asio::placeholders::error()));
 }
 
-void Socket::async_receive(boost::asio::mutable_buffer buffer,
-                           std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) {
+void Socket::send_state(Connection &c) {
+  auto usec = get_usec();
+  // TODO: time diff
+  Packet packet{
+      UTPTypeState, UTPVersion, c.conn_id_send,
+      usec, 0,
+      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      c.seq_nr, c.ack_nr};
 
-  for (auto &c : connections_) {
-    c.second->receive_handler = handler;
-    c.second->user_buffer = buffer;
-    poll_receive(c.second);
-  }
+  std::stringstream ss;
+  packet.encode(ss);
+  LOG(debug) << "utp::Socket send STATE to " << c.ep << std::endl << packet.pretty();
+
+  socket_.async_send_to(
+      boost::asio::buffer(ss.str()),
+      c.ep,
+      boost::bind(&Socket::handle_send_to, this, c.ep, boost::asio::placeholders::error()));
+}
+
+void Socket::send_fin(Connection &c) {
+  auto usec = get_usec();
+  Packet pkg{
+      UTPTypeFin, UTPVersion, c.conn_id_send,
+      usec, 0,
+      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      c.seq_nr, c.ack_nr};
+
+  std::stringstream ss;
+  pkg.encode(ss);
+
+  LOG(debug) << "utp::Socket send FIN to " << c.ep << std::endl << pkg.pretty();
+  socket_.async_send_to(
+      boost::asio::buffer(ss.str()),
+      c.ep,
+      boost::bind(&Socket::handle_send_to_fin, this, c.ep, boost::asio::placeholders::error()));
+}
+
+void Socket::setup() {
+//  LOG(debug) << "Socket::setup handle_receive_from handler";
+  socket_.async_receive_from(
+      boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
+      receive_ep_,
+      boost::bind(&Socket::handle_receive_from, shared_from_this(),
+                  boost::asio::placeholders::error(),
+                  boost::asio::placeholders::bytes_transferred));
 
 }
+
+void Socket::close() {
+  std::list<boost::asio::ip::udp::endpoint> keys;
+  for (auto &item : connections_) {
+    keys.push_back(item.first);
+  }
+  for (const auto& key : keys) {
+    close(key);
+  }
+}
+
+void Socket::cleanup(boost::asio::ip::udp::endpoint ep) {
+  connections_.erase(ep);
+  if (connections_.empty()) {
+    socket_.cancel();
+    socket_.close();
+  }
+}
+
+void Socket::reset(boost::asio::ip::udp::endpoint ep) {
+  if (connections_.find(ep) != connections_.end()) {
+    auto &c = connections_.at(ep);
+    c->status_ = Status::Closed;
+
+    if (c->connect_handler) {
+      c->connect_handler(boost::asio::error::connection_reset);
+    }
+    if (c->receive_handler) {
+      c->receive_handler(boost::asio::error::connection_reset, 0);
+    }
+    cleanup(ep);
+  }
+}
+
 bool Socket::poll_receive(std::shared_ptr<Connection> c) {
   bool handler_called = false;
-
   bool data_exhausted = false;
+
   while (c->receive_handler && !data_exhausted) {
     bool user_buffer_full = false;
     // fill the user buffer as much as possible
@@ -390,114 +528,6 @@ bool Socket::poll_receive(std::shared_ptr<Connection> c) {
     }
   }
   return handler_called;
-}
-void Socket::handle_timer(const boost::system::error_code &error) {
-  if (error) {
-    LOG(error) << "Socket timer error " << error.message();
-    return;
-  }
-
-  for (auto &c : connections_) {
-    if (std::chrono::high_resolution_clock::now() > c.second->timeout_at) {
-      timeout(*c.second);
-    }
-  }
-
-  timer_.expires_at(timer_.expiry() + boost::asio::chrono::seconds(1));
-  timer_.async_wait(boost::bind(&Socket::handle_timer, this, boost::asio::placeholders::error));
-}
-void Socket::timeout(Connection &c) {
-  // TODO:
-  send_data(c, {});
-}
-void Socket::send_state(Connection &c) {
-  auto usec = get_usec();
-  // TODO: time diff
-  Packet packet{
-      UTPTypeState, UTPVersion, c.conn_id_send,
-      usec, 0,
-      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
-      c.seq_nr, c.ack_nr};
-
-  std::stringstream ss;
-  packet.encode(ss);
-  LOG(debug) << "utp::Socket send STATE to " << c.ep << std::endl << packet.pretty();
-
-  socket_.async_send_to(
-      boost::asio::buffer(ss.str()),
-      c.ep,
-      boost::bind(&Socket::handle_send_to, this, c.ep, boost::asio::placeholders::error()));
-}
-void Socket::async_send(boost::asio::const_buffer buffer,
-                        std::function<void(const boost::system::error_code &error, size_t bytes_transfered)> handler) {
-
-  for (auto &item : connections_) {
-    auto &c = item.second;
-    if (c->status_ != Status::Connected) {
-      throw InvalidStatus("Invalid status, cannot send in status " + std::to_string(int(c->status_)));
-    }
-
-    send_data(*c, buffer);
-  }
-
-}
-void Socket::close() {
-  std::list<boost::asio::ip::udp::endpoint> keys;
-  for (auto &item : connections_) {
-    keys.push_back(item.first);
-  }
-  for (const auto& key : keys) {
-    close(key);
-  }
-}
-Socket::~Socket() {
-  close();
-}
-void Socket::send_fin(Connection &c) {
-  auto usec = get_usec();
-  Packet pkg{
-      UTPTypeFin, UTPVersion, c.conn_id_send,
-      usec, 0,
-      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
-      c.seq_nr, c.ack_nr};
-
-  std::stringstream ss;
-  pkg.encode(ss);
-
-  LOG(debug) << "utp::Socket send FIN to " << c.ep << std::endl << pkg.pretty();
-  socket_.async_send_to(
-      boost::asio::buffer(ss.str()),
-      c.ep,
-      boost::bind(&Socket::handle_send_to_fin, this, c.ep, boost::asio::placeholders::error()));
-}
-void Socket::handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
-  if (error) {
-    LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
-  }
-  if (connections_.find(ep) != connections_.end()) {
-    cleanup(ep);
-  }
-}
-void Socket::cleanup(boost::asio::ip::udp::endpoint ep) {
-  connections_.erase(ep);
-  if (connections_.empty()) {
-    socket_.cancel();
-    socket_.close();
-  }
-}
-void Socket::reset(boost::asio::ip::udp::endpoint ep) {
-  if (connections_.find(ep) != connections_.end()) {
-    auto &c = connections_.at(ep);
-    c->status_ = Status::Closed;
-
-    if (c->connect_handler) {
-      c->connect_handler(boost::asio::error::connection_reset);
-    }
-    if (c->receive_handler) {
-      c->receive_handler(boost::asio::error::connection_reset, 0);
-    }
-    cleanup(ep);
-  }
 }
 
 }
