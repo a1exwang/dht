@@ -252,19 +252,22 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
       LOG(error) << "connection not implemented, ignored";
     } else if (connection->status_ == Status::Connected) {
       if (packet.type == UTPTypeData) {
-        auto diff = static_cast<int32_t>(packet.seq_nr - connection->ack_nr);
+        auto diff = static_cast<int16_t>(packet.seq_nr - connection->ack_nr);
         if (diff == 1) {
           connection->ack_nr = packet.seq_nr;
           connection->buffered_received_packets.emplace_back(std::move(packet.data));
           poll_receive(connection);
           send_state(*connection);
+          LOG(info) << "uTP: " << "packet normal " << packet.seq_nr;
         } else if (diff < 1) {
           // duplicate packet
           send_state(*connection);
+          LOG(info) << "uTP: " << "packet duplicate " << packet.seq_nr;
         } else if (diff > 1) {
           // TODO use extension selective ack
           // NAK [ack_nr + 1, packet.seq_nr - 1]
           send_state(*connection);
+          LOG(info) << "uTP: " << "packet lost " << connection->ack_nr << " to " << packet.seq_nr - 1;
         }
       } else if (packet.type == UTPTypeFin) {
         poll_receive(connection);
