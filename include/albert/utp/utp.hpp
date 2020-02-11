@@ -175,8 +175,8 @@ class Socket :public std::enable_shared_from_this<Socket> {
   boost::asio::ip::udp::endpoint receive_ep_;
   std::map<boost::asio::ip::udp::endpoint, std::shared_ptr<Connection>> connections_;
 
-  Allocator receive_buffer_allocator_ = Allocator("receive", 16*1024ul, 64);
-  Allocator send_buffer_allocator_ = Allocator("send", 16*1024ul, 64);
+  Allocator receive_buffer_allocator_;
+  Allocator send_buffer_allocator_;
   Allocator::Buffer receive_buffer_;
 //  Allocator::Buffer send_buffer_;
   size_t receive_buffer_offset_ = 0;

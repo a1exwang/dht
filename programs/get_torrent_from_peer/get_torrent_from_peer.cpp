@@ -80,7 +80,7 @@ int main (int argc, char **argv) {
   pc = std::make_shared<albert::bt::peer::PeerConnection>(
       io, self, target, 0, 0, peer_ip.to_uint(), peer_port, true);
 
-  pc->connect([]() {LOG(info) << "BitTorrent protocol: Connected to peer";},
+  pc->connect([](const boost::system::error_code &) {LOG(info) << "BitTorrent protocol: Connected to peer";},
       extended_handshake_handler);
 
   io.run();

@@ -196,7 +196,9 @@ std::string Packet::pretty() const {
 
 Socket::Socket(boost::asio::io_service &io,
                boost::asio::ip::udp::endpoint bind_ep)
-    : io_(io), socket_(io, bind_ep), bind_ep_(bind_ep), timer_(io) {
+    : io_(io), socket_(io, bind_ep), bind_ep_(bind_ep), timer_(io),
+      receive_buffer_allocator_("receive", 100*1024*1024ul, 2),
+      send_buffer_allocator_("send", 16*1024ul, 64) {
 
   timer_.expires_at(timer_.expiry() + boost::asio::chrono::seconds(1));
   timer_.async_wait(boost::bind(&Socket::handle_timer, this, boost::asio::placeholders::error));
@@ -277,6 +279,8 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
     return;
   }
 
+//  LOG(info) << "handle_receive buffer size " << size;
+
   Packet packet;
   try {
     packet = Packet::decode(receive_buffer_, size);
@@ -343,7 +347,7 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
           // TODO: drop packets when we have too many buffered_received_packets
           connection->buffered_received_packets.emplace_back(packet.udp_data, packet.utp_data);
           poll_receive(connection);
-//          send_state(*connection);
+          send_state(*connection);
 //          LOG(debug) << "uTP: received packet normal " << packet.seq_nr;
         } else if (diff < 1) {
           // duplicate packet
@@ -458,7 +462,7 @@ void Socket::send_syn(Connection &connection) {
   Packet packet{
       UTPTypeSyn, UTPVersion, connection.conn_id_recv,
       usec, 0,
-      (uint32_t)send_buffer_allocator_.buffer_size(),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       connection.seq_nr, connection.ack_nr};
 
   connection.seq_nr++;
@@ -480,7 +484,7 @@ void Socket::send_data(Connection &c, boost::asio::const_buffer data_to_send) {
   Packet packet{
       UTPTypeData, UTPVersion, c.conn_id_send,
       usec, 0,
-      (uint32_t)send_buffer_allocator_.buffer_size(),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
   auto buf = send_buffer_allocator_.allocate();
@@ -503,7 +507,7 @@ void Socket::send_state(Connection &c) {
   Packet packet{
       UTPTypeState, UTPVersion, c.conn_id_send,
       usec, 0,
-      (uint32_t)send_buffer_allocator_.buffer_size(),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
   auto buf = send_buffer_allocator_.allocate();
@@ -523,7 +527,7 @@ void Socket::send_fin(Connection &c) {
   Packet packet{
       UTPTypeFin, UTPVersion, c.conn_id_send,
       usec, 0,
-      (uint32_t)send_buffer_allocator_.buffer_size(),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
   auto buf = send_buffer_allocator_.allocate();
@@ -540,8 +544,9 @@ void Socket::send_fin(Connection &c) {
 void Socket::continue_receive() {
   auto buffer = receive_buffer_allocator_.allocate();
   receive_buffer_ = buffer;
+//  LOG(info) << "continue_receive buffer size " << buffer->size();
   socket_.async_receive_from(
-      boost::asio::buffer(receive_buffer_->data(), receive_buffer_->size()),
+      boost::asio::buffer(buffer->data(), buffer->size()),
       receive_ep_,
       boost::bind(&Socket::handle_receive_from, shared_from_this(),
                   boost::asio::placeholders::error(),
