@@ -68,51 +68,85 @@ std::ostream &Packet::pretty(std::ostream &os) const {
   return os;
 }
 
-Packet Packet::decode(std::istream &is) {
-  Packet pkt;
+class PacketReader {
+ public:
+  PacketReader(const uint8_t *data, size_t size) : data_(data), size_(size), offset_(0) { }
+  template <typename T>
+  T read() {
+    if (offset_ + sizeof(T) > size_) {
+      throw std::overflow_error("T PacketReader::read(): overflow");
+    }
+    T t = *reinterpret_cast<const T*>(data_ + offset_);
+    t = utils::network_to_host(t);
+    offset_ += sizeof(T);
+    return t;
+  }
 
-  uint8_t version_type = is.get();
+  template <typename T>
+  void read(T &t) {
+    if (offset_ + sizeof(T) > size_) {
+      throw std::overflow_error("PacketReader::read(T): overflow");
+    }
+    t = *reinterpret_cast<const T*>(data_ + offset_);
+    t = utils::network_to_host(t);
+    offset_ += sizeof(T);
+  }
+
+  template <typename T>
+  void read(T *output, size_t size) {
+    if (offset_ + size > size_) {
+      throw std::overflow_error("PacketReader::read(T*, size_t): overflow");
+    }
+    memcpy(output, data_ + offset_, size * sizeof(T));
+  }
+
+  size_t offset() const { return offset_; }
+  void skip(size_t size) {
+    if (offset_ + size > size_) {
+      throw std::overflow_error("PacketReader::skip(" + std::to_string(size) + ") overflow");
+    }
+    offset_ += size;
+  }
+
+  operator bool() const {
+    return offset_ < size_;
+  }
+ private:
+  const uint8_t *data_;
+  size_t size_;
+  size_t offset_;
+};
+
+Packet Packet::decode(std::vector<uint8_t> buffer, size_t size) {
+  Packet pkt;
+  pkt.data_owner = std::move(buffer);
+
+  PacketReader reader(pkt.data_owner.data(), size);
+  auto version_type = reader.read<uint8_t>();
   pkt.version = version_type & 0xf;
   if (pkt.version != UTPVersion) {
     throw InvalidHeader("Unknown uTP version: " + std::to_string(pkt.version));
   }
-  pkt.type = (version_type >> 4) & 0xf;
-  uint8_t ext = is.get();
+  pkt.type = (version_type >> 4u) & 0xf;
+  auto ext = reader.read<uint8_t>();
 
-  is.read((char*)&pkt.connection_id, sizeof(pkt.connection_id));
-  pkt.connection_id = utils::network_to_host(pkt.connection_id);
+  reader.read(pkt.connection_id);
+  reader.read(pkt.timestamp_microseconds);
+  reader.read(pkt.timestamp_difference_microseconds);
+  reader.read(pkt.wnd_size);
+  reader.read(pkt.seq_nr);
+  reader.read(pkt.ack_nr);
 
-  is.read((char*)&pkt.timestamp_microseconds, sizeof(pkt.timestamp_microseconds));
-  pkt.timestamp_microseconds = utils::network_to_host(pkt.timestamp_microseconds);
-
-  is.read((char*)&pkt.timestamp_difference_microseconds, sizeof(pkt.timestamp_difference_microseconds));
-  pkt.timestamp_difference_microseconds = utils::network_to_host(pkt.timestamp_difference_microseconds);
-
-  is.read((char*)&pkt.wnd_size, sizeof(pkt.wnd_size));
-  pkt.wnd_size = utils::network_to_host(pkt.wnd_size);
-
-  is.read((char*)&pkt.seq_nr, sizeof(pkt.seq_nr));
-  pkt.seq_nr = utils::network_to_host(pkt.seq_nr);
-
-  is.read((char*)&pkt.ack_nr, sizeof(pkt.ack_nr));
-  pkt.ack_nr = utils::network_to_host(pkt.ack_nr);
-
-  while (ext != 0 && is) {
+  while (ext != 0 && reader) {
     auto ext_type = ext;
-    ext = static_cast<uint8_t>(is.get());
-    auto size = static_cast<uint8_t>(is.get());
-    std::string ext_data(size, 0);
-    is.read(ext_data.data(), ext_data.size());
+    ext = reader.read<uint8_t>();
+    auto ext_size = reader.read<uint8_t>();
+    std::string ext_data(ext_size, 0);
+    reader.read(ext_data.data(), ext_data.size());
     pkt.extensions.emplace_back(ext_type, ext_data);
   }
 
-  if (!is) {
-    throw InvalidHeader("Unexpected EOF while reading header");
-  }
-
-  while (is.peek() != EOF) {
-    pkt.data.push_back(is.get());
-  }
+  pkt.data = gsl::span<const uint8_t>(pkt.data_owner.data()+reader.offset(), size - reader.offset());
   return std::move(pkt);
 }
 std::string Packet::pretty() const {
@@ -178,16 +212,18 @@ void Socket::async_send(boost::asio::const_buffer buffer,
 
 void Socket::close(boost::asio::ip::udp::endpoint ep) {
   if (connections_.find(ep) != connections_.end()) {
-    auto &c = connections_.at(ep);
+    auto c = connections_.at(ep);
     c->status_ = Status::Closed;
 
-    if (c->connect_handler) {
-      c->connect_handler(boost::asio::error::eof);
-    }
-    if (c->receive_handler) {
-      c->receive_handler(boost::asio::error::eof, 0);
-    }
-    send_fin(*connections_.at(ep));
+    io_.post([socket = shared_from_this(), c]() {
+      if (c->connect_handler) {
+        c->connect_handler(boost::asio::error::eof);
+      }
+      if (c->receive_handler) {
+        c->receive_handler(boost::asio::error::eof, 0);
+      }
+      socket->send_fin(*c);
+    });
   }
 }
 
@@ -202,28 +238,37 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
     return;
   }
 
-  std::stringstream ss(std::string((char*)receive_buffer_.data(), size));
   Packet packet;
   try {
-    packet = Packet::decode(ss);
-    LOG(debug) << "received packet from " << receive_ep_ << std::endl
+    packet = Packet::decode(std::move(receive_buffer_), size);
+    receive_buffer_.resize(65536);
+    LOG(debug) << "uTP: received packet from " << receive_ep_ << std::endl
                << packet.pretty() << std::endl;
   } catch (const InvalidHeader &e) {
-    LOG(error) << "invalid header received from " << receive_ep_;
+    LOG(error) << "uTP: invalid header received from " << receive_ep_;
+    reset(receive_ep_);
+    return;
+  } catch (const std::overflow_error &e) {
+    LOG(error) << "uTP: unexpected EOF while decoding packet: " << e.what();
     reset(receive_ep_);
     return;
   }
 
   if (connections_.find(receive_ep_) == connections_.end()) {
-    if (packet.type == UTPTypeFin) {
-      // ignore
+    if (packet.type == UTPTypeSyn) {
+      LOG(error) << "uTP: New connection, not implemented";
     } else {
-      LOG(error) << "New connection, not implemented";
+      // ignore
+      LOG(debug) << "uTP: Received packet from unknown connection: " << packet.type;
     }
   } else {
     auto &connection = connections_[this->receive_ep_];
 
-    if (connection->status_ == Status::Closed) {
+    if (connection->status_ == Status::Closed ||
+        connection->status_ == Status::Timeout ||
+        connection->status_ == Status::Error) {
+
+      LOG(debug) << "uTP: connection status: " << int(connection->status_) << " ignored packet";
       return;
     }
 
@@ -255,19 +300,20 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
         auto diff = static_cast<int16_t>(packet.seq_nr - connection->ack_nr);
         if (diff == 1) {
           connection->ack_nr = packet.seq_nr;
-          connection->buffered_received_packets.emplace_back(std::move(packet.data));
+          // TODO: drop packets when we have too many buffered_received_packets
+          connection->buffered_received_packets.emplace_back(std::move(packet.data_owner), packet.data);
           poll_receive(connection);
           send_state(*connection);
-          LOG(info) << "uTP: " << "packet normal " << packet.seq_nr;
+          LOG(debug) << "uTP: received packet normal " << packet.seq_nr;
         } else if (diff < 1) {
           // duplicate packet
           send_state(*connection);
-          LOG(info) << "uTP: " << "packet duplicate " << packet.seq_nr;
-        } else if (diff > 1) {
+          LOG(debug) << "uTP: received packet duplicate " << packet.seq_nr;
+        } else /*(diff > 1)*/ {
           // TODO use extension selective ack
           // NAK [ack_nr + 1, packet.seq_nr - 1]
           send_state(*connection);
-          LOG(info) << "uTP: " << "packet lost " << connection->ack_nr << " to " << packet.seq_nr - 1;
+          LOG(debug) << "uTP: received packet lost " << connection->ack_nr << " to " << packet.seq_nr - 1;
         }
       } else if (packet.type == UTPTypeFin) {
         poll_receive(connection);
@@ -337,11 +383,21 @@ void Socket::handle_timer(const boost::system::error_code &error) {
   timer_.async_wait(boost::bind(&Socket::handle_timer, this, boost::asio::placeholders::error));
 }
 void Socket::timeout(Connection &c) {
-  // TODO:
-//  send_data(c, {});
-  LOG(debug) << "Connection timeout, closing connection to " << c.ep;
+  LOG(debug) << "uTP: connection timeout, closing connection to " << c.ep;
   poll_receive(connections_[c.ep]);
-  close(c.ep);
+
+  c.status_ = Status::Timeout;
+  if (c.receive_handler) {
+    c.receive_handler(boost::asio::error::timed_out, 0);
+  }
+
+  if (c.connect_handler) {
+    c.connect_handler(boost::asio::error::timed_out);
+  }
+  if (c.receive_handler) {
+    c.receive_handler(boost::asio::error::timed_out, 0);
+  }
+  cleanup(c.ep);
 }
 
 #include <sys/time.h>
@@ -382,7 +438,7 @@ void Socket::send_syn(Connection &connection) {
       boost::bind(&Socket::handle_send_to, this, connection.ep, boost::asio::placeholders::error()));
 }
 
-void Socket::send_data(Connection &c, boost::asio::const_buffer data) {
+void Socket::send_data(Connection &c, boost::asio::const_buffer data_to_send) {
   auto usec = get_usec();
   // TODO: time diff
   Packet pkg{
@@ -391,8 +447,8 @@ void Socket::send_data(Connection &c, boost::asio::const_buffer data) {
       static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
       c.seq_nr, c.ack_nr};
 
-  pkg.data.resize(data.size());
-  memcpy(pkg.data.data(), data.data(), data.size());
+  // TODO: encode data in data_owner
+  pkg.set_data(reinterpret_cast<const uint8_t*>(data_to_send.data()), data_to_send.size());
 
   c.seq_nr++;
 
@@ -489,48 +545,45 @@ void Socket::reset(boost::asio::ip::udp::endpoint ep) {
 }
 
 bool Socket::poll_receive(std::shared_ptr<Connection> c) {
-  bool handler_called = false;
-  bool data_exhausted = false;
-
-  while (c->receive_handler && !data_exhausted) {
+  if (c->receive_handler && !c->buffered_received_packets.empty()) {
     bool user_buffer_full = false;
     // fill the user buffer as much as possible
-    while (true) {
-      if (c->buffered_received_packets.empty()) {
-        data_exhausted = true;
+    while (!c->buffered_received_packets.empty()) {
+      auto &data = c->buffered_received_packets.front();
+      size_t user_buffer_remaining = c->user_buffer.size() - c->user_buffer_data_size;
+      if (user_buffer_remaining <= data.size()) {
+        // user buffer full after copying
+        std::copy(
+            data.data(),
+            data.data() + user_buffer_remaining,
+            (uint8_t *) c->user_buffer.data() + c->user_buffer_data_size);
+//        std::copy(
+//            data.begin(),
+//            std::next(data.begin(), user_buffer_remaining),
+//            (uint8_t *) c->user_buffer.data() + user_buffer_remaining);
+        c->user_buffer_data_size = c->user_buffer.size();
+        data.skip_front(user_buffer_remaining);
         break;
       } else {
-        auto &data = c->buffered_received_packets.front();
-        size_t user_buffer_remaining = c->user_buffer.size() - c->user_buffer_data_size;
-        if (user_buffer_remaining <= data.size()) {
-          // receive buffer full
-          std::copy(
-              data.begin(),
-              std::next(data.begin(), user_buffer_remaining),
-              (uint8_t *) c->user_buffer.data() + user_buffer_remaining);
-          c->user_buffer_data_size = c->user_buffer.size();
-          user_buffer_full = true;
-          data = std::vector<uint8_t>(std::next(data.begin(), user_buffer_remaining), data.end());
-          break;
-        } else {
-          // pop one packet
-          std::copy(data.begin(), data.end(), (uint8_t *) c->user_buffer.data()+c->user_buffer_data_size);
-          c->user_buffer_data_size += data.size();
-          c->buffered_received_packets.pop_front();
-        }
+        // pop one packet
+        std::copy(data.data(), data.data() + data.size(), (uint8_t *) c->user_buffer.data()+c->user_buffer_data_size);
+        c->user_buffer_data_size += data.size();
+        c->buffered_received_packets.pop_front();
       }
     }
-    // if user_buffer.size() == 0 && data.size() == 0, we call the user handle once
-    if (c->user_buffer_data_size > 0 || user_buffer_full) {
-      auto handler = std::move(c->receive_handler);
-      c->receive_handler = nullptr;
-      auto bytes_transfered = c->user_buffer_data_size;
-      c->user_buffer_data_size = 0;
-      handler(boost::system::error_code(), bytes_transfered);
-      handler_called = true;
+    if (c->user_buffer_data_size > 0 || c->user_buffer.size() == 0) {
+      io_.post([c, socket = shared_from_this()]() {
+        if (c->user_buffer_data_size > 0 || c->user_buffer.size() == 0) {
+          c->invoke_handler();
+        }
+
+        if (c->receive_handler && !c->buffered_received_packets.empty()) {
+          socket->poll_receive(c);
+        }
+      });
     }
   }
-  return handler_called;
+  return true;
 }
 
 }

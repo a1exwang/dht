@@ -3,6 +3,7 @@
 #include <set>
 #include <random>
 #include <unordered_set>
+#include <thread>
 
 #include <boost/asio/signal_set.hpp>
 
@@ -19,8 +20,8 @@ using namespace albert::common;
 class Task {
  public:
   Task(boost::asio::io_service &io, u160::U160 self, std::string torrent_file) :io(io), self(self) {
-    LOG(info) << "Downloading '" << torrent.name << "', piece length " << torrent.piece_length;
     torrent.parse_file(torrent_file);
+    LOG(info) << "Downloading '" << torrent.name << "', piece length " << torrent.piece_length;
     block_size = std::min(torrent.piece_length, 16 * 1024ul);
   }
 
@@ -43,15 +44,43 @@ class Task {
 
   void handle_unchoke() {
     block_manager_ = std::make_shared<BlockManager>(block_size, torrent.piece_length, torrent.total_size);
+
+    size_t blocks_requested = 0;
     for (size_t i = 0; i < torrent.total_pieces; i++) {
       if (pc->has_piece(i)) {
         block_manager_->set_peer_has_piece(pc->peer_id(), i);
+        for (size_t block_id = 0;
+             blocks_requested < max_queue_size && block_id*block_manager_->block_size_ < block_manager_->piece_size_;
+             block_id++, blocks_requested++) {
+
+          auto [piece, offset] = block_manager_->get_block(pc->peer_id());
+          pc->request(piece, offset, block_size);
+        }
+        if (blocks_requested >= max_queue_size) {
+          break;
+        }
       }
     }
-    for (int i = 0; i < max_queue_size; i++) {
-      auto [piece, offset] = block_manager_->get_block(pc->peer_id());
-      pc->request(piece, offset, block_size);
-    }
+
+    std::thread([this](){
+      for (size_t i = 0; i < torrent.total_pieces; i++) {
+        if (pc->has_piece(i)) {
+          io.post([this, i]() {
+            block_manager_->set_peer_has_piece(pc->peer_id(), i);
+          });
+          std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+      }
+    }).detach();
+//    for (size_t i = 0; i < torrent.total_pieces; i++) {
+//      if (pc->has_piece(i)) {
+//        block_manager_->set_peer_has_piece(pc->peer_id(), i);
+//      }
+//    }
+//    for (int i = 0; i < max_queue_size; i++) {
+//      auto [piece, offset] = block_manager_->get_block(pc->peer_id());
+//      pc->request(piece, offset, block_size);
+//    }
   }
 
  private:

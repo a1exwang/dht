@@ -35,8 +35,7 @@ std::string hexdump(const void *ptr, size_t length, bool verbose) {
   }
   const size_t column_width = 16;
   std::stringstream line;
-  size_t i = 0;
-  for (; i < length; i++) {
+  for (size_t i = 0; i < length; i++) {
     if (verbose && i % column_width == 0) {
       std::stringstream ss_address;
       ss_address << std::hex << std::setfill('0') << std::setw(hex_digits) << i;
@@ -62,8 +61,8 @@ std::string hexdump(const void *ptr, size_t length, bool verbose) {
       }
     }
   }
-  if (verbose && i%column_width != column_width-1 && length > 0) {
-    for (size_t k = 0; k < column_width-(i%column_width); k++) {
+  if (verbose && length > 0 && length%column_width != 0) {
+    for (size_t k = 0; k < column_width-(length%column_width); k++) {
       ss << "   ";
     }
     ss << "| ";
@@ -107,6 +106,11 @@ uint16_t host_to_network<uint16_t>(uint16_t input) {
   data[1] = input >> 0U;
   return rval;
 }
+template <>
+uint8_t host_to_network<uint8_t>(uint8_t input) {
+  return input;
+}
+
 template<typename T>
 T network_to_host(T input) {
   return host_to_network(input);
@@ -134,5 +138,6 @@ std::string hexdump(const std::string &data, bool verbose) {
 
 template uint32_t network_to_host(uint32_t input);
 template uint16_t network_to_host(uint16_t input);
+template uint8_t network_to_host(uint8_t input);
 
 }

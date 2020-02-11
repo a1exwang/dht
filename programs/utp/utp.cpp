@@ -95,7 +95,6 @@ int main() {
       boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string("127.0.0.1"), 7001),
       [&](const boost::system::error_code &code) {
         socket->async_receive(boost::asio::buffer(receive_buffer.data(), receive_buffer.size()), handle_receive);
-        LOG(info) << "connected";
         send_handshake();
       });
 
