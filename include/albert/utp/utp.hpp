@@ -13,6 +13,8 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/ip/udp.hpp>
 
+#include <albert/utp/resizable_buffer.hpp>
+
 namespace albert::utp {
 
 class ConnectionError :public std::runtime_error {
@@ -58,39 +60,19 @@ struct Packet {
    * We use a span to prevent copy
    *
    */
-  std::vector<uint8_t> data_owner;
-  gsl::span<const uint8_t> data;
+  Allocator::Buffer udp_data;
+  gsl::span<const uint8_t> utp_data;
 
-  static Packet decode(std::vector<uint8_t> buffer, size_t size);
-  std::ostream &encode(std::ostream &os) const;
+  static Packet decode(Allocator::Buffer buffer, size_t size);
+  size_t encode(const uint8_t *data = nullptr, size_t size = 0);
   std::ostream &pretty(std::ostream &os) const;
   std::string pretty() const;
 
-  void set_data(const uint8_t *data, size_t size) {
-    data_owner.resize(size);
-    this->data = data_owner;
-    std::copy(data, data + size, data_owner.begin());
-  }
-};
-
-// This is a buffer class that behaves like std::vector<uint8_t>
-// But it can pop_front with O(1) time
-class ResizableBuffer {
- public:
-  ResizableBuffer(std::vector<uint8_t> data_owner, gsl::span<const uint8_t> data) :data_owner_(std::move(data_owner)), data_(data), start_(0) { }
-  const uint8_t *data() const {
-    return data_.data() + start_;
-  }
-  size_t size() const {
-    return data_.size() - start_;
-  }
-  void skip_front(size_t n) {
-    start_ += n;
-  }
- private:
-  std::vector<uint8_t> data_owner_;
-  gsl::span<const uint8_t> data_;
-  size_t start_;
+//  void set_data(const uint8_t *data, size_t size) {
+//    data_owner.resize(size);
+//    this->data = data_owner;
+//    std::copy(data, data + size, data_owner.begin());
+//  }
 };
 
 enum class Status {
@@ -172,7 +154,7 @@ class Socket :public std::enable_shared_from_this<Socket> {
   void close();
 
  private:
-  void setup();
+  void continue_receive();
   void close(boost::asio::ip::udp::endpoint ep);
   void cleanup(boost::asio::ip::udp::endpoint ep);
   void reset(boost::asio::ip::udp::endpoint ep);
@@ -182,7 +164,7 @@ class Socket :public std::enable_shared_from_this<Socket> {
   void timeout(Connection &c);
 
   void handle_receive_from(const boost::system::error_code &error, size_t size);
-  void handle_send_to(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error);
+  void handle_send_to(boost::asio::ip::udp::endpoint ep, Packet packet, const boost::system::error_code &error);
   void handle_timer(const boost::system::error_code &error);
 
   void handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error);
@@ -199,7 +181,10 @@ class Socket :public std::enable_shared_from_this<Socket> {
   boost::asio::ip::udp::endpoint receive_ep_;
   std::map<boost::asio::ip::udp::endpoint, std::shared_ptr<Connection>> connections_;
 
-  std::vector<uint8_t> receive_buffer_ = std::vector<uint8_t>(65536, 0);
+  Allocator receive_buffer_allocator_ = Allocator(64 * 1024ul, 64);
+  Allocator send_buffer_allocator_ = Allocator(64 * 1024ul, 64);
+  Allocator::Buffer receive_buffer_;
+//  Allocator::Buffer send_buffer_;
   size_t receive_buffer_offset_ = 0;
 
   boost::asio::steady_timer timer_;

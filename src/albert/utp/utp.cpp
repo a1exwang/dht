@@ -9,65 +9,9 @@
 #include <albert/log/log.hpp>
 #include <albert/utils/utils.hpp>
 
+namespace {
 
-namespace albert::utp {
-
-std::ostream &Packet::encode(std::ostream &os) const {
-  os.put(static_cast<char>((type << 4u) | version));
-  if (!extensions.empty()) {
-    os.put(std::get<0>(extensions[0]));
-  } else {
-    os.put(0);
-  }
-
-  auto cid = utils::host_to_network(connection_id);
-  os.write((char*)&cid, sizeof(cid));
-
-  auto t = utils::host_to_network(timestamp_microseconds);
-  os.write((char*)&t, sizeof(t));
-
-  auto td = utils::host_to_network(timestamp_difference_microseconds);
-  os.write((char*)&td, sizeof(td));
-
-  auto wnd = utils::host_to_network(wnd_size);
-  os.write((char*)&wnd, sizeof(wnd));
-
-  auto seq = utils::host_to_network(seq_nr);
-  os.write((char*)&seq, sizeof(seq));
-
-  auto ack = utils::host_to_network(ack_nr);
-  os.write((char*)&ack, sizeof(ack));
-
-  for (size_t i = 0; i < extensions.size(); i++) {
-    if (i == extensions.size() - 1) {
-      os.put(0);
-    } else {
-      os.put(std::get<0>(extensions[i+1]));
-    }
-    auto ext = std::get<1>(extensions[i]);
-    os.write(ext.data(), ext.size());
-  }
-
-  os.write((char*)data.data(), data.size());
-  return os;
-}
-std::ostream &Packet::pretty(std::ostream &os) const {
-  os << "type: " << int(type) << std::endl;
-  os << "connection_id: " << connection_id << std::endl;
-  os << "timestamp_us: " << timestamp_microseconds << std::endl;
-  os << "timestamp_diff_us: " << timestamp_difference_microseconds << std::endl;
-  os << "wnd_size: " << wnd_size << ", "
-     << "seq: " << seq_nr << ", "
-     << "ack: " << ack_nr << std::endl;
-
-  for (size_t i = 0; i < extensions.size(); i++) {
-    os << "extension: " << (int)std::get<0>(extensions[i]) << ", size: " << std::get<1>(extensions[i]).size() << std::endl;
-  }
-
-  os << utils::hexdump(data.data(), data.size(), true);
-  return os;
-}
-
+using namespace albert;
 class PacketReader {
  public:
   PacketReader(const uint8_t *data, size_t size) : data_(data), size_(size), offset_(0) { }
@@ -98,6 +42,7 @@ class PacketReader {
       throw std::overflow_error("PacketReader::read(T*, size_t): overflow");
     }
     memcpy(output, data_ + offset_, size * sizeof(T));
+    offset_ += size * sizeof(T);
   }
 
   size_t offset() const { return offset_; }
@@ -117,11 +62,105 @@ class PacketReader {
   size_t offset_;
 };
 
-Packet Packet::decode(std::vector<uint8_t> buffer, size_t size) {
-  Packet pkt;
-  pkt.data_owner = std::move(buffer);
+class PacketWriter {
+ public:
+  PacketWriter(uint8_t *data, size_t size) : data_(data), size_(size), offset_(0) { }
+  template <typename T>
+  void write(T t) {
+    if (offset_ + sizeof(T) > size_) {
+      throw std::overflow_error("T PacketWriter::write(): overflow");
+    }
+    *reinterpret_cast<T*>(data_ + offset_) = utils::host_to_network(t);
+    offset_ += sizeof(T);
+  }
 
-  PacketReader reader(pkt.data_owner.data(), size);
+  template <typename T>
+  void write(const T *input, size_t size) {
+    if (offset_ + size > size_) {
+      throw std::overflow_error("PacketWrite::write(T*, size_t): overflow");
+    }
+    memcpy(data_ + offset_, input, size * sizeof(T));
+    offset_ += size * sizeof(T);
+  }
+
+  size_t data_size() const { return offset_; }
+//  void skip(size_t size) {
+//    if (offset_ + size > size_) {
+//      throw std::overflow_error("PacketWriter::skip(" + std::to_string(size) + ") overflow");
+//    }
+//    offset_ += size;
+//  }
+
+  operator bool() const {
+    return offset_ < size_;
+  }
+ private:
+  uint8_t *data_;
+  size_t size_;
+  size_t offset_;
+};
+
+
+}
+
+
+namespace albert::utp {
+
+size_t Packet::encode(const uint8_t *data, size_t size) {
+  PacketWriter writer(udp_data->data(), udp_data->size());
+  writer.write(static_cast<uint8_t>((type << 4u) | version));
+  if (!extensions.empty()) {
+    writer.write<uint8_t>(std::get<0>(extensions[0]));
+  } else {
+    writer.write<uint8_t>(0);
+  }
+
+  writer.write(connection_id);
+  writer.write(timestamp_microseconds);
+  writer.write(timestamp_difference_microseconds);
+  writer.write(wnd_size);
+  writer.write(seq_nr);
+  writer.write(ack_nr);
+
+  for (size_t i = 0; i < extensions.size(); i++) {
+    if (i == extensions.size() - 1) {
+      writer.write<uint8_t>(0);
+    } else {
+      writer.write<uint8_t>(std::get<0>(extensions[i+1]));
+    }
+    auto ext = std::get<1>(extensions[i]);
+    writer.write(ext.data(), ext.size());
+  }
+
+  auto data_offset = writer.data_size();
+  if (data && size) {
+    writer.write(data, size);
+  }
+  this->utp_data = gsl::span<const uint8_t>(udp_data->data() + data_offset, size);
+  return writer.data_size();
+}
+std::ostream &Packet::pretty(std::ostream &os) const {
+  os << "type: " << int(type) << std::endl;
+  os << "connection_id: " << connection_id << std::endl;
+  os << "timestamp_us: " << timestamp_microseconds << std::endl;
+  os << "timestamp_diff_us: " << timestamp_difference_microseconds << std::endl;
+  os << "wnd_size: " << wnd_size << ", "
+     << "seq: " << seq_nr << ", "
+     << "ack: " << ack_nr << std::endl;
+
+  for (size_t i = 0; i < extensions.size(); i++) {
+    os << "extension: " << (int)std::get<0>(extensions[i]) << ", size: " << std::get<1>(extensions[i]).size() << std::endl;
+  }
+
+  os << utils::hexdump(utp_data.data(), utp_data.size(), true);
+  return os;
+}
+
+Packet Packet::decode(Allocator::Buffer buffer, size_t size) {
+  Packet pkt;
+  pkt.udp_data = buffer;
+
+  PacketReader reader(pkt.udp_data->data(), size);
   auto version_type = reader.read<uint8_t>();
   pkt.version = version_type & 0xf;
   if (pkt.version != UTPVersion) {
@@ -146,7 +185,7 @@ Packet Packet::decode(std::vector<uint8_t> buffer, size_t size) {
     pkt.extensions.emplace_back(ext_type, ext_data);
   }
 
-  pkt.data = gsl::span<const uint8_t>(pkt.data_owner.data()+reader.offset(), size - reader.offset());
+  pkt.utp_data = gsl::span<const uint8_t>(pkt.udp_data->data()+reader.offset(), size - reader.offset());
   return std::move(pkt);
 }
 std::string Packet::pretty() const {
@@ -175,7 +214,7 @@ void Socket::async_connect(
     throw InvalidStatus("Cannot connect when connection exists " + ep.address().to_string() + ":" + std::to_string(ep.port()));
   }
 
-  setup();
+  continue_receive();
 
   auto c = std::make_shared<Connection>();
   c->ep = ep;
@@ -240,8 +279,8 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
 
   Packet packet;
   try {
-    packet = Packet::decode(std::move(receive_buffer_), size);
-    receive_buffer_.resize(65536);
+    packet = Packet::decode(receive_buffer_, size);
+    receive_buffer_ = nullptr;
     LOG(debug) << "uTP: received packet from " << receive_ep_ << std::endl
                << packet.pretty() << std::endl;
   } catch (const InvalidHeader &e) {
@@ -301,7 +340,7 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
         if (diff == 1) {
           connection->ack_nr = packet.seq_nr;
           // TODO: drop packets when we have too many buffered_received_packets
-          connection->buffered_received_packets.emplace_back(std::move(packet.data_owner), packet.data);
+          connection->buffered_received_packets.emplace_back(packet.udp_data, packet.utp_data);
           poll_receive(connection);
           send_state(*connection);
           LOG(debug) << "uTP: received packet normal " << packet.seq_nr;
@@ -340,16 +379,12 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
 
   if (socket_.is_open()) {
 //    LOG(info) << "Socket::handle_receive_from handle_receive_from handler";
-    socket_.async_receive_from(
-        boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
-        receive_ep_,
-        boost::bind(&Socket::handle_receive_from, shared_from_this(),
-                    boost::asio::placeholders::error(),
-                    boost::asio::placeholders::bytes_transferred));
+    continue_receive();
   }
 }
 
-void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
+void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, Packet packet, const boost::system::error_code &error) {
+  send_buffer_allocator_.deallocate(packet.udp_data);
   if (error) {
     LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
   }
@@ -423,44 +458,43 @@ void Socket::send_syn(Connection &connection) {
   Packet packet{
       UTPTypeSyn, UTPVersion, connection.conn_id_recv,
       usec, 0,
-      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       connection.seq_nr, connection.ack_nr};
 
   connection.seq_nr++;
+  auto buf = send_buffer_allocator_.allocate();
+  packet.udp_data = buf;
+  auto size = packet.encode();
 
-  std::stringstream ss;
-  packet.encode(ss);
   LOG(debug) << "utp::Socket SYNC send to " << connection.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
-      boost::asio::buffer(ss.str()),
+      boost::asio::buffer(buf->data(), size),
       connection.ep,
-      boost::bind(&Socket::handle_send_to, this, connection.ep, boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, connection.ep, std::move(packet), boost::asio::placeholders::error()));
 }
 
 void Socket::send_data(Connection &c, boost::asio::const_buffer data_to_send) {
   auto usec = get_usec();
   // TODO: time diff
-  Packet pkg{
+  Packet packet{
       UTPTypeData, UTPVersion, c.conn_id_send,
       usec, 0,
-      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
-  // TODO: encode data in data_owner
-  pkg.set_data(reinterpret_cast<const uint8_t*>(data_to_send.data()), data_to_send.size());
+  auto buf = send_buffer_allocator_.allocate();
+  packet.udp_data = buf;
+  auto size = packet.encode((const uint8_t*)data_to_send.data(), data_to_send.size());
 
   c.seq_nr++;
 
-  std::stringstream ss;
-  pkg.encode(ss);
-
-  LOG(debug) << "utp::Socket send data to " << c.ep << std::endl << pkg.pretty();
+  LOG(debug) << "utp::Socket send data to " << c.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
-      boost::asio::buffer(ss.str()),
+      boost::asio::buffer(buf->data(), size),
       c.ep,
-      boost::bind(&Socket::handle_send_to, this, c.ep, boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, c.ep, std::move(packet), boost::asio::placeholders::error()));
 }
 
 void Socket::send_state(Connection &c) {
@@ -469,46 +503,48 @@ void Socket::send_state(Connection &c) {
   Packet packet{
       UTPTypeState, UTPVersion, c.conn_id_send,
       usec, 0,
-      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
-  std::stringstream ss;
-  packet.encode(ss);
+  auto buf = send_buffer_allocator_.allocate();
+  packet.udp_data = buf;
+  auto size = packet.encode();
   LOG(debug) << "utp::Socket send STATE to " << c.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
-      boost::asio::buffer(ss.str()),
+      boost::asio::buffer(buf->data(), size),
       c.ep,
-      boost::bind(&Socket::handle_send_to, this, c.ep, boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, c.ep, std::move(packet), boost::asio::placeholders::error()));
 }
 
 void Socket::send_fin(Connection &c) {
   auto usec = get_usec();
-  Packet pkg{
+  Packet packet{
       UTPTypeFin, UTPVersion, c.conn_id_send,
       usec, 0,
-      static_cast<uint32_t>(receive_buffer_.size() - receive_buffer_offset_),
+      (uint32_t)receive_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
-  std::stringstream ss;
-  pkg.encode(ss);
+  auto buf = send_buffer_allocator_.allocate();
+  packet.udp_data = buf;
+  auto size = packet.encode();
 
-  LOG(debug) << "utp::Socket send FIN to " << c.ep << std::endl << pkg.pretty();
+  LOG(debug) << "utp::Socket send FIN to " << c.ep << std::endl << packet.pretty();
   socket_.async_send_to(
-      boost::asio::buffer(ss.str()),
+      boost::asio::buffer(buf->data(), size),
       c.ep,
-      boost::bind(&Socket::handle_send_to_fin, this, c.ep, boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, c.ep, std::move(packet), boost::asio::placeholders::error()));
 }
 
-void Socket::setup() {
-//  LOG(debug) << "Socket::setup handle_receive_from handler";
+void Socket::continue_receive() {
+  auto buffer = receive_buffer_allocator_.allocate();
+  receive_buffer_ = buffer;
   socket_.async_receive_from(
-      boost::asio::buffer(receive_buffer_.data(), receive_buffer_.size()),
+      boost::asio::buffer(receive_buffer_->data(), receive_buffer_->size()),
       receive_ep_,
       boost::bind(&Socket::handle_receive_from, shared_from_this(),
                   boost::asio::placeholders::error(),
                   boost::asio::placeholders::bytes_transferred));
-
 }
 
 void Socket::close() {
@@ -568,6 +604,7 @@ bool Socket::poll_receive(std::shared_ptr<Connection> c) {
         // pop one packet
         std::copy(data.data(), data.data() + data.size(), (uint8_t *) c->user_buffer.data()+c->user_buffer_data_size);
         c->user_buffer_data_size += data.size();
+        receive_buffer_allocator_.deallocate(data.buffer());
         c->buffered_received_packets.pop_front();
       }
     }
