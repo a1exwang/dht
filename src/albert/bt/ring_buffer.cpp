@@ -46,7 +46,6 @@ void RingBuffer::appended(size_t size) {
 //      LOG(info) << "RingBuffer::appended() no copy " << size << " " << stat();
     data_size_ += size;
   }
-  stat();
 }
 span<uint8_t> RingBuffer::use_for_append(size_t append_size) {
   if (main_buf_remaining_size() == 0) {

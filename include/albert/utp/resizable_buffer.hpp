@@ -6,7 +6,10 @@
 #include <exception>
 #include <list>
 #include <memory>
+#include <string>
 #include <vector>
+
+#include <gsl/span>
 
 namespace albert::utp {
 
@@ -14,33 +17,16 @@ class Allocator {
  public:
   class OutOfMemory : std::exception { };
  public:
-  typedef std::vector<uint8_t>* Buffer;
-  Allocator(size_t buffer_size, size_t count) :buffer_size_(buffer_size), buffers_() {
-    for (size_t i = 0; i < count; i++) {
-      buffers_.push_back(new std::vector<uint8_t>(buffer_size_));
-    }
-  }
-  ~Allocator() {
-    for (auto buffer : buffers_) {
-      delete buffer;
-    }
-  }
-  Buffer allocate() {
-    if (buffers_.empty()) {
-      throw OutOfMemory();
-    }
-    auto ret = buffers_.front();
-    buffers_.pop_front();
-    return ret;
-  }
-  void deallocate(Buffer buffer) {
-    buffers_.push_back(buffer);
-  }
-  bool empty() const { return buffers_.empty(); }
+  typedef std::shared_ptr<gsl::span<uint8_t>> Buffer;
+  Allocator(const std::string &name, size_t buffer_size, size_t count);
+  Buffer allocate();
+  bool empty() const { return available_buffers_.empty(); }
   size_t buffer_size() const { return buffer_size_; }
  private:
+  std::string name_;
   size_t buffer_size_;
-  std::list<Buffer> buffers_;
+  std::list<gsl::span<uint8_t>> available_buffers_;
+  std::unique_ptr<uint8_t, std::function<void(uint8_t*)>> real_buffer_;
 };
 
 // This is a buffer class that behaves like std::vector<uint8_t>

@@ -69,6 +69,7 @@ class BlockManager {
     return std::ceil((double)total_size_ / piece_size_);
   }
   void set_peer_has_piece(u160::U160 peer_id, size_t piece) {
+    LOG(info) << "set_peer_has_piece " << peer_id.to_string() << " " << piece;
     size_t blocks_in_piece = piece_size_ / block_size_;
     if (piece == piece_count() - 1) {
       size_t last_piece_blocks = std::ceil(double(total_size_ % piece_size_) / block_size_);

@@ -67,12 +67,6 @@ struct Packet {
   size_t encode(const uint8_t *data = nullptr, size_t size = 0);
   std::ostream &pretty(std::ostream &os) const;
   std::string pretty() const;
-
-//  void set_data(const uint8_t *data, size_t size) {
-//    data_owner.resize(size);
-//    this->data = data_owner;
-//    std::copy(data, data + size, data_owner.begin());
-//  }
 };
 
 enum class Status {
@@ -164,10 +158,10 @@ class Socket :public std::enable_shared_from_this<Socket> {
   void timeout(Connection &c);
 
   void handle_receive_from(const boost::system::error_code &error, size_t size);
-  void handle_send_to(boost::asio::ip::udp::endpoint ep, Packet packet, const boost::system::error_code &error);
+  void handle_send_to(boost::asio::ip::udp::endpoint ep, Allocator::Buffer buf, const boost::system::error_code &error);
   void handle_timer(const boost::system::error_code &error);
 
-  void handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error);
+  void handle_send_to_fin(boost::asio::ip::udp::endpoint ep, Allocator::Buffer buf, const boost::system::error_code &error);
 
   void send_syn(Connection &c);
   void send_state(Connection &c);
@@ -181,8 +175,8 @@ class Socket :public std::enable_shared_from_this<Socket> {
   boost::asio::ip::udp::endpoint receive_ep_;
   std::map<boost::asio::ip::udp::endpoint, std::shared_ptr<Connection>> connections_;
 
-  Allocator receive_buffer_allocator_ = Allocator(64 * 1024ul, 64);
-  Allocator send_buffer_allocator_ = Allocator(64 * 1024ul, 64);
+  Allocator receive_buffer_allocator_ = Allocator("receive", 16*1024ul, 64);
+  Allocator send_buffer_allocator_ = Allocator("send", 16*1024ul, 64);
   Allocator::Buffer receive_buffer_;
 //  Allocator::Buffer send_buffer_;
   size_t receive_buffer_offset_ = 0;

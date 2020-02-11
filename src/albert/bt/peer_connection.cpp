@@ -399,7 +399,6 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
         if (message_size == 0) {
           // This is a keep alive message
           handle_keep_alive();
-          read_ring_.stat();
         } else {
           if (read_ring_.has_data(message_size)) {
             uint8_t message_type;
@@ -541,7 +540,7 @@ void PeerConnection::request(size_t index, size_t begin, size_t length) {
 
   auto s = ss.str();
   std::vector<uint8_t> data((const uint8_t*)s.data(), (const uint8_t*)s.data() + ss.str().size());
-  LOG(info) << "requesting piece " << index << " " << begin << " " << length;
+  LOG(debug) << "requesting piece " << index << " " << begin << " " << length;
   send_peer_message(MessageTypeRequest, data);
 }
 void PeerConnection::set_peer_has_piece(size_t piece) {

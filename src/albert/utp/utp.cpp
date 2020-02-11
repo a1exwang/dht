@@ -281,8 +281,8 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
   try {
     packet = Packet::decode(receive_buffer_, size);
     receive_buffer_ = nullptr;
-    LOG(debug) << "uTP: received packet from " << receive_ep_ << std::endl
-               << packet.pretty() << std::endl;
+//    LOG(debug) << "uTP: received packet from " << receive_ep_ << std::endl
+//               << packet.pretty() << std::endl;
   } catch (const InvalidHeader &e) {
     LOG(error) << "uTP: invalid header received from " << receive_ep_;
     reset(receive_ep_);
@@ -293,7 +293,8 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
     return;
   }
 
-  if (connections_.find(receive_ep_) == connections_.end()) {
+  auto connection_it = connections_.find(receive_ep_);
+  if (connection_it == connections_.end()) {
     if (packet.type == UTPTypeSyn) {
       LOG(error) << "uTP: New connection, not implemented";
     } else {
@@ -301,7 +302,7 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
       LOG(debug) << "uTP: Received packet from unknown connection: " << packet.type;
     }
   } else {
-    auto &connection = connections_[this->receive_ep_];
+    auto &connection = connection_it->second;
 
     if (connection->status_ == Status::Closed ||
         connection->status_ == Status::Timeout ||
@@ -342,17 +343,17 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
           // TODO: drop packets when we have too many buffered_received_packets
           connection->buffered_received_packets.emplace_back(packet.udp_data, packet.utp_data);
           poll_receive(connection);
-          send_state(*connection);
-          LOG(debug) << "uTP: received packet normal " << packet.seq_nr;
+//          send_state(*connection);
+//          LOG(debug) << "uTP: received packet normal " << packet.seq_nr;
         } else if (diff < 1) {
           // duplicate packet
           send_state(*connection);
-          LOG(debug) << "uTP: received packet duplicate " << packet.seq_nr;
+          LOG(warning) << "uTP: received packet duplicate " << packet.seq_nr;
         } else /*(diff > 1)*/ {
           // TODO use extension selective ack
           // NAK [ack_nr + 1, packet.seq_nr - 1]
           send_state(*connection);
-          LOG(debug) << "uTP: received packet lost " << connection->ack_nr << " to " << packet.seq_nr - 1;
+          LOG(warning) << "uTP: received packet lost " << connection->ack_nr << " to " << packet.seq_nr - 1;
         }
       } else if (packet.type == UTPTypeFin) {
         poll_receive(connection);
@@ -383,17 +384,16 @@ void Socket::handle_receive_from(const boost::system::error_code &error, size_t 
   }
 }
 
-void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, Packet packet, const boost::system::error_code &error) {
-  send_buffer_allocator_.deallocate(packet.udp_data);
+void Socket::handle_send_to(boost::asio::ip::udp::endpoint ep, Allocator::Buffer buf, const boost::system::error_code &error) {
   if (error) {
     LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
   }
-  if (connections_.find(ep) == connections_.end()) {
-    LOG(debug) << "unknown handle_send_to ep " << ep << " success";
-  }
+//  if (connections_.find(ep) == connections_.end()) {
+//    LOG(debug) << "unknown handle_send_to ep " << ep << " success";
+//  }
 }
 
-void Socket::handle_send_to_fin(boost::asio::ip::udp::endpoint ep, const boost::system::error_code &error) {
+void Socket::handle_send_to_fin(boost::asio::ip::udp::endpoint ep, Allocator::Buffer buf, const boost::system::error_code &error) {
   if (error) {
     LOG(error) << "utp::Socket failed to async_send_to " << ep << ", error: " << error.message();
   }
@@ -458,7 +458,7 @@ void Socket::send_syn(Connection &connection) {
   Packet packet{
       UTPTypeSyn, UTPVersion, connection.conn_id_recv,
       usec, 0,
-      (uint32_t)receive_buffer_allocator_.buffer_size(),
+      (uint32_t)send_buffer_allocator_.buffer_size(),
       connection.seq_nr, connection.ack_nr};
 
   connection.seq_nr++;
@@ -471,7 +471,7 @@ void Socket::send_syn(Connection &connection) {
   socket_.async_send_to(
       boost::asio::buffer(buf->data(), size),
       connection.ep,
-      boost::bind(&Socket::handle_send_to, this, connection.ep, std::move(packet), boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, connection.ep, buf, boost::asio::placeholders::error()));
 }
 
 void Socket::send_data(Connection &c, boost::asio::const_buffer data_to_send) {
@@ -480,7 +480,7 @@ void Socket::send_data(Connection &c, boost::asio::const_buffer data_to_send) {
   Packet packet{
       UTPTypeData, UTPVersion, c.conn_id_send,
       usec, 0,
-      (uint32_t)receive_buffer_allocator_.buffer_size(),
+      (uint32_t)send_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
   auto buf = send_buffer_allocator_.allocate();
@@ -489,12 +489,12 @@ void Socket::send_data(Connection &c, boost::asio::const_buffer data_to_send) {
 
   c.seq_nr++;
 
-  LOG(debug) << "utp::Socket send data to " << c.ep << std::endl << packet.pretty();
+//  LOG(debug) << "utp::Socket send data to " << c.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
       boost::asio::buffer(buf->data(), size),
       c.ep,
-      boost::bind(&Socket::handle_send_to, this, c.ep, std::move(packet), boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, c.ep, buf, boost::asio::placeholders::error()));
 }
 
 void Socket::send_state(Connection &c) {
@@ -503,18 +503,19 @@ void Socket::send_state(Connection &c) {
   Packet packet{
       UTPTypeState, UTPVersion, c.conn_id_send,
       usec, 0,
-      (uint32_t)receive_buffer_allocator_.buffer_size(),
+      (uint32_t)send_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
   auto buf = send_buffer_allocator_.allocate();
   packet.udp_data = buf;
   auto size = packet.encode();
-  LOG(debug) << "utp::Socket send STATE to " << c.ep << std::endl << packet.pretty();
+  // This is too slow
+//  LOG(debug) << "utp::Socket send STATE to " << c.ep << std::endl << packet.pretty();
 
   socket_.async_send_to(
       boost::asio::buffer(buf->data(), size),
       c.ep,
-      boost::bind(&Socket::handle_send_to, this, c.ep, std::move(packet), boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to, this, c.ep, buf, boost::asio::placeholders::error()));
 }
 
 void Socket::send_fin(Connection &c) {
@@ -522,7 +523,7 @@ void Socket::send_fin(Connection &c) {
   Packet packet{
       UTPTypeFin, UTPVersion, c.conn_id_send,
       usec, 0,
-      (uint32_t)receive_buffer_allocator_.buffer_size(),
+      (uint32_t)send_buffer_allocator_.buffer_size(),
       c.seq_nr, c.ack_nr};
 
   auto buf = send_buffer_allocator_.allocate();
@@ -533,7 +534,7 @@ void Socket::send_fin(Connection &c) {
   socket_.async_send_to(
       boost::asio::buffer(buf->data(), size),
       c.ep,
-      boost::bind(&Socket::handle_send_to, this, c.ep, std::move(packet), boost::asio::placeholders::error()));
+      boost::bind(&Socket::handle_send_to_fin, this, c.ep, buf, boost::asio::placeholders::error()));
 }
 
 void Socket::continue_receive() {
@@ -604,7 +605,6 @@ bool Socket::poll_receive(std::shared_ptr<Connection> c) {
         // pop one packet
         std::copy(data.data(), data.data() + data.size(), (uint8_t *) c->user_buffer.data()+c->user_buffer_data_size);
         c->user_buffer_data_size += data.size();
-        receive_buffer_allocator_.deallocate(data.buffer());
         c->buffered_received_packets.pop_front();
       }
     }

@@ -53,7 +53,8 @@ class Task {
     auto make_progress = [](size_t x, size_t total) -> std::string {
       std::stringstream ss;
       ss << utils::pretty_size(x) << "/" << utils::pretty_size(total) << "("
-         << std::fixed << std::setprecision(2) << (100.0*x/total) << "% ";
+         << std::fixed << std::setprecision(2) << (100.0*x/total) << "%)";
+      return ss.str();
     };
 
     size_t total_not_downloaded = block_manager_->total_size_ - total_got;
@@ -61,7 +62,7 @@ class Task {
               << "available "
               << make_progress(available_count*block_manager_->block_size_, total_not_downloaded) << " "
               << "progress "
-              << make_progress(block_manager_->total_size_, total_got);
+              << make_progress(total_got, block_manager_->total_size_);
 
     LOG(info) << "Peers:";
     for (auto &c : connections_) {
