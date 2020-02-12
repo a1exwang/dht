@@ -14,6 +14,7 @@
 #include <albert/bt/peer.hpp>
 #include <albert/log/log.hpp>
 #include <albert/bencode/bencoding.hpp>
+#include <albert/flow_control/rps_throttler.hpp>
 
 using namespace albert;
 using namespace albert::common;
@@ -70,7 +71,7 @@ class BlockManager {
     return std::ceil((double)total_size_ / piece_size_);
   }
   void set_peer_has_piece(u160::U160 peer_id, size_t piece) {
-    LOG(info) << "set_peer_has_piece " << peer_id.to_string() << " " << piece;
+//    LOG(info) << "set_peer_has_piece " << peer_id.to_string() << " " << piece;
     size_t blocks_in_piece = piece_size_ / block_size_;
     if (piece == piece_count() - 1) {
       size_t last_piece_blocks = std::ceil(double(total_size_ % piece_size_) / block_size_);
@@ -165,7 +166,8 @@ struct Peer {
 
 class Task {
  public:
-  Task(boost::asio::io_service &io, u160::U160 self, std::string torrent_file, bool use_utp) :io(io), self(self), use_utp(use_utp) {
+  Task(boost::asio::io_service &io, u160::U160 self, std::string torrent_file, bool use_utp)
+      :io(io), self(self), use_utp(use_utp), throttler_(io, 100) {
     torrent.parse_file(torrent_file);
     LOG(info) << "Downloading '" << torrent.name << "', piece length " << torrent.piece_length;
     block_size = std::min(torrent.piece_length, 16 * 1024ul);
@@ -253,6 +255,8 @@ class Task {
   };
 
   void block_handler(std::shared_ptr<bt::peer::PeerConnection> pc, size_t piece, size_t offset, gsl::span<uint8_t> data) {
+    throttler_.done();
+
     connections_[{pc->peer().ip(), pc->peer().port()}].status = "DataReceived";
     total_got += data.size();
     total_blocks_got++;
@@ -263,11 +267,13 @@ class Task {
       if (block_manager_->peer_finished(pc->peer_id())) {
         LOG(info) << "peer finished";
       } else {
-        auto [piece, offset] = block_manager_->get_block(pc->peer_id());
-        pc->request(piece, offset, block_size);
+        auto [new_piece, new_offset] = block_manager_->get_block(pc->peer_id());
+        LOG(debug) << "start to requesting " << new_piece << " " << new_offset;
+        throttler_.throttle([=, new_piece = new_piece, new_offset = new_offset]() {
+          pc->request(new_piece, new_offset, block_size);
+        });
       }
     }
-
 
     auto time_diff = std::chrono::high_resolution_clock::now() - last_report_time;
     if (time_diff > std::chrono::seconds(1)) {
@@ -280,6 +286,7 @@ class Task {
                 << "speed " << utils::pretty_size(diff/secs) << "/s "
                 << "blocks " << utils::pretty_size(blocks_diff/secs, false) << "/s "
                 ;
+      throttler_.stat();
 
       last_report_size = total_got;
       last_report_time = std::chrono::high_resolution_clock::now();
@@ -304,4 +311,6 @@ class Task {
   size_t last_report_size = 0;
   size_t last_blocks_got = 0;
   std::chrono::high_resolution_clock::time_point last_report_time;
+
+  flow_control::RPSThrottler throttler_;
 };
