@@ -125,7 +125,7 @@ void PeerConnection::connect(
   connect_handler_ = std::move(connect_handler);
   extended_handshake_handler_ = std::move(extended_handshake_handler);
 
-  LOG(debug) << "PeerConnection::connect, connecting to " << peer_->to_string();
+  LOG(info) << "PeerConnection::connect, connecting to " << peer_->to_string();
   // Why using shared_from_this(). https://stackoverflow.com/a/35469759
   socket_->async_connect(
       boost::asio::ip::address_v4(peer_->ip()),
@@ -345,7 +345,9 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
     connection_status_ = ConnectionStatus::Disconnected;
     return;
   } else if (err) {
-    throw std::runtime_error("Unhandled error when reading to from socket " + err.message());
+    connection_status_ = ConnectionStatus::Disconnected;
+    LOG(error) << "PeerConnection: unhandled error when reading to from socket " + err.message();
+    return;
   }
 
   if (connection_status_ == ConnectionStatus::Connecting) {
@@ -546,7 +548,7 @@ void PeerConnection::request(size_t index, size_t begin, size_t length) {
 void PeerConnection::set_peer_has_piece(size_t piece) {
   size_t byte = 0;
   if (piece != 0) {
-    byte = (piece-1u) / 8u + 1u;
+    byte = piece / 8;
   }
   auto bit = 7u - (piece % 8u);
 

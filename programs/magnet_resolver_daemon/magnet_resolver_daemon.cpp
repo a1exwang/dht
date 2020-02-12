@@ -45,7 +45,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       throw std::runtime_error("Scanner timer failure " + error.message());
     }
 
-    if (bt.resolver_count() < max_concurrent_resolutions_) {
+    if (bt.resolver_count() < max_concurrent_resolutions_ && bt.peer_count() < max_concurrent_peers) {
       auto result = store_->get_empty_keys();
       auto you_are_the_chosen_one = rng_() % result.size();
       auto hero = result[you_are_the_chosen_one];
@@ -59,7 +59,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
     LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count()
               << " success " << bt.success_count()
               << " failure " << bt.failure_count()
-              << " connected peers " << bt.connected_peers() ;
+              << " connected peers " << bt.connected_peers() << "/" << bt.peer_count();
 
     db_scan_timer.expires_at(db_scan_timer.expiry() + db_scan_interval);
     db_scan_timer.async_wait(boost::bind(&Scanner::handle_timer,shared_from_this(), boost::asio::placeholders::error()));
@@ -74,11 +74,13 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       LOG(info) << "torrent saved as '" << file_name << ", db updated";
     });
 
-    dht.get_peers(ih, [ih, resolver](uint32_t ip, uint16_t port) {
+    dht.get_peers(ih, [ih, resolver, this](uint32_t ip, uint16_t port) {
       if (resolver.expired()) {
         LOG(debug) << "TorrentResolver gone before a get_peer request received";
       } else {
-        resolver.lock()->add_peer(ip, port);
+        if (bt.peer_count() < max_concurrent_peers) {
+          resolver.lock()->add_peer(ip, port);
+        }
       }
     });
   };
@@ -97,7 +99,8 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
   albert::dht::DHTInterface &dht;
   std::mt19937_64 rng_;
 
-  size_t max_concurrent_resolutions_ = 16;
+  size_t max_concurrent_resolutions_ = 5;
+  size_t max_concurrent_peers = 50;
 };
 
 
@@ -119,7 +122,7 @@ int main(int argc, char* argv[]) {
   bt.start();
   dht.start();
 
-  size_t db_scan_interval_seconds = 2;
+  size_t db_scan_interval_seconds = 5;
   auto scanner = std::make_shared<Scanner>(io_service, bt, dht, std::move(store), db_scan_interval_seconds);
   scanner->start();
 

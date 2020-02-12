@@ -61,7 +61,7 @@ void TransactionManager::gc() {
   }
 
   auto t1 = std::chrono::high_resolution_clock::now();
-  LOG(info) << "TransactionManager: delete " << to_delete.size() << " expiried transactions in "
+  LOG(debug) << "TransactionManager: delete " << to_delete.size() << " expiried transactions in "
             << std::fixed << std::setprecision(2) << std::chrono::duration<double,std::milli>(t1-t0).count() << "ms";
 }
 bool TransactionManager::has_transaction(const std::string &id) const {

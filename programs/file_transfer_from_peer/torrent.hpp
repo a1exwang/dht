@@ -11,6 +11,7 @@
 
 #include <albert/common/commom.hpp>
 #include <albert/bt/peer_connection.hpp>
+#include <albert/bt/peer.hpp>
 #include <albert/log/log.hpp>
 #include <albert/bencode/bencoding.hpp>
 
@@ -157,3 +158,150 @@ class BlockManager {
 
 };
 
+struct Peer {
+  sp<bt::peer::PeerConnection> pc;
+  std::string status = "initialized";
+};
+
+class Task {
+ public:
+  Task(boost::asio::io_service &io, u160::U160 self, std::string torrent_file, bool use_utp) :io(io), self(self), use_utp(use_utp) {
+    torrent.parse_file(torrent_file);
+    LOG(info) << "Downloading '" << torrent.name << "', piece length " << torrent.piece_length;
+    block_size = std::min(torrent.piece_length, 16 * 1024ul);
+    block_manager_ = std::make_shared<BlockManager>(block_size, torrent.piece_length, torrent.total_size);
+  }
+
+  void stat() {
+    LOG(info) << "Task: " << torrent.name;
+    size_t available_count = 0;
+    size_t queued_count = 0;
+    for (auto &item: block_manager_->available_blocks) {
+      auto piece = item.first;
+      for (auto &block : item.second) {
+        if (block.second.size() > 0) {
+          available_count++;
+        } else {
+          LOG(warning) << "inconsistend data avialble blocks[" << piece << "][" << block.first << "] is empty";
+        }
+      }
+    }
+    for (auto &item : block_manager_->request_queue) {
+      queued_count++;
+    }
+
+    auto make_progress = [](size_t x, size_t total) -> std::string {
+      std::stringstream ss;
+      ss << utils::pretty_size(x) << "/" << utils::pretty_size(total) << "("
+         << std::fixed << std::setprecision(2) << (100.0*x/total) << "%)";
+      return ss.str();
+    };
+
+    size_t total_not_downloaded = block_manager_->total_size_ - total_got;
+    LOG(info) << "BlockManager: total peers " << connections_.size() << " "
+              << "available "
+              << make_progress(available_count*block_manager_->block_size_, total_not_downloaded) << " "
+              << "progress "
+              << make_progress(total_got, block_manager_->total_size_);
+
+    LOG(info) << "Peers:";
+    for (auto &c : connections_) {
+      LOG(info) << c.second.pc->peer().to_string() << " status: '" << c.second.status << "'";
+    }
+  }
+
+  void add_peer(uint32_t ip, uint16_t port) {
+    using namespace std::placeholders;
+    auto pc = std::make_shared<albert::bt::peer::PeerConnection>(
+        io, self, torrent.info_hash, 0, 0, ip, port, use_utp);
+    pc->set_block_handler(std::bind(&Task::block_handler, this, pc, _1, _2, _3));
+    pc->connect(
+        [this, pc, ip, port](const boost::system::error_code &e) {
+          if (e) {
+            connections_[{ip, port}].status = "Failed: " + e.message();
+          } else {
+            connections_[{ip, port}].status = "BitTorrentConnected";
+            pc->interest(std::bind(&Task::handle_unchoke, this, ip, port, pc));
+          }
+        },
+        [pc](int piece, size_t size) {
+          LOG(info) << "got metadata info from " << pc->peer().to_string() <<  ", pieces: " << piece << " total size " << size;
+        });
+    connections_[{ip, port}] = {pc};
+  }
+
+  void handle_unchoke(uint32_t ip, uint16_t port, std::shared_ptr<bt::peer::PeerConnection> pc) {
+    connections_[{ip, port}].status = "Unchoke";
+    for (size_t i = 0; i < torrent.total_pieces; i++) {
+      if (pc->has_piece(i)) {
+        block_manager_->set_peer_has_piece(pc->peer_id(), i);
+      }
+    }
+    for (int i = 0; i < max_queue_size; i++) {
+      auto [piece, offset] = block_manager_->get_block(pc->peer_id());
+      pc->request(piece, offset, block_size);
+    }
+  }
+  u160::U160 info_hash() const { return torrent.info_hash; }
+
+ private:
+  static std::string make_progress(size_t x, size_t total) {
+    std::stringstream ss;
+    ss << utils::pretty_size(x) << "/" << utils::pretty_size(total) << "("
+       << std::fixed << std::setprecision(2) << (100.0*x/total) << "%)";
+    return ss.str();
+  };
+
+  void block_handler(std::shared_ptr<bt::peer::PeerConnection> pc, size_t piece, size_t offset, gsl::span<uint8_t> data) {
+    connections_[{pc->peer().ip(), pc->peer().port()}].status = "DataReceived";
+    total_got += data.size();
+    total_blocks_got++;
+    block_manager_->mark_block_done(piece, offset);
+    if (block_manager_->finished()) {
+      LOG(info) << "task finished";
+    } else {
+      if (block_manager_->peer_finished(pc->peer_id())) {
+        LOG(info) << "peer finished";
+      } else {
+        auto [piece, offset] = block_manager_->get_block(pc->peer_id());
+        pc->request(piece, offset, block_size);
+      }
+    }
+
+
+    auto time_diff = std::chrono::high_resolution_clock::now() - last_report_time;
+    if (time_diff > std::chrono::seconds(1)) {
+      auto diff = total_got - last_report_size;
+      auto blocks_diff = total_blocks_got - last_blocks_got;
+      auto secs = std::chrono::duration<double>(time_diff).count();
+
+      LOG(info) << "FileTransfer report: "
+                << "progress " << make_progress(total_got, block_manager_->total_size_) << " "
+                << "speed " << utils::pretty_size(diff/secs) << "/s "
+                << "blocks " << utils::pretty_size(blocks_diff/secs, false) << "/s "
+                ;
+
+      last_report_size = total_got;
+      last_report_time = std::chrono::high_resolution_clock::now();
+      last_blocks_got = total_blocks_got;
+    }
+  };
+
+ private:
+  boost::asio::io_service& io;
+  u160::U160 self;
+
+  std::map<std::tuple<uint32_t, uint16_t>, Peer> connections_;
+  sp<BlockManager> block_manager_;
+  size_t max_queue_size = 16;
+
+  Torrent torrent;
+  bool use_utp;
+  size_t block_size;
+
+  size_t total_got = 0;
+  size_t total_blocks_got = 0;
+  size_t last_report_size = 0;
+  size_t last_blocks_got = 0;
+  std::chrono::high_resolution_clock::time_point last_report_time;
+};

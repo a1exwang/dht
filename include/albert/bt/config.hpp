@@ -15,7 +15,6 @@ struct Config :public albert::config::Config {
 
   size_t resolve_torrent_expiration_seconds = 30;
 
-
   std::string id;
 };
 

@@ -6,6 +6,8 @@
 #include <sstream>
 #include <iomanip>
 
+#include <gsl/span>
+
 namespace albert::utils {
 
 /**
@@ -115,20 +117,33 @@ template<typename T>
 T network_to_host(T input) {
   return host_to_network(input);
 }
-std::string pretty_size(size_t size) {
+std::string pretty_size(size_t size, bool bytes) {
   std::stringstream ss;
-  static const char *SIZES[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  static const char *SIZES_BYTES[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  static const char *SIZES_ISO[] = {"", "k", "M", "G", "T"};
+  gsl::span<const char *> names;
+
+  size_t carry = 0;
+
+  if (bytes) {
+    carry = 1024;
+    names = SIZES_BYTES;
+  } else {
+    carry = 1000;
+    names = SIZES_ISO;
+  }
+
   int div = 0;
   size_t rem = 0;
 
-  while (size >= 1024 && div < (sizeof(SIZES) / sizeof(SIZES[0]))) {
-    rem = (size % 1024);
+  while (size >= carry && div < names.size()) {
+    rem = (size % carry);
     div++;
-    size /= 1024;
+    size /= carry;
   }
 
-  double size_d = (float)size + (float)rem / 1024.0;
-  ss << std::fixed << std::setprecision(2) << size_d << SIZES[div];
+  double size_d = (double)size + (double)rem / carry;
+  ss << std::fixed << std::setprecision(2) << size_d << names[div];
   return ss.str();
 }
 

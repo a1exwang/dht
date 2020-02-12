@@ -38,7 +38,7 @@ std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
 }
 
 void BT::reset_gc_timer() {
-  gc_timer_.expires_at(gc_timer_.expiry() + boost::asio::chrono::seconds(10));
+  gc_timer_.expires_at(boost::asio::chrono::high_resolution_clock::now() + boost::asio::chrono::seconds(2));
   gc_timer_.async_wait(boost::bind(&BT::handle_gc_timer, this, boost::asio::placeholders::error()));
 }
 
@@ -59,6 +59,8 @@ void BT::handle_gc_timer(const boost::system::error_code &error) {
   for (auto &id : to_delete) {
     resolvers_.erase(id);
     LOG(info) << "BT::gc Deleted timeout resolution: " << id.to_string();
+    // delete 1 at a time
+    break;
   }
   failed_count_ += to_delete.size();
 
@@ -69,6 +71,13 @@ size_t BT::connected_peers() const {
   size_t n = 0;
   for (auto &item : resolvers_) {
     n += item.second->connected_peers();
+  }
+  return n;
+}
+size_t BT::peer_count() const {
+  size_t n = 0;
+  for (auto &item : resolvers_) {
+    n += item.second->peer_count();
   }
   return n;
 }

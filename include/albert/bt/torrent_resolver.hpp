@@ -56,6 +56,11 @@ class TorrentResolver {
   }
 
   [[nodiscard]]
+  size_t peer_count() const {
+    return peer_connections_.size();
+  }
+
+  [[nodiscard]]
   bool timeout() const {
     return std::chrono::high_resolution_clock::now() > expiration_at_;
   }

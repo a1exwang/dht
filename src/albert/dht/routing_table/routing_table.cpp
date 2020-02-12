@@ -449,11 +449,19 @@ void Bucket::remove(uint32_t ip, uint16_t port) {
 
 std::list<std::tuple<Entry, u160::U160>> RoutingTable::select_expand_route_targets() {
   std::list<std::tuple<Entry, u160::U160>> entries;
-  root_.bfs([&entries](const Bucket &bucket) {
-    if (bucket.is_leaf()) {
-      entries.splice(entries.end(), bucket.find_some_node_for_filling_bucket(1));
+  if (fat_mode_) {
+    // for fat routing tables, we make it shallow and fat
+    root_.bfs([&entries](const Bucket &bucket) {
+      if (bucket.is_leaf()) {
+        entries.splice(entries.end(), bucket.find_some_node_for_filling_bucket(1));
+      }
+    });
+  } else {
+    // for non fat routing tables, we make it deep
+    for (auto &entry : root_.k_nearest_good_nodes(self(), max_bucket_size())) {
+      entries.emplace_back(entry, self());
     }
-  });
+  }
   return entries;
 }
 void RoutingTable::encode(std::ostream &os) {
@@ -566,7 +574,7 @@ void RoutingTable::gc() {
     reverse_map_.erase({node.ip(), node.port()});
   }
   auto t1 = std::chrono::high_resolution_clock::now();
-  LOG(info) << "RoutingTable::gc() good/bad/questionable = " << good << "/" << bad << "/" << quest << " in "
+  LOG(debug) << "RoutingTable::gc() good/bad/questionable = " << good << "/" << bad << "/" << quest << " in "
             << std::fixed << std::setprecision(2) << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms";
 }
 size_t RoutingTable::max_prefix_length() const {
@@ -708,3 +716,4 @@ void Entry::make_bad() {
   bad_ = true;
 }
 }
+

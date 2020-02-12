@@ -27,6 +27,7 @@ class BT {
   size_t success_count() const { return success_count_; }
   size_t failure_count() const { return failed_count_; }
   size_t connected_peers() const;
+  size_t peer_count() const;
 
  private:
   void handle_gc_timer(const boost::system::error_code &error);

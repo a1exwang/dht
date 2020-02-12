@@ -21,5 +21,5 @@ uint32_t host_to_network<uint32_t>(uint32_t input);
 template <>
 uint16_t host_to_network<uint16_t>(uint16_t input);
 
-std::string pretty_size(size_t);
+std::string pretty_size(size_t, bool bytes = true);
 }
