@@ -58,6 +58,7 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
       }
     }
   }
+  LOG(info) << "DHT RPSThrottler: " << throttler_.stat();
 }
 void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
   for (auto &rt : dht_->routing_tables_) {
@@ -68,16 +69,11 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
         auto &node = std::get<0>(item);
         auto &target_id = std::get<1>(item);
 
-        auto find_node_query = std::make_shared<krpc::FindNodeQuery>(self(), target_id);
         udp::endpoint ep{boost::asio::ip::make_address_v4(node.ip()), node.port()};
-        socket.async_send_to(
-            boost::asio::buffer(dht_->create_query(find_node_query, rt.get())),
-            ep,
-            default_handle_send("expand route find_node " + target_id.to_string()));
-        find_self(*rt, udp::endpoint{boost::asio::ip::address_v4(node.ip()), node.port()});
+        find_node(*rt, ep, target_id);
+        find_self(*rt, ep);
       }
     }
-
   }
 }
 
@@ -96,6 +92,10 @@ void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
         }
       }
     });
+  }
+
+  if (dht_->main_routing_table_->known_node_count() == 0) {
+    bootstrap_routing_table(*dht_->main_routing_table_);
   }
 
   dht_->transaction_manager.gc();

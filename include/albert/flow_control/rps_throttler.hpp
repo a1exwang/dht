@@ -18,29 +18,38 @@ namespace albert::flow_control {
 
 class RPSThrottler {
  public:
-  RPSThrottler(boost::asio::io_service &io, double max_rps);
+  RPSThrottler(boost::asio::io_service &io, bool enable, double max_rps,
+      size_t max_queue_size = 100,
+      size_t max_latency_ns = 100ul * 1000ul* 1000ul,
+      size_t timer_interval_ns = 1000*1000,
+      size_t wait_requests_at_a_time = 10,
+      size_t max_complete_times = 1000);
 
   void throttle(std::function<void()> action);
-  void done(size_t n = 1);
-
+  bool full() const { return request_queue_.size() >= max_queue_size_; }
   double current_rps() const;
+  bool enabled() const { return enabled_; }
 
-  void timer_handler(const boost::system::error_code &e);
-
+  std::string stat();
+ private:
   void deq();
-
-  void stat();
+  void timer_handler(const boost::system::error_code &e);
 
  private:
   boost::asio::io_service &io_;
   boost::asio::high_resolution_timer timer_;
-  boost::asio::chrono::nanoseconds timer_interval_ = boost::asio::chrono::nanoseconds(1000 * 1000);
-  boost::asio::chrono::nanoseconds max_latency_ = boost::asio::chrono::milliseconds(200);
+  boost::asio::chrono::nanoseconds timer_interval_;
+  boost::asio::chrono::nanoseconds max_latency_;
+  bool enabled_;
   double max_rps_;
-  size_t max_complete_times_ = 100;
-  size_t max_queue_size_ = 100;
-  size_t wait_requests_at_a_time = 10;
-  std::list<std::chrono::high_resolution_clock::time_point> complete_times_;
+  size_t max_complete_times_;
+  size_t max_queue_size_;
+  size_t wait_requests_at_a_time;
+  size_t dropped_ = 0;
+  size_t last_dropped_ = 0;
+  std::chrono::high_resolution_clock::time_point last_stat_time_;
+
+  std::list<std::tuple<std::chrono::high_resolution_clock::time_point, size_t>> fire_times_;
   std::list<std::tuple<std::function<void()>, std::chrono::high_resolution_clock::time_point>> request_queue_;
   std::list<std::chrono::nanoseconds> last_latencies;
 };

@@ -45,6 +45,10 @@ void Config::serialize(std::ostream &os) const {
   os << "refresh_nodes_check_interval_seconds = " << refresh_nodes_check_interval_seconds << std::endl;
   os << "get_peers_refresh_interval_seconds = " << get_peers_refresh_interval_seconds << std::endl;
   os << "get_peers_request_expiration_seconds = " << get_peers_request_expiration_seconds << std::endl;
+  os << "throttler_enabled " << throttler_enabled << std::endl;
+  os << "throttler_max_rps " << throttler_max_rps << std::endl;
+  os << "throttler_max_queue_size " << throttler_max_queue_size << std::endl;
+  os << "throttler_max_latency_ns " << throttler_max_latency_ns << std::endl;
   os << "debug = " << debug << std::endl;
   os << "resolve_torrent_info_hash = " << resolve_torrent_info_hash << std::endl;
   os << "max_routing_table_bucket_size = " << max_routing_table_bucket_size << std::endl;
@@ -80,6 +84,10 @@ Config::Config() {
       ("refresh-nodes-check-interval", po::value(&refresh_nodes_check_interval_seconds), "")
       ("get-peers-refresh-interval", po::value(&get_peers_refresh_interval_seconds), "")
       ("get-peers-request-expiration", po::value(&get_peers_request_expiration_seconds), "")
+      ("throttler-enabled", po::value(&throttler_enabled))
+      ("throttler-max-rps", po::value(&throttler_max_rps))
+      ("throttler-max-queue-size", po::value(&throttler_max_queue_size))
+      ("throttler-max-latency-ns", po::value(&throttler_max_latency_ns))
       ("resolve-torrent-info-hash", po::value(&resolve_torrent_info_hash), "")
       ("max-routing-table-bucket-size", po::value(&max_routing_table_bucket_size), "")
       ("max-routing-table-known-nodes", po::value(&max_routing_table_known_nodes), "")

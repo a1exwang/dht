@@ -36,7 +36,7 @@ SampleInfohashesManager::SampleInfohashesManager(
   dht_.add_routing_table(std::move(rt));
   impl_.bootstrap_routing_table(*routing_table_);
 
-  action_timer_.async_wait(boost::bind(&SampleInfohashesManager::handle_timer, this, _1));
+  action_timer_.async_wait(std::bind(&SampleInfohashesManager::handle_timer, this, std::placeholders::_1));
 }
 
 void SampleInfohashesManager::handle_timer(const boost::system::error_code &error) {
@@ -50,7 +50,7 @@ void SampleInfohashesManager::handle_timer(const boost::system::error_code &erro
   });
 
   action_timer_.expires_at(boost::asio::chrono::steady_clock::now() + boost::asio::chrono::seconds(5));
-  action_timer_.async_wait(boost::bind(&SampleInfohashesManager::handle_timer, this, _1));
+  action_timer_.async_wait(std::bind(&SampleInfohashesManager::handle_timer, this, std::placeholders::_1));
 }
 
 

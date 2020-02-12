@@ -167,7 +167,7 @@ struct Peer {
 class Task {
  public:
   Task(boost::asio::io_service &io, u160::U160 self, std::string torrent_file, bool use_utp)
-      :io(io), self(self), use_utp(use_utp), throttler_(io, 100) {
+      :io(io), self(self), use_utp(use_utp), throttler_(io, true, 100) {
     torrent.parse_file(torrent_file);
     LOG(info) << "Downloading '" << torrent.name << "', piece length " << torrent.piece_length;
     block_size = std::min(torrent.piece_length, 16 * 1024ul);
@@ -255,8 +255,6 @@ class Task {
   };
 
   void block_handler(std::shared_ptr<bt::peer::PeerConnection> pc, size_t piece, size_t offset, gsl::span<uint8_t> data) {
-    throttler_.done();
-
     connections_[{pc->peer().ip(), pc->peer().port()}].status = "DataReceived";
     total_got += data.size();
     total_blocks_got++;

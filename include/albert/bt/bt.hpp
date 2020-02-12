@@ -39,7 +39,7 @@ class BT {
   std::map<albert::u160::U160, std::shared_ptr<TorrentResolver>> resolvers_;
 
   boost::asio::steady_timer gc_timer_;
-  std::chrono::seconds expiration_time_ = std::chrono::seconds(30);
+  std::chrono::seconds expiration_time_;
 
   size_t success_count_ = 0;
   size_t failed_count_ = 0;

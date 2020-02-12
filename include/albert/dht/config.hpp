@@ -39,6 +39,11 @@ struct Config :public albert::config::Config {
   int get_peers_request_expiration_seconds = 30;
   int transaction_expiration_seconds = 60;
 
+  bool throttler_enabled = false;
+  int throttler_max_rps = 1000;
+  int throttler_max_queue_size = 1000;
+  size_t throttler_max_latency_ns = 1000ul*1000ul*1000ul;
+
   size_t max_routing_table_bucket_size = 8;
   size_t max_routing_table_known_nodes = 16384;
   bool delete_good_nodes = true;

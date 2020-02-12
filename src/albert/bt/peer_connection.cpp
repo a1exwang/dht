@@ -125,7 +125,7 @@ void PeerConnection::connect(
   connect_handler_ = std::move(connect_handler);
   extended_handshake_handler_ = std::move(extended_handshake_handler);
 
-  LOG(info) << "PeerConnection::connect, connecting to " << peer_->to_string();
+  LOG(debug) << "PeerConnection::connect, connecting to " << peer_->to_string();
   // Why using shared_from_this(). https://stackoverflow.com/a/35469759
   socket_->async_connect(
       boost::asio::ip::address_v4(peer_->ip()),

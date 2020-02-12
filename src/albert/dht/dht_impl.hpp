@@ -8,11 +8,12 @@
 #include <vector>
 #include <utility>
 
-#include <boost/asio/io_service.hpp>
-#include <boost/asio.hpp>
-#include <boost/bind.hpp>
+#include <boost/asio/ip/udp.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/signal_set.hpp>
 
 #include <albert/dht/dht.hpp>
+#include <albert/flow_control/rps_throttler.hpp>
 #include <albert/log/log.hpp>
 #include <albert/public_ip/public_ip.hpp>
 
@@ -121,6 +122,7 @@ class DHTImpl {
   default_handle_send(const std::string &description);
 
   void find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep);
+  void find_node(routing_table::RoutingTable &rt, const udp::endpoint &ep, u160::U160 target);
   void ping(const krpc::NodeInfo &target);
 
   [[nodiscard]]
@@ -171,6 +173,6 @@ class DHTImpl {
   std::vector<Timer> timers_;
 
   std::function<void (const u160::U160 &info_hash)> announce_peer_handler_;
-
+  flow_control::RPSThrottler throttler_;
 };
 }

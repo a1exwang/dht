@@ -7,36 +7,44 @@
 #include <boost/asio/io_service.hpp>
 
 #include <albert/log/log.hpp>
+#include <albert/utils/utils.hpp>
 
 namespace albert::flow_control {
 
-RPSThrottler::RPSThrottler(boost::asio::io_service &io, double max_rps) :io_(io), timer_(io), max_rps_(max_rps) {
-  timer_.expires_at(boost::asio::chrono::high_resolution_clock::now() + timer_interval_);
-  timer_.async_wait(std::bind(&RPSThrottler::timer_handler, this, std::placeholders::_1));
-}
+RPSThrottler::RPSThrottler(boost::asio::io_service &io,
+                           bool enabled,
+                           double max_rps,
+                           size_t max_queue_size,
+                           size_t max_latency_ns,
+                           size_t timer_interval_ns,
+                           size_t wait_requests_at_a_time,
+                           size_t max_complete_times
+) :io_(io), timer_(io), enabled_(enabled), max_rps_(max_rps),
+   max_queue_size_(max_queue_size), max_latency_(max_latency_ns), timer_interval_(timer_interval_ns),
+   wait_requests_at_a_time(wait_requests_at_a_time), max_complete_times_(max_complete_times) {
 
-void RPSThrottler::done(size_t n) {
-  auto now = std::chrono::high_resolution_clock::now();
-  for (size_t i = 0; i < n; i++) {
-    complete_times_.push_back(now);
-    if (complete_times_.size() > max_complete_times_) {
-      complete_times_.pop_front();
-    }
+  if (enabled) {
+    timer_.expires_at(boost::asio::chrono::high_resolution_clock::now() + timer_interval_);
+    timer_.async_wait(std::bind(&RPSThrottler::timer_handler, this, std::placeholders::_1));
   }
 }
 
 double RPSThrottler::current_rps() const {
-  if (complete_times_.size() > 2) {
-    return complete_times_.size() /
-        std::chrono::duration<double>(complete_times_.back() - complete_times_.front()).count();
+  if (fire_times_.size() > 2) {
+    return fire_times_.size() /
+        std::chrono::duration<double>(std::get<0>(fire_times_.back()) - std::get<0>(fire_times_.front())).count();
   } else {
     return 0;
   }
 }
 void RPSThrottler::throttle(std::function<void()> action) {
-  request_queue_.emplace_back(std::move(action), std::chrono::high_resolution_clock::now());
-  if (request_queue_.size() > max_queue_size_) {
-    throw std::overflow_error("RPSThrottler, Max queue size reached");
+  if (!enabled_) {
+    io_.post(std::move(action));
+  } else if (full()) {
+    dropped_++;
+  } else {
+    auto now = std::chrono::high_resolution_clock::now();
+    request_queue_.emplace_back(std::move(action), now);
   }
 }
 
@@ -47,40 +55,63 @@ void RPSThrottler::timer_handler(const boost::system::error_code &e) {
   }
 
   auto now = boost::asio::chrono::high_resolution_clock::now();
+//  if (max_latency_.count() != 0) {
+//    while (!request_queue_.empty()) {
+//      if (now - std::get<1>(request_queue_.front()) > max_latency_) {
+//        deq();
+//      } else {
+//        break;
+//      }
+//    }
+//  }
 
-
-  if (max_latency_.count() != 0) {
-    while (true) {
-      if (now - std::get<1>(request_queue_.front()) > max_latency_) {
-        deq();
-      } else {
-        break;
-      }
-    }
-  }
-
-  if (complete_times_.size() >= 2) {
-    auto delta_t = std::chrono::duration<double>(now - complete_times_.front()).count();
-    double max_requests = max_rps_ * delta_t;
-    if (complete_times_.size() < max_requests) {
-      // max requests rate not reached
-      size_t remaining = max_requests - complete_times_.size();
-      for (size_t i = 0; i < remaining && !request_queue_.empty(); i++) {
-        deq();
-      }
+  if (!request_queue_.empty()) {
+    if (fire_times_.size() <= 2) {
+      deq();
+      fire_times_.emplace_back(std::chrono::high_resolution_clock::now(), 1);
       timer_.expires_at(now + timer_interval_);
     } else {
+      auto t0 = std::get<0>(fire_times_.front());
+      auto delta_t = std::chrono::duration<double>(now - t0).count();
+      double max_requests = max_rps_ * delta_t;
+      size_t n = 0;
+      size_t total_times = 0;
+      for (auto [_, times] : fire_times_) {
+        total_times += times;
+      }
+      while (total_times + n + 1 < max_requests && !request_queue_.empty()) {
+        deq();
+        n++;
+      }
+
+      LOG(debug) << "target rps not reached executing request "
+                 << "size " << request_queue_.size() << " "
+                 << "deltat " << delta_t << " "
+                 << "tsize " << fire_times_.size() << " "
+                 << "n " << n;
+
+      if (n > 0) {
+        fire_times_.emplace_back(std::chrono::high_resolution_clock::now(), n);
+        while (fire_times_.size() > max_complete_times_) {
+          fire_times_.pop_front();
+        }
+      }
+
       // max request rate reach, calculate next request time to match max_rps
       // assume next action finishes immediately after firing
-      size_t us = (complete_times_.size() + wait_requests_at_a_time) / max_rps_ * 1e6;
-      auto next_tp = complete_times_.front() + boost::asio::chrono::microseconds(us);
+      size_t us = (fire_times_.size() + wait_requests_at_a_time) / max_rps_ * 1e6;
+      auto next_tp = std::get<0>(fire_times_.front()) + boost::asio::chrono::microseconds(us);
       timer_.expires_at(next_tp);
       LOG(debug) << "target rps reached next expiration: "
                  << boost::asio::chrono::duration<double>(next_tp-now).count()*1000 << "ms "
-                 << "last t " << delta_t << " "
+                 << "deltat " << delta_t << " "
                  << "size " << request_queue_.size() << " "
+                 << "tsize " << fire_times_.size()
             ;
     }
+  } else {
+    LOG(debug) << "RPSThrottler: queue empty";
+    timer_.expires_at(now + timer_interval_);
   }
 
   timer_.async_wait(std::bind(&RPSThrottler::timer_handler, this, std::placeholders::_1));
@@ -97,16 +128,28 @@ void RPSThrottler::deq() {
   request_queue_.pop_front();
 }
 
-void RPSThrottler::stat() {
+std::string RPSThrottler::stat() {
+  std::stringstream ss;
   auto [min, max] = std::minmax_element(last_latencies.begin(), last_latencies.end());
   auto sum = std::reduce(last_latencies.begin(), last_latencies.end());
+  auto now = std::chrono::high_resolution_clock::now();
   size_t n = last_latencies.size();
-  LOG(info) << "RPSThrottler: min/max/avg/qsize "
-            << std::fixed << std::setprecision(2)
-            << min->count()/1e6 << "ms/"
-            << max->count()/1e6 << "ms/"
-            << (n > 0 ? sum.count()/n : 0)/1e6 << "ms/"
-            << request_queue_.size();
+  if (enabled_) {
+    auto delta_t = std::chrono::duration<double>(now - last_stat_time_).count();
+    ss << "RPSThrottler: min/max/avg/qsize/rps/droprate "
+       << std::fixed << std::setprecision(2)
+       << min->count()/1e6 << "ms/"
+       << max->count()/1e6 << "ms/"
+       << (n > 0 ? sum.count()/n : 0)/1e6 << "ms/"
+       << request_queue_.size() << "/"
+       << utils::pretty_size(current_rps(), false)  << "/"
+       << utils::pretty_size(delta_t > 0 ? (dropped_ - last_dropped_) / delta_t : 0, false);
+    last_stat_time_ = now;
+    last_dropped_ = dropped_;
+    return ss.str();
+  } else {
+    return "RPSThrottler: disabled";
+  }
 }
 
 }

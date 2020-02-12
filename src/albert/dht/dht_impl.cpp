@@ -32,7 +32,8 @@ DHTImpl::DHTImpl(DHT *dht, boost::asio::io_service &io)
              udp::endpoint(
                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
                  dht->config_.bind_port)),
-      signals_(io, SIGINT)
+      signals_(io, SIGINT),
+      throttler_(io, dht->config_.throttler_enabled, dht->config_.throttler_max_rps, dht->config_.throttler_max_queue_size, dht->config_.throttler_max_latency_ns)
        {
 
   timers_.emplace_back(*this, "expand-route", &DHTImpl::handle_expand_route_timer,

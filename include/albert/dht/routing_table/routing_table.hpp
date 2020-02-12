@@ -221,6 +221,9 @@ class RoutingTable {
   size_t known_node_count() const;
 
   [[nodiscard]]
+  bool empty() const { return known_node_count() == 0; }
+
+  [[nodiscard]]
   size_t bucket_count() const;
 
   void stat() const;

@@ -27,7 +27,9 @@ void DHTImpl::handle_get_peers_response(
         uint16_t port;
         for (auto item : response.peers()) {
           std::tie(ip, port) = item;
-          dht_->get_peers_manager_->add_peer(info_hash, ip, port);
+          throttler_.throttle([this, info_hash, ip, port]() {
+            dht_->get_peers_manager_->add_peer(info_hash, ip, port);
+          });
         }
       } else {
         auto old_prefix = u160::U160::common_prefix_length(info_hash, sender_id);
@@ -39,7 +41,9 @@ void DHTImpl::handle_get_peers_response(
             auto new_prefix = u160::U160::common_prefix_length(info_hash, node.id());
             if (new_prefix >= old_prefix) {
               LOG(debug) << "Node to traverse prefix " << new_prefix << " " << node.id().to_string();
-              send_get_peers_query(info_hash, node);
+              throttler_.throttle([=]() {
+                send_get_peers_query(info_hash, node);
+              });
             } else {
               LOG(debug) << "Node ignored new prefix length(" << new_prefix << ") shorter than old(" << old_prefix << ")";
             }

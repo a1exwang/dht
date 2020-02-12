@@ -2,6 +2,7 @@
 
 #include <boost/bind.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/asio/placeholders.hpp>
 
 #include <albert/dht/dht.hpp>
 #include <albert/dht/routing_table/routing_table.hpp>
@@ -76,8 +77,19 @@ void DHTImpl::find_self(routing_table::RoutingTable &rt, const udp::endpoint &ep
           dht_->create_query(find_node_query, &rt)
       ),
       ep,
-      default_handle_send(
-          std::string("find_self to " + ep.address().to_string() + ":" + std::to_string(ep.port())))
+      default_handle_send(std::string("find_self to " + ep.address().to_string() + ":" + std::to_string(ep.port())))
+  );
+}
+void DHTImpl::find_node(routing_table::RoutingTable &rt, const udp::endpoint &ep, u160::U160 target) {
+  // bootstrap by finding self
+  auto id = rt.self();
+  auto find_node_query = std::make_shared<krpc::FindNodeQuery>(id, target);
+  socket.async_send_to(
+      boost::asio::buffer(
+          dht_->create_query(find_node_query, &rt)
+      ),
+      ep,
+      default_handle_send(std::string("find_node to " + ep.address().to_string() + ":" + std::to_string(ep.port())))
   );
 }
 
@@ -86,6 +98,7 @@ void DHTImpl::handle_send(const std::string &description, const boost::system::e
     LOG(error) << "DHTImpl: async_send_to '" << description << "' failed: " << error.message();
   }
 }
+
 void DHTImpl::good_sender(const u160::U160 &sender_id, const std::string &version) {
   for (auto &rt : dht_->routing_tables_) {
     bool added = rt->add_node(
