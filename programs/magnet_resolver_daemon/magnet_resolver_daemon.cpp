@@ -28,11 +28,11 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           albert::dht::DHTInterface &dht,
           std::unique_ptr<albert::store::Store> store,
           size_t db_scan_interval_seconds)
-      :db_scan_timer(io, boost::asio::chrono::seconds(db_scan_interval_seconds)),
+      :store_(std::move(store)),
+       db_scan_timer(io, boost::asio::chrono::seconds(db_scan_interval_seconds)),
        db_scan_interval(db_scan_interval_seconds),
        bt(bt),
        dht(dht),
-       store_(std::move(store)),
        rng_(std::random_device()()){
   }
 
@@ -99,7 +99,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
   albert::dht::DHTInterface &dht;
   std::mt19937_64 rng_;
 
-  size_t max_concurrent_resolutions_ = 5;
+  size_t max_concurrent_resolutions_ = 30;
   size_t max_concurrent_peers = 50;
 };
 

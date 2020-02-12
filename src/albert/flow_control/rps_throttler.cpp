@@ -131,7 +131,10 @@ void RPSThrottler::deq() {
 std::string RPSThrottler::stat() {
   std::stringstream ss;
   auto [min, max] = std::minmax_element(last_latencies.begin(), last_latencies.end());
-  auto sum = std::reduce(last_latencies.begin(), last_latencies.end());
+  auto sum = std::accumulate(
+      last_latencies.begin(), last_latencies.end(),
+      std::chrono::nanoseconds(0),
+      [](const std::chrono::nanoseconds &lhs, const std::chrono::nanoseconds &rhs) { return lhs + rhs; });
   auto now = std::chrono::high_resolution_clock::now();
   size_t n = last_latencies.size();
   if (enabled_) {

@@ -5,6 +5,7 @@
 #include <boost/bind/bind.hpp>
 #include <boost/asio/placeholders.hpp>
 #include <boost/asio/ip/address_v4.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #include <albert/bt/torrent_resolver.hpp>
 #include <albert/krpc/krpc.hpp>
@@ -14,7 +15,7 @@
 namespace albert::bt {
 
 BT::BT(boost::asio::io_service &io, Config config)
-    : io_(io), config_(std::move(config)), self_(u160::U160::from_hex(config_.id)), gc_timer_(io),
+    : config_(std::move(config)), io_(io), self_(u160::U160::from_hex(config_.id)), gc_timer_(io),
       expiration_time_(config_.resolve_torrent_expiration_seconds) { }
 
 std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
@@ -38,7 +39,7 @@ std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
 }
 
 void BT::reset_gc_timer() {
-  gc_timer_.expires_at(boost::asio::chrono::high_resolution_clock::now() + boost::asio::chrono::seconds(2));
+  gc_timer_.expires_at(boost::asio::chrono::steady_clock::now() + boost::asio::chrono::seconds(2));
   gc_timer_.async_wait(boost::bind(&BT::handle_gc_timer, this, boost::asio::placeholders::error()));
 }
 

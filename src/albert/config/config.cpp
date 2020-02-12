@@ -114,7 +114,7 @@ Config::Config(Config &&rhs) noexcept :all_options_(std::move(rhs.all_options_))
 
 void throw_on_remaining_args(const std::vector<std::string> &rhs) {
   std::vector<std::string> args;
-  for (int i = 1; i < rhs.size(); i++) {
+  for (size_t i = 1; i < rhs.size(); i++) {
     if (rhs[i] == "-h" || rhs[i] == "--help") {
       exit(0);
     } else if (rhs[i].starts_with("--config=") || rhs[i] == "--config") {
@@ -128,7 +128,7 @@ void throw_on_remaining_args(const std::vector<std::string> &rhs) {
   if (args.size() > 0) {
     LOG(error) << "Unrecognized options: ";
     std::stringstream ss;
-    for (int i = 1; i < rhs.size(); i++) {
+    for (size_t i = 1; i < rhs.size(); i++) {
       ss << rhs[i] << " ";
     }
     LOG(error) << ss.str();
@@ -140,7 +140,7 @@ std::vector<std::string> argv2args(int argc, const char *const *argv) {
   for (int i = 0; i < argc; i++) {
     args.emplace_back(argv[i]);
   }
-  return std::move(args);
+  return args;
 }
 }
 

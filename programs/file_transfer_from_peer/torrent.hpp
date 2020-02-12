@@ -267,7 +267,7 @@ class Task {
       } else {
         auto [new_piece, new_offset] = block_manager_->get_block(pc->peer_id());
         LOG(debug) << "start to requesting " << new_piece << " " << new_offset;
-        throttler_.throttle([=, new_piece = new_piece, new_offset = new_offset]() {
+        throttler_.throttle([=, this, new_piece = new_piece, new_offset = new_offset]() {
           pc->request(new_piece, new_offset, block_size);
         });
       }

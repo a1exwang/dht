@@ -118,7 +118,7 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const u160::U160 &id, size_t k) co
         break;
       }
     }
-    return std::move(results);
+    return results;
   } else {
     Bucket *primary_node{}, *secondary_node{};
     if (!id.bit(u160::U160Bits - prefix_length_ - 1)) {
@@ -132,7 +132,7 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const u160::U160 &id, size_t k) co
     if (result.size() < k) {
       result.merge(secondary_node->k_nearest_good_nodes(id, k));
     }
-    return std::move(result);
+    return result;
   }
 }
 bool Bucket::is_full() const {
@@ -321,7 +321,7 @@ std::optional<Entry> Bucket::remove(const u160::U160 &id) {
     }
     return true;
   });
-  return std::move(ret);
+  return ret;
 }
 bool Bucket::require_response_now(const u160::U160 &target) {
   auto entry = search(target);
@@ -608,7 +608,7 @@ std::list<Entry> RoutingTable::k_nearest_good_nodes(const u160::U160 &id, size_t
 void RoutingTable::serialize(std::ostream &os) const {
   std::vector<std::shared_ptr<bencoding::Node>> nodes;
   auto list_node = std::make_shared<bencoding::ListNode>();
-  iterate_nodes([&os, &list_node](const Entry &entry) {
+  iterate_nodes([&list_node](const Entry &entry) {
     if (entry.is_good()) {
       auto item = bencoding::make_list(
           entry.id().to_string(),
@@ -627,10 +627,6 @@ std::unique_ptr<RoutingTable> RoutingTable::deserialize(
     std::istream &is, std::string name, std::string save_path, size_t max_bucket_size, size_t max_known_nodes,
     bool delete_good_nodes, bool fat_mode,
     std::function<void(uint32_t, uint16_t)> black_list_node) {
-  std::string node_id;
-  std::string ip;
-  std::string version_hex;
-  uint16_t port = 0;
   auto ret = std::make_unique<RoutingTable>(u160::U160(), std::move(name), std::move(save_path), max_bucket_size, max_known_nodes,
                                             delete_good_nodes, fat_mode, std::move(black_list_node));
   auto root_dict = std::dynamic_pointer_cast<bencoding::DictNode>(bencoding::Node::decode(is));
@@ -644,7 +640,7 @@ std::unique_ptr<RoutingTable> RoutingTable::deserialize(
         bencoding::get<std::string>(node, 3)
     ));
   }
-  return std::move(ret);
+  return ret;
 }
 
 RoutingTable::~RoutingTable() {

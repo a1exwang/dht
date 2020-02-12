@@ -74,6 +74,11 @@ class TorrentResolver {
   std::vector<uint8_t> merged_pieces() const;
 
  private:
+  boost::asio::io_service &io_;
+  u160::U160 info_hash_;
+  u160::U160 self_;
+  std::list<std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
+
   uint32_t bind_ip_;
   uint16_t bind_port_;
   bool use_utp_;
@@ -81,11 +86,6 @@ class TorrentResolver {
   size_t metadata_size_;
 
   std::function<void(const bencoding::DictNode &torrent)> torrent_handler_;
-
-  boost::asio::io_service &io_;
-  u160::U160 info_hash_;
-  u160::U160 self_;
-  std::list<std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
 
   bencoding::DictNode info_;
   bool has_metadata_;

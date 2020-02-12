@@ -37,7 +37,7 @@ class SampleInfohashesManager;
 }
 
 class DHTImpl;
-class Config;
+struct Config;
 
 class DHT {
  public:

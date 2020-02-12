@@ -25,7 +25,8 @@ TorrentResolver::TorrentResolver(
     bool use_utp,
     std::chrono::high_resolution_clock::time_point expiration_at
     )
-    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port), use_utp_(use_utp), expiration_at_(expiration_at), has_metadata_(false) { }
+    :io_(io), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port), use_utp_(use_utp),
+    has_metadata_(false), expiration_at_(expiration_at) { }
 
 TorrentResolver::TorrentResolver(
     boost::asio::io_service &io,

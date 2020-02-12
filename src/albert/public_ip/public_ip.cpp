@@ -14,7 +14,6 @@
 namespace albert::public_ip {
 
 static std::string exec(const char* cmd) {
-  std::array<char, 128> buffer{};
   std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
   if (!pipe) {
     throw std::runtime_error("popen() failed!");
@@ -34,7 +33,7 @@ uint32_t my_v4() {
   std::stringstream ss(stdout);
   uint32_t ip = 0;
 
-  for (int i = 0; i < sizeof(ip); i++) {
+  for (size_t i = 0; i < sizeof(ip); i++) {
     uint32_t tmp = 0;
     std::stringstream ss2;
     if (std::getline(ss, part, '.')) {

@@ -36,6 +36,7 @@ endif()
 add_subdirectory(3rdparty/GSL)
 link_libraries(GSL)
 
+add_compile_options(-Wall)
 add_subdirectory(src/albert)
 
 add_subdirectory(programs)

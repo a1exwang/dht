@@ -216,8 +216,11 @@ class AnnouncePeerQuery :public Query {
       uint16_t port,
       std::string token)
       :Query(std::move(transaction_id), std::move(version), MethodNameAnnouncePeer),
-        sender_id_(sender_id), info_hash_(info_hash), implied_port_(implied_port),
-        port_(port), token_(token) {}
+       sender_id_(sender_id),
+       implied_port_(implied_port),
+       info_hash_(info_hash),
+       port_(port),
+       token_(std::move(token)) {}
 
   const u160::U160 &sender_id() const { return sender_id_; }
   const u160::U160 &info_hash() const { return info_hash_; }
@@ -306,8 +309,9 @@ class GetPeersResponse :public Response {
       : Response(std::move(transaction_id), std::move(client_version)),
         sender_id_(sender_id),
         token_(std::move(token)),
-        peers_(std::move(peers)),
-        nodes_(std::move(nodes)) { }
+        nodes_(std::move(nodes)),
+        peers_(std::move(peers))
+  { }
   const u160::U160 &sender_id() const { return sender_id_; }
   bool has_peers() const { return peers_.size() > 0; }
   std::vector<NodeInfo> nodes() const { return nodes_; };

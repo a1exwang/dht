@@ -38,13 +38,13 @@ class RPSThrottler {
  private:
   boost::asio::io_service &io_;
   boost::asio::high_resolution_timer timer_;
-  boost::asio::chrono::nanoseconds timer_interval_;
-  boost::asio::chrono::nanoseconds max_latency_;
   bool enabled_;
   double max_rps_;
-  size_t max_complete_times_;
   size_t max_queue_size_;
+  boost::asio::chrono::nanoseconds max_latency_;
+  boost::asio::chrono::nanoseconds timer_interval_;
   size_t wait_requests_at_a_time;
+  size_t max_complete_times_;
   size_t dropped_ = 0;
   size_t last_dropped_ = 0;
   std::chrono::high_resolution_clock::time_point last_stat_time_;

@@ -130,7 +130,7 @@ void ListNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
   } else if (mode == EncodeMode::JSON) {
     os << '[';
     os << std::endl;
-    for (int i = 0; i < list_.size(); i++) {
+    for (size_t i = 0; i < list_.size(); i++) {
       make_indent(os, depth+1);
       list_[i]->encode(os, mode, depth+1);
       if (i != list_.size() - 1) {

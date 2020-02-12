@@ -43,7 +43,7 @@ class NodeInfo;
 namespace albert::dht {
 
 class DHT;
-class Transaction;
+struct Transaction;
 class DHTImpl;
 
 namespace get_peers {

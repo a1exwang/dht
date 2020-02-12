@@ -186,9 +186,9 @@ class Bucket {
   int prefix_length_{};
   std::unique_ptr<Bucket> left_{}, right_{};
   Bucket *parent_;
-  bool fat_mode_ = false;
 
   const RoutingTable *owner_;
+  bool fat_mode_ = false;
 };
 
 class RoutingTable {
@@ -203,10 +203,10 @@ class RoutingTable {
        max_bucket_size_(max_bucket_size),
        delete_good_nodes_(delete_good),
        fat_mode_(fat_mode),
-       black_list_node_(std::move(black_list_node)),
-       max_known_nodes_(max_known_nodes) {}
+       max_known_nodes_(max_known_nodes),
+       black_list_node_(std::move(black_list_node)) { }
 
-  ~RoutingTable();
+      ~RoutingTable();
 
   [[nodiscard]]
   bool is_full() const;

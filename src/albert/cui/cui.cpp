@@ -103,7 +103,7 @@ void CommandLineUI::start_search() {
     LOG(info) << "torrent saved as '" << file_name;
   });
 
-  dht_.get_peers(ih, [this, ih, resolver](uint32_t ip, uint16_t port) {
+  dht_.get_peers(ih, [resolver](uint32_t ip, uint16_t port) {
     if (resolver.expired()) {
       LOG(error) << "TorrentResolver gone before a get_peer request received";
     } else {

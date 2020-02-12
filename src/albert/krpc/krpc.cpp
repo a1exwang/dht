@@ -170,7 +170,7 @@ std::shared_ptr<Message> Response::decode(
       if (!values_list) {
         throw InvalidMessage("Invalid GetPeers response, values is not list");
       }
-      for (int i = 0; i < values_list->size(); i++) {
+      for (size_t i = 0; i < values_list->size(); i++) {
         auto peer_info = (*values_list)[i];
         if (auto s = std::dynamic_pointer_cast<bencoding::StringNode>(peer_info); s) {
           std::string peer = *s;
