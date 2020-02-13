@@ -1,5 +1,6 @@
 #pragma once
 #include <list>
+#include <memory>
 
 #include <albert/krpc/krpc.hpp>
 #include <albert/bt/peer_connection.hpp>
@@ -9,9 +10,12 @@ namespace boost::asio {
 class io_context;
 typedef io_context io_service;
 }
+namespace boost::system {
+class error_code;
+}
 
 namespace albert::bt {
-class TorrentResolver {
+class TorrentResolver :public std::enable_shared_from_this<TorrentResolver> {
  public:
   TorrentResolver(
       boost::asio::io_service &io,
@@ -45,15 +49,7 @@ class TorrentResolver {
   u160::U160 self() const;
 
   [[nodiscard]]
-  size_t connected_peers() const {
-    size_t ret = 0;
-    for (auto &item : peer_connections_) {
-      if (item->status() == peer::ConnectionStatus::Connected) {
-        ret++;
-      }
-    }
-    return ret;
-  }
+  size_t connected_peers() const;
 
   [[nodiscard]]
   size_t peer_count() const {
@@ -73,11 +69,15 @@ class TorrentResolver {
   [[nodiscard]]
   std::vector<uint8_t> merged_pieces() const;
 
+  void timer_handler(const boost::system::error_code &e);
+
  private:
   boost::asio::io_service &io_;
+  boost::asio::steady_timer timer_;
+  boost::asio::chrono::milliseconds timer_interval_ = boost::asio::chrono::milliseconds(300);
   u160::U160 info_hash_;
   u160::U160 self_;
-  std::list<std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
+  std::map<std::tuple<uint32_t, uint16_t>, std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
 
   uint32_t bind_ip_;
   uint16_t bind_port_;

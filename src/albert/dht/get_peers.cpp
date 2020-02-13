@@ -27,11 +27,10 @@ void DHTImpl::handle_get_peers_response(
         uint16_t port;
         for (auto item : response.peers()) {
           std::tie(ip, port) = item;
-          throttler_.throttle([this, info_hash, ip, port]() {
-            dht_->get_peers_manager_->add_peer(info_hash, ip, port);
-          });
+          dht_->get_peers_manager_->add_peer(info_hash, ip, port);
         }
-      } else {
+      }
+      if (response.has_nodes()){
         auto old_prefix = u160::U160::common_prefix_length(info_hash, sender_id);
         dht_->get_peers_manager_->set_node_traversed(info_hash, sender_id);
         LOG(debug) << "Node traversed prefix " << old_prefix << " '"

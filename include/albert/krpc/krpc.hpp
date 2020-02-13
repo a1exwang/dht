@@ -314,6 +314,7 @@ class GetPeersResponse :public Response {
   { }
   const u160::U160 &sender_id() const { return sender_id_; }
   bool has_peers() const { return peers_.size() > 0; }
+  bool has_nodes() const { return nodes_.size() > 0; }
   std::vector<NodeInfo> nodes() const { return nodes_; };
   std::vector<std::tuple<uint32_t, uint16_t>> peers() const { return peers_; };
  protected:

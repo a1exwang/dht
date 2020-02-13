@@ -45,16 +45,14 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       throw std::runtime_error("Scanner timer failure " + error.message());
     }
 
-    if (bt.resolver_count() < max_concurrent_resolutions_ && bt.peer_count() < max_concurrent_peers) {
-      auto result = store_->get_empty_keys();
-      auto you_are_the_chosen_one = rng_() % result.size();
-      auto hero = result[you_are_the_chosen_one];
-      auto super_hero = albert::u160::U160::from_hex(hero);
-      try {
-        resolve(super_hero);
-      } catch (const std::runtime_error &e) {
-        LOG(error) << "Failed to resolve info hash: " << e.what();
-      }
+    auto result = store_->get_empty_keys();
+    auto you_are_the_chosen_one = rng_() % result.size();
+    auto hero = result[you_are_the_chosen_one];
+    auto super_hero = albert::u160::U160::from_hex(hero);
+    try {
+      resolve(super_hero);
+    } catch (const std::runtime_error &e) {
+      LOG(error) << "Failed to resolve info hash: " << e.what();
     }
     LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count()
               << " success " << bt.success_count()
@@ -74,13 +72,11 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       LOG(info) << "torrent saved as '" << file_name << ", db updated";
     });
 
-    dht.get_peers(ih, [ih, resolver, this](uint32_t ip, uint16_t port) {
+    dht.get_peers(ih, [resolver](uint32_t ip, uint16_t port) {
       if (resolver.expired()) {
         LOG(debug) << "TorrentResolver gone before a get_peer request received";
       } else {
-        if (bt.peer_count() < max_concurrent_peers) {
-          resolver.lock()->add_peer(ip, port);
-        }
+        resolver.lock()->add_peer(ip, port);
       }
     });
   };
@@ -100,7 +96,6 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
   std::mt19937_64 rng_;
 
   size_t max_concurrent_resolutions_ = 30;
-  size_t max_concurrent_peers = 50;
 };
 
 

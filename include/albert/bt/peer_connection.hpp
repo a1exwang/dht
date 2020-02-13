@@ -77,6 +77,8 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       uint16_t port,
       bool use_utp);
   ~PeerConnection();
+  PeerConnection(const PeerConnection &) = delete;
+  PeerConnection &operator=(const PeerConnection &) = delete;
   void connect(
       std::function<void(const boost::system::error_code &)> connect_handler = [](const boost::system::error_code&) { },
       std::function<void(int, size_t)> extended_handshake_handler = [](int, size_t) { }
