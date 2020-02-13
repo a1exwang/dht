@@ -53,20 +53,15 @@ void BT::handle_gc_timer(const boost::system::error_code &error) {
     throw std::runtime_error("BT gc timer failed " + error.message());
   }
 
-  std::list<u160::U160> timeouts, finished;
+  std::list<u160::U160> timeouts;
   for (auto &resolver : resolvers_) {
-    if (resolver.second->finished()) {
-      finished.push_back(resolver.first);
-    } else if (resolver.second->timeout()) {
+    if (resolver.second->timeout()) {
       timeouts.push_back(resolver.first);
     }
   }
   for (auto &id : timeouts) {
     resolvers_.erase(id);
     LOG(info) << "BT::gc Deleted timeout resolution: " << id.to_string();
-  }
-  for (auto &id : finished) {
-    resolvers_.erase(id);
   }
   failed_count_ += timeouts.size();
 

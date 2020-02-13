@@ -54,9 +54,14 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           max_concurrent_resolutions_ - bt.resolver_count(), rng_);
     }
 
+    size_t i = 0;
     for (auto &ih : results) {
       try {
         resolve(albert::u160::U160::from_hex(ih));
+        i++;
+        if (i >= max_add_count_at_a_time) {
+          break;
+        }
       } catch (const std::runtime_error &e) {
         LOG(error) << "Failed to resolve info hash: " << e.what();
       }
@@ -108,8 +113,9 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
   albert::dht::DHTInterface &dht;
   std::mt19937_64 rng_;
 
-  size_t max_concurrent_resolutions_ = 30;
+  size_t max_concurrent_resolutions_ = 15;
   size_t max_concurrent_peers_ = 1000;
+  size_t max_add_count_at_a_time = 3;
 };
 
 
