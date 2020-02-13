@@ -62,6 +62,19 @@ class TorrentResolver :public std::enable_shared_from_this<TorrentResolver> {
   }
 
   void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
+
+  [[nodiscard]]
+  size_t memory_size() const {
+    auto ret = sizeof(*this);
+    for (auto &pc : peer_connections_) {
+      ret += sizeof(pc.first);
+      ret += pc.second->memory_size();
+    }
+    for (auto &piece : pieces_) {
+      ret += piece.size();
+    }
+    return ret;
+  }
  private:
   void piece_handler(std::weak_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data);
   void handshake_handler(std::weak_ptr<peer::PeerConnection> pc, int total_pieces, size_t metdata_size);

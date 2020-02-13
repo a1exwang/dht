@@ -28,7 +28,9 @@ std::weak_ptr<TorrentResolver> albert::bt::BT::resolve_torrent(
     resolver->set_torrent_handler([h{std::move(handler)}, info_hash, this](const bencoding::DictNode &torrent) {
       h(torrent);
       LOG(info) << "Torrent finished, deleting resolver";
-      resolvers_.erase(info_hash);
+      if (resolvers_.find(info_hash) != resolvers_.end()) {
+        resolvers_.erase(info_hash);
+      }
       success_count_++;
     });
     resolvers_.emplace(info_hash, resolver);
@@ -51,19 +53,22 @@ void BT::handle_gc_timer(const boost::system::error_code &error) {
     throw std::runtime_error("BT gc timer failed " + error.message());
   }
 
-  std::list<u160::U160> to_delete;
+  std::list<u160::U160> timeouts, finished;
   for (auto &resolver : resolvers_) {
-    if (resolver.second->timeout()) {
-      to_delete.push_back(resolver.first);
+    if (resolver.second->finished()) {
+      finished.push_back(resolver.first);
+    } else if (resolver.second->timeout()) {
+      timeouts.push_back(resolver.first);
     }
   }
-  for (auto &id : to_delete) {
+  for (auto &id : timeouts) {
     resolvers_.erase(id);
     LOG(info) << "BT::gc Deleted timeout resolution: " << id.to_string();
-    // delete 1 at a time
-    break;
   }
-  failed_count_ += to_delete.size();
+  for (auto &id : finished) {
+    resolvers_.erase(id);
+  }
+  failed_count_ += timeouts.size();
 
   reset_gc_timer();
 }
@@ -81,6 +86,13 @@ size_t BT::peer_count() const {
     n += item.second->peer_count();
   }
   return n;
+}
+size_t BT::memory_size() const {
+  auto ret = sizeof(BT);
+  for (auto &item : resolvers_) {
+    ret += sizeof(item.first) + item.second->memory_size();
+  }
+  return ret;
 }
 
 }

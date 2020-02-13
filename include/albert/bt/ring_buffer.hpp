@@ -28,6 +28,7 @@ class RingBuffer {
 
   void skip_data(size_t size);
 
+  size_t memory_size() const { return sizeof(*this); }
   size_t data_size() const { return data_size_; }
   std::string stat();
 

@@ -113,17 +113,19 @@ void DHTImpl::good_sender(const u160::U160 &sender_id, const std::string &versio
     rt->make_good_now(sender_id);
   }
 }
-void DHTImpl::send_get_peers_query(const u160::U160 &info_hash, const krpc::NodeInfo &receiver) {
-  dht_->get_peers_manager_->add_node(info_hash, receiver.id());
-  auto query = std::make_shared<krpc::GetPeersQuery>(
-      self(),
-      info_hash
-  );
-  udp::endpoint ep{boost::asio::ip::make_address_v4(receiver.ip()), receiver.port()};
-  socket.async_send_to(
-      boost::asio::buffer(dht_->create_query(query, dht_->main_routing_table_)),
-      ep,
-      default_handle_send("get_peers " + info_hash.to_string() + ", to " + receiver.to_string()));
+void DHTImpl::try_to_send_get_peers_query(const u160::U160 &info_hash, const krpc::NodeInfo &receiver) {
+  if (dht_->get_peers_manager_->has_request(info_hash)) {
+    dht_->get_peers_manager_->add_node(info_hash, receiver.id());
+    auto query = std::make_shared<krpc::GetPeersQuery>(
+        self(),
+        info_hash
+    );
+    udp::endpoint ep{boost::asio::ip::make_address_v4(receiver.ip()), receiver.port()};
+    socket.async_send_to(
+        boost::asio::buffer(dht_->create_query(query, dht_->main_routing_table_)),
+        ep,
+        default_handle_send("get_peers " + info_hash.to_string() + ", to " + receiver.to_string()));
+  }
 }
 void DHTImpl::bootstrap_routing_table(routing_table::RoutingTable &routing_table) {
   // send bootstrap message to bootstrap nodes

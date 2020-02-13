@@ -57,16 +57,24 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
       port,
       use_utp_);
   peer_connections_[{ip, port}] = pc;
+
   pc->connect(
-      [that = shared_from_this(), ip, port](const boost::system::error_code &e) {
-        if (e) {
-          if (that->peer_connections_.find({ip, port}) != that->peer_connections_.end()) {
-            that->peer_connections_.erase({ip, port});
+      [that = weak_from_this(), ip, port](const boost::system::error_code &e) {
+        if (!that.expired()) {
+          auto resolver = that.lock();
+          if (e) {
+            if (resolver->peer_connections_.find({ip, port}) != resolver->peer_connections_.end()) {
+
+              resolver->peer_connections_.erase({ip, port});
+            }
           }
         }
       },
-      std::bind(&TorrentResolver::handshake_handler, this, pc, _1, _2)
-      );
+      [resolver_weak = weak_from_this(), pc_weak = std::weak_ptr<peer::PeerConnection>(pc)](int total_pieces, size_t metadata_size) {
+        if (!resolver_weak.expired() && !pc_weak.expired()) {
+          resolver_weak.lock()->handshake_handler(pc_weak, total_pieces, metadata_size);
+        }
+      });
 }
 
 void TorrentResolver::piece_handler(std::weak_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data) {
@@ -132,8 +140,10 @@ void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> pc, 
     LOG(error) << "PeerConnection gone before handshake was handled info_hash: " << this->info_hash_.to_string();
   } else {
     auto locked_pc = pc.lock();
-    locked_pc->interest([locked_pc](){
-      LOG(info) << "TorrentResolver: peer unchoked " << locked_pc->peer().to_string();
+    locked_pc->interest([pc](){
+      if (!pc.expired()) {
+        LOG(info) << "TorrentResolver: peer unchoked " << pc.lock()->peer().to_string();
+      }
     });
     locked_pc->start_metadata_transfer(
         boost::bind(&TorrentResolver::piece_handler, this, pc, _1, _2));

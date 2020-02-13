@@ -102,12 +102,18 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
           const std::vector<uint8_t> &piece_data
       )> piece_data_handler
   );
+
+  size_t memory_size() const {
+    size_t ret = sizeof(*this);
+    ret += read_ring_.memory_size();
+    ret += peer_bitfield_.size() * sizeof(peer_bitfield_[0]);
+    return ret;
+  }
  private:
   /**
    * Handlers
    */
-  void handle_connect(
-      const boost::system::error_code& ec);
+  void handle_connect(const boost::system::error_code& ec);
   void handle_receive(const boost::system::error_code &err, size_t bytes_transferred);
 
   void handle_message(uint8_t type, const gsl::span<uint8_t> data);

@@ -20,6 +20,7 @@
 #include <albert/log/log.hpp>
 #include <albert/store/sqlite3_store.hpp>
 #include <albert/u160/u160.hpp>
+#include <albert/utils/utils.hpp>
 
 class Scanner :public std::enable_shared_from_this<Scanner> {
  public:
@@ -45,26 +46,35 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       throw std::runtime_error("Scanner timer failure " + error.message());
     }
 
-    auto result = store_->get_empty_keys();
-    auto you_are_the_chosen_one = rng_() % result.size();
-    auto hero = result[you_are_the_chosen_one];
-    auto super_hero = albert::u160::U160::from_hex(hero);
-    try {
-      resolve(super_hero);
-    } catch (const std::runtime_error &e) {
-      LOG(error) << "Failed to resolve info hash: " << e.what();
+    auto empty_keys = store_->get_empty_keys();
+    std::list<std::string> results;
+    if (bt.resolver_count() < max_concurrent_resolutions_)  {
+      std::sample(empty_keys.begin(), empty_keys.end(),
+          std::back_inserter<std::list<std::string>>(results),
+          max_concurrent_resolutions_ - bt.resolver_count(), rng_);
     }
+
+    for (auto &ih : results) {
+      try {
+        resolve(albert::u160::U160::from_hex(ih));
+      } catch (const std::runtime_error &e) {
+        LOG(error) << "Failed to resolve info hash: " << e.what();
+      }
+    }
+
     LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count()
               << " success " << bt.success_count()
               << " failure " << bt.failure_count()
-              << " connected peers " << bt.connected_peers() << "/" << bt.peer_count();
+              << " connected peers " << bt.connected_peers() << "/" << bt.peer_count()
+              << " memsize " << albert::utils::pretty_size(bt.memory_size())
+              ;
 
     db_scan_timer.expires_at(db_scan_timer.expiry() + db_scan_interval);
     db_scan_timer.async_wait(boost::bind(&Scanner::handle_timer,shared_from_this(), boost::asio::placeholders::error()));
   }
 
   void resolve(const albert::u160::U160 &ih) {
-    auto resolver = bt.resolve_torrent(ih, [ih, that = shared_from_this()](const albert::bencoding::DictNode &torrent) {
+    auto resolver_weak = bt.resolve_torrent(ih, [ih, that = shared_from_this()](const albert::bencoding::DictNode &torrent) {
       auto file_name = "torrents/" + ih.to_string() + ".torrent";
       std::ofstream f(file_name, std::ios::binary);
       torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
@@ -72,11 +82,14 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       LOG(info) << "torrent saved as '" << file_name << ", db updated";
     });
 
-    dht.get_peers(ih, [resolver](uint32_t ip, uint16_t port) {
-      if (resolver.expired()) {
+    dht.get_peers(ih, [resolver_weak, that = shared_from_this()](uint32_t ip, uint16_t port) {
+      if (resolver_weak.expired()) {
         LOG(debug) << "TorrentResolver gone before a get_peer request received";
       } else {
-        resolver.lock()->add_peer(ip, port);
+        auto resolver = resolver_weak.lock();
+        if (that->bt.peer_count() < that->max_concurrent_peers_) {
+          resolver->add_peer(ip, port);
+        }
       }
     });
   };
@@ -96,6 +109,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
   std::mt19937_64 rng_;
 
   size_t max_concurrent_resolutions_ = 30;
+  size_t max_concurrent_peers_ = 1000;
 };
 
 

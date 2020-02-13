@@ -256,14 +256,17 @@ void Socket::close(boost::asio::ip::udp::endpoint ep) {
     auto c = connections_.at(ep);
     c->status_ = Status::Closed;
 
-    io_.post([socket = shared_from_this(), c]() {
+    io_.post([socket_weak = weak_from_this(), c]() {
       if (c->connect_handler) {
         c->connect_handler(boost::asio::error::eof);
       }
       if (c->receive_handler) {
         c->receive_handler(boost::asio::error::eof, 0);
       }
-      socket->send_fin(*c);
+      if (!socket_weak.expired()) {
+        auto socket = socket_weak.lock();
+        socket->send_fin(*c);
+      }
     });
   }
 }
@@ -548,9 +551,12 @@ void Socket::continue_receive() {
   socket_.async_receive_from(
       boost::asio::buffer(buffer->data(), buffer->size()),
       receive_ep_,
-      boost::bind(&Socket::handle_receive_from, shared_from_this(),
-                  boost::asio::placeholders::error(),
-                  boost::asio::placeholders::bytes_transferred));
+      [socket_weak = weak_from_this()](const boost::system::error_code &e, size_t bytes_transferred) {
+        if (!socket_weak.expired()) {
+          auto socket = socket_weak.lock();
+          socket->handle_receive_from(e, bytes_transferred);
+        }
+      });
 }
 
 void Socket::close() {
@@ -614,13 +620,16 @@ bool Socket::poll_receive(std::shared_ptr<Connection> c) {
       }
     }
     if (c->user_buffer_data_size > 0 || c->user_buffer.size() == 0) {
-      io_.post([c, socket = shared_from_this()]() {
-        if (c->user_buffer_data_size > 0 || c->user_buffer.size() == 0) {
-          c->invoke_handler();
-        }
+      io_.post([c, socket_weak = weak_from_this()]() {
+        if (!socket_weak.expired()) {
+          auto socket = socket_weak.lock();
+          if (c->user_buffer_data_size > 0 || c->user_buffer.size() == 0) {
+            c->invoke_handler();
+          }
 
-        if (c->receive_handler && !c->buffered_received_packets.empty()) {
-          socket->poll_receive(c);
+          if (c->receive_handler && !c->buffered_received_packets.empty()) {
+            socket->poll_receive(c);
+          }
         }
       });
     }

@@ -135,7 +135,7 @@ class DHTImpl {
       const std::string &transaction_id,
       const krpc::NodeInfo &receiver,
       const std::vector<krpc::NodeInfo> &nodes);
-  void send_get_peers_query(
+  void try_to_send_get_peers_query(
       const u160::U160 &info_hash,
       const krpc::NodeInfo &receiver
       );

@@ -110,11 +110,9 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const u160::U160 &id, size_t k) co
   assert(k > 0);
   if (is_leaf()) {
     std::list<Entry> results;
-    size_t i = 0;
     for (auto &item : known_nodes_) {
       results.push_back(item.second);
-      i++;
-      if (i >= k) {
+      if (results.size() >= k) {
         break;
       }
     }
@@ -130,7 +128,7 @@ std::list<Entry> Bucket::k_nearest_good_nodes(const u160::U160 &id, size_t k) co
     }
     auto result = primary_node->k_nearest_good_nodes(id, k);
     if (result.size() < k) {
-      result.merge(secondary_node->k_nearest_good_nodes(id, k));
+      result.merge(secondary_node->k_nearest_good_nodes(id, k - result.size()));
     }
     return result;
   }

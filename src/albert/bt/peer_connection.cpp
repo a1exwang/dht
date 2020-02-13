@@ -118,32 +118,37 @@ PeerConnection::PeerConnection(
   }
 }
 
+PeerConnection::~PeerConnection() {
+}
+
 void PeerConnection::connect(
     std::function<void(const boost::system::error_code &)> connect_handler,
     std::function<void(int, size_t)> extended_handshake_handler) {
+
   // Start the asynchronous connect operation.
   connect_handler_ = std::move(connect_handler);
   extended_handshake_handler_ = std::move(extended_handshake_handler);
 
   LOG(debug) << "PeerConnection::connect, connecting to " << peer_->to_string();
-  // Why using shared_from_this(). https://stackoverflow.com/a/35469759
+
+  // Why using weak_from_this(). https://stackoverflow.com/a/35469759
   socket_->async_connect(
       boost::asio::ip::address_v4(peer_->ip()),
       peer_->port(),
-      boost::bind(
-          &PeerConnection::handle_connect,
-          shared_from_this(),
-          _1));
-
+      [pc = weak_from_this()](const boost::system::error_code &e) {
+        if (!pc.expired()) {
+          pc.lock()->handle_connect(e);
+        }
+      });
 }
 
 void PeerConnection::handle_connect(
     const boost::system::error_code &ec) {
   if (!socket_->is_open()) {
-    LOG(debug) << "Connect timed out " << this->peer_->to_string();
+    LOG(debug) << "Connect timed out " << peer_->to_string();
     connect_handler_(boost::asio::error::timed_out);
   } else if (ec) {
-    LOG(debug) << "Connect error: " << this->peer_->to_string() << " " << ec.message();
+    LOG(debug) << "Connect error: " << peer_->to_string() << " " << ec.message();
     close();
     connect_handler_(ec);
   } else {
@@ -462,7 +467,6 @@ void PeerConnection::send_metadata_request(int64_t piece) {
     }
   }
 }
-PeerConnection::~PeerConnection() = default;
 uint8_t PeerConnection::get_peer_extended_message_id(const std::string &message_name) {
   return get_int64_or_throw(m_dict_, message_name, "PeerConenction::get_peer_extended_message_id");
 }
@@ -591,11 +595,11 @@ void PeerConnection::continue_receive() {
   auto buf = read_ring_.use_for_append(MCU);
   socket_->async_receive(
       boost::asio::buffer(buf.data(), buf.size()),
-      boost::bind(
-          &PeerConnection::handle_receive,
-          shared_from_this(),
-          boost::asio::placeholders::error,
-          boost::asio::placeholders::bytes_transferred));
+      [pc = weak_from_this()](const boost::system::error_code &e, size_t bytes_transfered) {
+        if (!pc.expired()) {
+          pc.lock()->handle_receive(e, bytes_transfered);
+        }
+      });
 }
 
 }
