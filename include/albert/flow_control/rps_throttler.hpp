@@ -22,9 +22,9 @@ class RPSThrottler {
   RPSThrottler(boost::asio::io_service &io, bool enable, double max_rps, double leak_probability,
       size_t max_queue_size = 100,
       size_t max_latency_ns = 100ul * 1000ul* 1000ul,
-      size_t timer_interval_ns = 1000*1000,
+      size_t timer_interval_ns = 10ul * 1000ul*1000ul,
       size_t wait_requests_at_a_time = 10,
-      size_t max_complete_times = 1000);
+      size_t max_complete_times = 100);
 
   void throttle(std::function<void()> action);
   bool full() const { return request_queue_.size() >= max_queue_size_; }
@@ -43,6 +43,7 @@ class RPSThrottler {
   boost::asio::high_resolution_timer timer_;
   bool enabled_;
   double max_rps_;
+  double leak_probability_;
   size_t max_queue_size_;
   boost::asio::chrono::nanoseconds max_latency_;
   boost::asio::chrono::nanoseconds timer_interval_;
@@ -56,7 +57,6 @@ class RPSThrottler {
   std::list<std::tuple<std::function<void()>, std::chrono::high_resolution_clock::time_point>> request_queue_;
   std::list<std::chrono::nanoseconds> last_latencies;
 
-  double leak_probability_;
   std::random_device rng_;
   std::uniform_real_distribution<double> dist_ = std::uniform_real_distribution<double>(0, 1);
 };

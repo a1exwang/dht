@@ -114,7 +114,7 @@ static std::string json_string(const std::string& s) {
 
 void StringNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
   if (mode == EncodeMode::Bencoding) {
-    os << s_.size() << ":" << s_;
+    os << s_.size() << ':' << s_;
   } else if (mode == EncodeMode::JSON) {
     os << json_string(s_);
   }
@@ -144,7 +144,7 @@ void ListNode::encode(std::ostream &os, EncodeMode mode, size_t depth) const {
 
 ListNode::operator std::vector<std::shared_ptr<DictNode>>() const {
   std::vector<std::shared_ptr<DictNode>> ret;
-  for (auto item : list_) {
+  for (const auto& item : list_) {
     auto dict_node = std::dynamic_pointer_cast<DictNode>(item);
     if (!dict_node) {
       throw std::runtime_error("not all items in the list are not DictNode");

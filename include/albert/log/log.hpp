@@ -6,5 +6,7 @@
 namespace albert::log {
 
 void initialize_logger(bool debug);
+boost::log::trivial::severity_level get_severity();
+bool is_debug();
 
 }

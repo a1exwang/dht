@@ -90,11 +90,13 @@ void RPSThrottler::timer_handler(const boost::system::error_code &e) {
         n++;
       }
 
-      LOG(debug) << "target rps not reached executing request "
-                 << "size " << request_queue_.size() << " "
-                 << "deltat " << delta_t << " "
-                 << "tsize " << fire_times_.size() << " "
-                 << "n " << n;
+      if (log::is_debug()) {
+        LOG(debug) << "target rps not reached executing request "
+                   << "size " << request_queue_.size() << " "
+                   << "deltat " << delta_t << " "
+                   << "tsize " << fire_times_.size() << " "
+                   << "n " << n;
+      }
 
       if (n > 0) {
         fire_times_.emplace_back(std::chrono::high_resolution_clock::now(), n);
@@ -106,17 +108,25 @@ void RPSThrottler::timer_handler(const boost::system::error_code &e) {
       // max request rate reach, calculate next request time to match max_rps
       // assume next action finishes immediately after firing
       size_t us = (fire_times_.size() + wait_requests_at_a_time) / max_rps_ * 1e6;
+
+      // TODO: should we limit timer rate
+//      auto next_tp = std::max(std::get<0>(fire_times_.front()) + boost::asio::chrono::microseconds(us), now + timer_interval_);
       auto next_tp = std::get<0>(fire_times_.front()) + boost::asio::chrono::microseconds(us);
       timer_.expires_at(next_tp);
-      LOG(debug) << "target rps reached next expiration: "
-                 << boost::asio::chrono::duration<double>(next_tp-now).count()*1000 << "ms "
-                 << "deltat " << delta_t << " "
-                 << "size " << request_queue_.size() << " "
-                 << "tsize " << fire_times_.size()
-            ;
+      if (log::is_debug()) {
+        LOG(debug) << "target rps reached next expiration: "
+                   << boost::asio::chrono::duration<double>(next_tp-now).count()*1000 << "ms "
+                   << "deltat " << delta_t << " "
+                   << "size " << request_queue_.size() << " "
+                   << "tsize " << fire_times_.size()
+                   ;
+
+      }
     }
   } else {
-    LOG(debug) << "RPSThrottler: queue empty";
+    if (log::is_debug()) {
+      LOG(debug) << "RPSThrottler: queue empty";
+    }
     timer_.expires_at(now + timer_interval_);
   }
 

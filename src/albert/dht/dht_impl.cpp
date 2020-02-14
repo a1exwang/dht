@@ -85,18 +85,22 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
           routing_table = transaction.routing_table_;
         });
       } else {
-        std::stringstream ss;
-        node->encode(ss, bencoding::EncodeMode::JSON);
-        LOG(debug) << "Invalid message, transaction not found, transaction_id: '"
-                   << utils::hexdump(id.data(), id.size(), false) << "', bencoding: " << ss.str();
+        if (log::is_debug()) {
+          std::stringstream ss;
+          node->encode(ss, bencoding::EncodeMode::JSON);
+          LOG(debug) << "Invalid message, transaction not found, transaction_id: '"
+                     << utils::hexdump(id.data(), id.size(), false) << "', bencoding: " << ss.str();
+        }
       }
       return query_method_name;
     });
   } catch (const krpc::InvalidMessage &e) {
     if (!try_to_handle_unknown_message(node)) {
-      std::stringstream ss;
-      node->encode(ss, bencoding::EncodeMode::JSON);
-      LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
+      if (log::is_debug()) {
+        std::stringstream ss;
+        node->encode(ss, bencoding::EncodeMode::JSON);
+        LOG(debug) << "InvalidMessage, e: '" << e.what() << "', ignored, bencoding '" << ss.str() << "'";
+      }
       if (bad_sender()) {
         LOG(debug) << "banned " << sender_endpoint << " due to invalid message";
       }

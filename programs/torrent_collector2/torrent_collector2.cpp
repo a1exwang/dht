@@ -8,6 +8,7 @@
 #include <albert/store/sqlite3_store.hpp>
 #include <albert/u160/u160.hpp>
 #include <albert/io_latency/io_latency.hpp>
+#include <albert/signal/cancel_all_io_services.hpp>
 
 
 #include <boost/asio/io_service.hpp>
@@ -37,6 +38,8 @@ int main(int argc, const char* argv[]) {
       store.create(ih_hex, "");
     }
   });
+
+  albert::signal::CancelAllIOServices signal(io_service);
 
   albert::io_latency::IOLatencyMeter meter(io_service, debug);
 #ifdef NDEBUG

@@ -19,4 +19,20 @@ CancelAllIOServices::CancelAllIOServices(boost::asio::io_service &io, std::vecto
     }
   });
 }
+
+CancelAllIOServices::CancelAllIOServices(boost::asio::io_service &io)
+    :signals_(io, SIGINT) {
+
+  // Start an asynchronous wait for one of the signals to occur.
+  signals_.async_wait([this](const boost::system::error_code& error, int signal_number) {
+    if (error) {
+      LOG(error) << "Failed to async wait signals '" << error.message() << "'";
+      return;
+    }
+    LOG(info) << "Exiting due to signal " << signal_number;
+    for (auto &io : io_services_) {
+      io->stop();
+    }
+  });
+}
 }

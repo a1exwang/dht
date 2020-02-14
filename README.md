@@ -13,3 +13,5 @@
 - Save torrent file to disk
 
 - Ban multiple node ID with single endpoint
+
+- Embed basic nodes(string/int) to improve node decoding/encoding performance

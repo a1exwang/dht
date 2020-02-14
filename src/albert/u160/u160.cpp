@@ -22,8 +22,11 @@ U160 U160::random() {
 }
 std::string U160::to_string() const {
   std::stringstream ss;
-  for (auto c : data_) {
-    ss << std::hex << std::setfill('0') << std::setw(2) << (uint32_t)(uint8_t)c;
+  std::string ret(U160Length * 2, 0);
+  static const char *hex_chars = "0123456789abcdef";
+  for (size_t i = 0; i < U160Length; i++) {
+    ret[2*i+1] = hex_chars[data_[i] % 16];
+    ret[2*i+0] = hex_chars[data_[i] / 16];
   }
   return ss.str();
 }
