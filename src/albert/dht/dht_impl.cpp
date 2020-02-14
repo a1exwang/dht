@@ -32,7 +32,6 @@ DHTImpl::DHTImpl(DHT *dht, boost::asio::io_service &io)
              udp::endpoint(
                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
                  dht->config_.bind_port)),
-      signals_(io, SIGINT),
       throttler_(io, dht->config_.throttler_enabled, dht->config_.throttler_max_rps, dht_->config_.throttler_leak_probability,
           dht->config_.throttler_max_queue_size, dht->config_.throttler_max_latency_ns)
        {
@@ -154,15 +153,6 @@ void DHTImpl::handle_receive_from(const boost::system::error_code &error, std::s
 
 
 void DHTImpl::bootstrap() {
-  // Start an asynchronous wait for one of the signals to occur.
-  signals_.async_wait([this](const boost::system::error_code& error, int signal_number) {
-    if (error) {
-      LOG(error) << "Failed to async wait signals '" << error.message() << "'";
-      return;
-    }
-    LOG(info) << "Exiting due to signal " << signal_number;
-    io.stop();
-  });
 
   // register receive_from handler
   socket.async_receive_from(

@@ -168,7 +168,6 @@ class DHTImpl {
   std::array<char, 65536> receive_buffer{};
   udp::socket socket;
   udp::endpoint sender_endpoint{};
-  boost::asio::signal_set signals_;
 
   std::vector<Timer> timers_;
 

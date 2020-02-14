@@ -102,6 +102,16 @@ std::vector<std::string> Sqlite3Store::get_empty_keys() const {
     result.push_back(key);
   });
   return result;
+}
+
+std::vector<std::string> Sqlite3Store::get_empty_keys(size_t offset, size_t limit) const {
+  std::vector<std::string> result;
+  std::string sql = "SELECT info_hash FROM torrents WHERE data is null or data = '' LIMIT " + std::to_string(offset) + "," + std::to_string(limit) + ";";
+
+  sqlite_retry(db_, sql, [&result](const std::string &key, const std::string &value) {
+    result.push_back(key);
+  });
+  return result;
 };
 
 }
