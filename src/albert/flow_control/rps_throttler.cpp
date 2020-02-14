@@ -14,12 +14,13 @@ namespace albert::flow_control {
 RPSThrottler::RPSThrottler(boost::asio::io_service &io,
                            bool enabled,
                            double max_rps,
+                           double leak_probability,
                            size_t max_queue_size,
                            size_t max_latency_ns,
                            size_t timer_interval_ns,
                            size_t wait_requests_at_a_time,
                            size_t max_complete_times
-) :io_(io), timer_(io), enabled_(enabled), max_rps_(max_rps),
+) :io_(io), timer_(io), enabled_(enabled), max_rps_(max_rps), leak_probability_(leak_probability),
    max_queue_size_(max_queue_size), max_latency_(max_latency_ns), timer_interval_(timer_interval_ns),
    wait_requests_at_a_time(wait_requests_at_a_time), max_complete_times_(max_complete_times) {
 
@@ -41,6 +42,11 @@ void RPSThrottler::throttle(std::function<void()> action) {
   if (!enabled_) {
     io_.post(std::move(action));
   } else if (full()) {
+    if (roll_dice_leaky()) {
+      request_queue_.pop_front();
+      auto now = std::chrono::high_resolution_clock::now();
+      request_queue_.emplace_back(std::move(action), now);
+    }
     dropped_++;
   } else {
     auto now = std::chrono::high_resolution_clock::now();
@@ -153,6 +159,9 @@ std::string RPSThrottler::stat() {
   } else {
     return "RPSThrottler: disabled";
   }
+}
+bool RPSThrottler::roll_dice_leaky() {
+  return dist_(rng_) < leak_probability_;
 }
 
 }

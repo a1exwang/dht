@@ -41,6 +41,7 @@ struct Config :public albert::config::Config {
 
   bool throttler_enabled = false;
   int throttler_max_rps = 1000;
+  double throttler_leak_probability = 0.1;
   int throttler_max_queue_size = 1000;
   size_t throttler_max_latency_ns = 1000ul*1000ul*1000ul;
 

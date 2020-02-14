@@ -6,6 +6,7 @@
 #include <chrono>
 #include <functional>
 #include <list>
+#include <random>
 
 #include <boost/asio/high_resolution_timer.hpp>
 
@@ -18,7 +19,7 @@ namespace albert::flow_control {
 
 class RPSThrottler {
  public:
-  RPSThrottler(boost::asio::io_service &io, bool enable, double max_rps,
+  RPSThrottler(boost::asio::io_service &io, bool enable, double max_rps, double leak_probability,
       size_t max_queue_size = 100,
       size_t max_latency_ns = 100ul * 1000ul* 1000ul,
       size_t timer_interval_ns = 1000*1000,
@@ -32,6 +33,8 @@ class RPSThrottler {
 
   std::string stat();
  private:
+  bool roll_dice_leaky();
+
   void deq();
   void timer_handler(const boost::system::error_code &e);
 
@@ -52,6 +55,10 @@ class RPSThrottler {
   std::list<std::tuple<std::chrono::high_resolution_clock::time_point, size_t>> fire_times_;
   std::list<std::tuple<std::function<void()>, std::chrono::high_resolution_clock::time_point>> request_queue_;
   std::list<std::chrono::nanoseconds> last_latencies;
+
+  double leak_probability_;
+  std::random_device rng_;
+  std::uniform_real_distribution<double> dist_ = std::uniform_real_distribution<double>(0, 1);
 };
 
 }

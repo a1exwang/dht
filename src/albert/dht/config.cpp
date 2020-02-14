@@ -47,6 +47,7 @@ void Config::serialize(std::ostream &os) const {
   os << "get_peers_request_expiration_seconds = " << get_peers_request_expiration_seconds << std::endl;
   os << "throttler_enabled " << throttler_enabled << std::endl;
   os << "throttler_max_rps " << throttler_max_rps << std::endl;
+  os << "throttler_leak_probability " << throttler_leak_probability << std::endl;
   os << "throttler_max_queue_size " << throttler_max_queue_size << std::endl;
   os << "throttler_max_latency_ns " << throttler_max_latency_ns << std::endl;
   os << "debug = " << debug << std::endl;
@@ -85,6 +86,7 @@ Config::Config() {
       ("get-peers-refresh-interval", po::value(&get_peers_refresh_interval_seconds), "")
       ("get-peers-request-expiration", po::value(&get_peers_request_expiration_seconds), "")
       ("throttler-enabled", po::value(&throttler_enabled))
+      ("throttler-leak", po::value(&throttler_leak_probability))
       ("throttler-max-rps", po::value(&throttler_max_rps))
       ("throttler-max-queue-size", po::value(&throttler_max_queue_size))
       ("throttler-max-latency-ns", po::value(&throttler_max_latency_ns))

@@ -33,7 +33,8 @@ DHTImpl::DHTImpl(DHT *dht, boost::asio::io_service &io)
                  boost::asio::ip::address_v4::from_string(dht->config_.bind_ip),
                  dht->config_.bind_port)),
       signals_(io, SIGINT),
-      throttler_(io, dht->config_.throttler_enabled, dht->config_.throttler_max_rps, dht->config_.throttler_max_queue_size, dht->config_.throttler_max_latency_ns)
+      throttler_(io, dht->config_.throttler_enabled, dht->config_.throttler_max_rps, dht_->config_.throttler_leak_probability,
+          dht->config_.throttler_max_queue_size, dht->config_.throttler_max_latency_ns)
        {
 
   timers_.emplace_back(*this, "expand-route", &DHTImpl::handle_expand_route_timer,
