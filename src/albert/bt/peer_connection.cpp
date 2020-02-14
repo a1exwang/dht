@@ -190,12 +190,17 @@ void PeerConnection::send_handshake() {
       write_buffer_.begin());
   socket_->async_send(
       boost::asio::buffer(write_buffer_.data(), write_size),
-      [](const boost::system::error_code &err, size_t bytes_transferred) {
+      [pc_weak = weak_from_this()](const boost::system::error_code &err, size_t bytes_transferred) {
         if (err) {
-          throw std::runtime_error("Failed to write to socket " + err.message());
+          auto pc = pc_weak.lock();
+          if (pc) { 
+            pc->connection_status_ = ConnectionStatus::Disconnected;
+            pc->failed_reason_ = "failed_to_handshake: " + err.message();
+            pc->close();
+            LOG(error) << "Failed to send handshake " + err.message();
+          }
         }
       });
-
 
   auto m = bdict();
   for (auto &item : extended_message_id_) {
@@ -213,9 +218,15 @@ void PeerConnection::send_handshake() {
             }));
   socket_->async_send(
       boost::asio::buffer(make_extended(node, 0)),
-      [](const boost::system::error_code &err, size_t bytes_transferred) {
+      [pc_weak = weak_from_this()](const boost::system::error_code &err, size_t bytes_transferred) {
         if (err) {
-          throw std::runtime_error("Failed to write to socket " + err.message());
+          auto pc = pc_weak.lock();
+          if (pc) { 
+            pc->connection_status_ = ConnectionStatus::Disconnected;
+            pc->failed_reason_ = "failed_to_extended_handshake: " + err.message();
+            pc->close();
+            LOG(error) << "Failed to send extended handshake " + err.message();
+          }
         }
       });
 }
@@ -303,7 +314,6 @@ void PeerConnection::handle_extended_message(
     extended_handshake_handler_(piece_count_, total_size);
 
     if (piece_count_ == 0) {
-      close();
       throw InvalidPeerMessage("piece count cannot be zero");
     }
 
@@ -468,9 +478,15 @@ void PeerConnection::send_metadata_request(int64_t piece) {
                 }));
       socket_->async_send(
           boost::asio::buffer(make_extended(node, extended_id)),
-          [](const boost::system::error_code &err, size_t bytes_transferred) {
+          [pc_weak = weak_from_this()](const boost::system::error_code &err, size_t bytes_transferred) {
             if (err) {
-              throw std::runtime_error("Failed to write to socket " + err.message());
+              auto pc = pc_weak.lock();
+              if (pc) { 
+                pc->connection_status_ = ConnectionStatus::Disconnected;
+                pc->failed_reason_ = "failed_to_send: " + err.message();
+                pc->close();
+                LOG(error) << "Failed to send metadata request " + err.message();
+              }
             }
           });
     }
@@ -528,9 +544,15 @@ void PeerConnection::send_peer_message(uint8_t type, std::vector<uint8_t> data) 
       write_buffer_.begin());
   socket_->async_send(
       boost::asio::buffer(write_buffer_.data(), total_size),
-      [](const boost::system::error_code &err, size_t bytes_transferred) {
+      [pc_weak = weak_from_this()](const boost::system::error_code &err, size_t bytes_transferred) {
         if (err) {
-          throw std::runtime_error("Failed to write to socket " + err.message());
+          auto pc = pc_weak.lock();
+          if (pc) { 
+            pc->connection_status_ = ConnectionStatus::Disconnected;
+            pc->failed_reason_ = "failed_to_send: " + err.message();
+            pc->close();
+            LOG(error) << "Failed to send peer message " + err.message();
+          }
         }
       });
 

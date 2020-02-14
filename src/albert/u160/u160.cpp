@@ -21,14 +21,13 @@ U160 U160::random() {
   return ret;
 }
 std::string U160::to_string() const {
-  std::stringstream ss;
   std::string ret(U160Length * 2, 0);
   static const char *hex_chars = "0123456789abcdef";
   for (size_t i = 0; i < U160Length; i++) {
     ret[2*i+1] = hex_chars[data_[i] % 16];
     ret[2*i+0] = hex_chars[data_[i] / 16];
   }
-  return ss.str();
+  return ret;
 }
 U160 U160::pow2m1(size_t r) {
   assert(r > 0 && r <= U160Bits);
