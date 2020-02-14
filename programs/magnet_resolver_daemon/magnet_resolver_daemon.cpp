@@ -63,15 +63,19 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
 
   std::optional<std::string> get_info_hash() {
     if (cached_info_hashes_.empty()) {
-      auto empty_keys = store_->get_empty_keys();
-      if (empty_keys.size() == 0) {
-        LOG(info) << "All torrents in database has been downloaded";
+      try {
+        auto empty_keys = store_->get_empty_keys();
+        if (empty_keys.size() == 0) {
+          LOG(info) << "All torrents in database has been downloaded";
+          return {};
+        }
+        std::sample(empty_keys.begin(), empty_keys.end(),
+                    std::back_inserter<std::list<std::string>>(cached_info_hashes_),
+                    100, rng_);
+      } catch(const albert::store::Sqlite3TimeoutError &e) {
+        LOG(warning) << "failed to read info_hash from database, too busy, should retry later";
         return {};
       }
-      std::sample(empty_keys.begin(), empty_keys.end(),
-                  std::back_inserter<std::list<std::string>>(cached_info_hashes_),
-                  100, rng_);
-
     }
     auto ret = cached_info_hashes_.front();
     cached_info_hashes_.pop_front();
@@ -136,8 +140,15 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           auto file_name = "torrents/" + ih.to_string() + ".torrent";
           std::ofstream f(file_name, std::ios::binary);
           torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
-          that->store_->update(ih.to_string(), file_name);
-          LOG(info) << "torrent saved as '" << file_name << ", db updated";
+          try {
+            that->store_->update(ih.to_string(), file_name);
+            LOG(info) << "torrent saved as '" << file_name << ", db updated";
+          } catch (const albert::store::Sqlite3TimeoutError &e) {
+            auto backup_file = "failed_to_save_torrents.txt";
+            std::ofstream ofs(backup_file, std::ios::app);
+            ofs << ih.to_string() << " " << file_name << std::endl;
+            LOG(error) << "failed to save torrent to database, database too busy, saving to " << backup_file;
+          }
         });
       });
       that->dht_service.post([that, ih, resolver_weak]() {

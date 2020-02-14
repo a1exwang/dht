@@ -44,7 +44,7 @@ static void sqlite_retry(
     sqlite3* db,
     const std::string &sql,
     std::function<void(const std::string &key, const std::string &data)> callback,
-    std::chrono::milliseconds timeout = std::chrono::milliseconds(500)
+    std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)
 ) {
   char *z_err_msg;
   auto t0 = std::chrono::high_resolution_clock::now();
@@ -56,9 +56,9 @@ static void sqlite_retry(
         throw Sqlite3TimeoutError("Database locked, retried but time out: sql: " + sql);
       }
       std::random_device rng;
-      // sleep for 16us ~ 272us
-      auto us = rng() % 256 + 16;
-      std::this_thread::sleep_for(std::chrono::microseconds(us));
+      // sleep for 2ms ~ 64ms
+      auto us = rng() % 62 + 2;
+      std::this_thread::sleep_for(std::chrono::milliseconds(us));
     }
     else if (rc != SQLITE_OK) {
       sqlite3_errcode(db);

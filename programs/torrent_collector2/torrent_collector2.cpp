@@ -30,16 +30,24 @@ int main(int argc, const char* argv[]) {
 
   /* Start service */
   dht.start();
-  dht.set_announce_peer_handler([&dht, &store](const albert::u160::U160 &ih) {
+  dht.set_announce_peer_handler([&store](const albert::u160::U160 &ih) {
     auto ih_hex = ih.to_string();
     auto item = store.read(ih_hex);
     if (!item.has_value()) {
-      LOG(info) << "got info_hash " << ih.to_string() << ", saved to db";
-      store.create(ih_hex, "");
+      try {
+        store.create(ih_hex, "");
+        LOG(info) << "got info_hash " << ih.to_string() << ", saved to db";
+      }
+      catch (const albert::store::Sqlite3TimeoutError &e) {
+        auto backup_file = "failed_to_save_info_hashes.txt";
+        std::ofstream ofs(backup_file, std::ios::app);
+        ofs << ih.to_string() << std::endl;
+        LOG(error) << "failed to save info_hash to database, database too busy, saving to " << backup_file;
+      }
     }
-  });
+});
 
-  albert::signal::CancelAllIOServices signal(io_service);
+albert::signal::CancelAllIOServices signal(io_service);
 
   albert::io_latency::IOLatencyMeter meter(io_service, debug);
 #ifdef NDEBUG
