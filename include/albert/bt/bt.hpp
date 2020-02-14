@@ -29,6 +29,7 @@ class BT {
   size_t connected_peers() const;
   size_t peer_count() const;
   size_t memory_size() const;
+  std::map<std::string, size_t> peers_stat() const;
 
  private:
   void handle_gc_timer(const boost::system::error_code &error);

@@ -61,20 +61,13 @@ class TorrentResolver :public std::enable_shared_from_this<TorrentResolver> {
     return std::chrono::high_resolution_clock::now() > expiration_at_;
   }
 
-  void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
+  [[nodiscard]]
+  size_t memory_size() const;
 
   [[nodiscard]]
-  size_t memory_size() const {
-    auto ret = sizeof(*this);
-    for (auto &pc : peer_connections_) {
-      ret += sizeof(pc.first);
-      ret += pc.second->memory_size();
-    }
-    for (auto &piece : pieces_) {
-      ret += piece.size();
-    }
-    return ret;
-  }
+  std::map<std::string, size_t> peers_stat() const;
+
+  void set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler);
  private:
   void piece_handler(std::weak_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data);
   void handshake_handler(std::weak_ptr<peer::PeerConnection> pc, int total_pieces, size_t metdata_size);
@@ -91,6 +84,7 @@ class TorrentResolver :public std::enable_shared_from_this<TorrentResolver> {
   u160::U160 info_hash_;
   u160::U160 self_;
   std::map<std::tuple<uint32_t, uint16_t>, std::shared_ptr<albert::bt::peer::PeerConnection>> peer_connections_;
+  std::map<std::string, size_t> deleted_peers_stat_;
 
   uint32_t bind_ip_;
   uint16_t bind_port_;

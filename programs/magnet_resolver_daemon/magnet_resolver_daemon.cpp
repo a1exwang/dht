@@ -54,25 +54,30 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           max_concurrent_resolutions_ - bt.resolver_count(), rng_);
     }
 
-    size_t i = 0;
-    for (auto &ih : results) {
-      try {
-        resolve(albert::u160::U160::from_hex(ih));
-        i++;
-        if (i >= max_add_count_at_a_time) {
-          break;
+    if (bt.peer_count() < max_concurrent_peers_) {
+      size_t i = 0;
+      for (auto &ih : results) {
+        try {
+          resolve(albert::u160::U160::from_hex(ih));
+          i++;
+          if (i >= max_add_count_at_a_time) {
+            break;
+          }
+        } catch (const std::runtime_error &e) {
+          LOG(error) << "Failed to resolve info hash: " << e.what();
         }
-      } catch (const std::runtime_error &e) {
-        LOG(error) << "Failed to resolve info hash: " << e.what();
       }
     }
 
     LOG(info) << "Scanner: BT resolver count: " << bt.resolver_count()
               << " success " << bt.success_count()
               << " failure " << bt.failure_count()
-              << " connected peers " << bt.connected_peers() << "/" << bt.peer_count()
               << " memsize " << albert::utils::pretty_size(bt.memory_size())
               ;
+    auto peers_stat = bt.peers_stat();
+    for (auto [name, count] : peers_stat) {
+      LOG(info) << "Peers '" << name << "': " << count;
+    }
 
     db_scan_timer.expires_at(db_scan_timer.expiry() + db_scan_interval);
     db_scan_timer.async_wait(boost::bind(&Scanner::handle_timer,shared_from_this(), boost::asio::placeholders::error()));

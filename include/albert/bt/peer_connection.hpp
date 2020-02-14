@@ -84,6 +84,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       std::function<void(int, size_t)> extended_handshake_handler = [](int, size_t) { }
   );
   ConnectionStatus status() const { return connection_status_; }
+  std::string failed_reason() const { return failed_reason_; }
   void close();
 
   void interest(std::function<void()> unchoke_handler);
@@ -160,6 +161,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   // connection status
   std::unique_ptr<Peer> peer_;
   ConnectionStatus connection_status_ = ConnectionStatus::Connecting;
+  std::string failed_reason_;
   bool handshake_completed_ = false;
   bool message_segmented = false;
 

@@ -146,10 +146,14 @@ void PeerConnection::handle_connect(
     const boost::system::error_code &ec) {
   if (!socket_->is_open()) {
     LOG(debug) << "Connect timed out " << peer_->to_string();
+    connection_status_ = ConnectionStatus::Disconnected;
+    failed_reason_ = "timeout";
     connect_handler_(boost::asio::error::timed_out);
   } else if (ec) {
     LOG(debug) << "Connect error: " << peer_->to_string() << " " << ec.message();
     close();
+    connection_status_ = ConnectionStatus::Disconnected;
+    failed_reason_ = "connect_error: " + ec.message();
     connect_handler_(ec);
   } else {
     connection_status_ = ConnectionStatus::Connected;
@@ -344,14 +348,17 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
 
   if (err == boost::asio::error::eof) {
     connection_status_ = ConnectionStatus::Disconnected;
+    failed_reason_ = "eof";
     return;
   } else if (err == boost::asio::error::connection_reset) {
     LOG(warning) << "Peer reset the connection " << peer_->to_string() << ", id " << peer_id_.to_string();
     connection_status_ = ConnectionStatus::Disconnected;
+    failed_reason_ = "reset";
     return;
   } else if (err) {
     connection_status_ = ConnectionStatus::Disconnected;
     LOG(error) << "PeerConnection: unhandled error when reading to from socket " + err.message();
+    failed_reason_ = "error: " + err.message();
     return;
   }
 
@@ -429,9 +436,11 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
     }
   } catch (const bencoding::InvalidBencoding &e) {
     LOG(error) << "parse BT handshake: Invalid bencoding: " << e.what();
+    failed_reason_ = std::string("close: InvalidBencoding, ") + e.what();
     close();
   } catch (const InvalidPeerMessage &e){
     LOG(error) << "Invalid peer message " << e.what();
+    failed_reason_ = std::string("close: InvalidPeerMessage, ") + e.what();
     close();
   }
 

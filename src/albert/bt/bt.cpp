@@ -89,5 +89,12 @@ size_t BT::memory_size() const {
   }
   return ret;
 }
+std::map<std::string, size_t> BT::peers_stat() const {
+  std::map<std::string, size_t> ret;
+  for (auto &item : resolvers_) {
+    ret.merge(item.second->peers_stat());
+  }
+  return ret;
+}
 
 }

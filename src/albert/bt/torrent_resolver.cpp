@@ -59,12 +59,14 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
   peer_connections_[{ip, port}] = pc;
 
   pc->connect(
-      [that = weak_from_this(), ip, port](const boost::system::error_code &e) {
-        if (!that.expired()) {
-          auto resolver = that.lock();
+      [weak_resolver = weak_from_this(), ip, port](const boost::system::error_code &e) {
+        if (!weak_resolver.expired()) {
+          auto resolver = weak_resolver.lock();
           if (e) {
             if (resolver->peer_connections_.find({ip, port}) != resolver->peer_connections_.end()) {
-
+              auto &pc = resolver->peer_connections_.at({ip, port});
+              std::string key = pc->failed_reason();
+              resolver->deleted_peers_stat_[key]++;
               resolver->peer_connections_.erase({ip, port});
             }
           }
@@ -195,11 +197,38 @@ void TorrentResolver::timer_handler(const boost::system::error_code &e) {
     LOG(info) << "TorrentResolver: deleted " << to_delete.size() << " failed connections";
   }
   for (auto &ep : to_delete) {
+    auto &pc = peer_connections_.at(ep);
+    std::string key = pc->failed_reason();
+    deleted_peers_stat_[key]++;
     peer_connections_.erase(ep);
   }
 
   timer_.expires_at(boost::asio::chrono::steady_clock::now() + timer_interval_);
   timer_.async_wait(std::bind(&TorrentResolver::timer_handler, this, std::placeholders::_1));
+}
+size_t TorrentResolver::memory_size() const {
+  auto ret = sizeof(*this);
+  for (auto &pc : peer_connections_) {
+    ret += sizeof(pc.first);
+    ret += pc.second->memory_size();
+  }
+  for (auto &piece : pieces_) {
+    ret += piece.size();
+  }
+  return ret;
+}
+std::map<std::string, size_t> TorrentResolver::peers_stat() const {
+  std::map<std::string, size_t> ret = deleted_peers_stat_;
+  for (auto &pc : peer_connections_) {
+    if (pc.second->status() == peer::ConnectionStatus::Connecting) {
+      ret["connecting"]++;
+    } else if (pc.second->status() == peer::ConnectionStatus::Connected) {
+      ret["connected"]++;
+    } else /* disconnected */ {
+      ret[pc.second->failed_reason()]++;
+    }
+  }
+  return ret;
 }
 
 }
