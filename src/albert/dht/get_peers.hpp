@@ -13,7 +13,9 @@ namespace albert::dht::get_peers {
 
 
 struct NodeStatus {
+  explicit NodeStatus(krpc::NodeInfo node) :traversed(false), node(std::move(node)) { }
   bool traversed = false;
+  krpc::NodeInfo node;
 };
 
 class GetPeersRequest {
@@ -32,7 +34,7 @@ class GetPeersRequest {
 
   bool expired() const;
 
-  void add_node(const u160::U160 &node);
+  void add_node(const krpc::NodeInfo &node);
   [[nodiscard]]
   bool has_node(const u160::U160 &id) const;
   void delete_node(const u160::U160 &id);
@@ -40,6 +42,8 @@ class GetPeersRequest {
   [[nodiscard]]
   bool has_node_traversed(const u160::U160 &id) const;
   void set_node_traversed(const u160::U160 &id);
+
+  std::vector<krpc::NodeInfo> get_available_nodes(size_t n);
 
 // private:
   std::list<std::function<void (uint32_t, uint16_t)>> callbacks_;
@@ -56,7 +60,7 @@ class GetPeersManager {
   [[nodiscard]]
   bool has_request(const u160::U160 &id) const;
   void add_callback(const u160::U160 &id, const std::function<void (uint32_t, uint16_t)> &callback);
-  void add_node(const u160::U160 &id, const u160::U160 &node);
+  void add_node(const u160::U160 &id, const krpc::NodeInfo &node);
   [[nodiscard]]
   bool has_node_traversed(const u160::U160 &id, const u160::U160 &node) const;
   [[nodiscard]]
@@ -64,6 +68,8 @@ class GetPeersManager {
   void set_node_traversed(const u160::U160 &id, const u160::U160 &node);
   void create_request(
       const u160::U160 &info_hash);
+
+  std::map<u160::U160, std::vector<krpc::NodeInfo>> expand_routes(size_t n_per_request);
 
   void gc();
  private:

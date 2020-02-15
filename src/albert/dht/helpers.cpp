@@ -115,7 +115,7 @@ void DHTImpl::good_sender(const u160::U160 &sender_id, const std::string &versio
 }
 void DHTImpl::try_to_send_get_peers_query(const u160::U160 &info_hash, const krpc::NodeInfo &receiver) {
   if (dht_->get_peers_manager_->has_request(info_hash)) {
-    dht_->get_peers_manager_->add_node(info_hash, receiver.id());
+    dht_->get_peers_manager_->add_node(info_hash, receiver);
     auto query = std::make_shared<krpc::GetPeersQuery>(
         self(),
         info_hash

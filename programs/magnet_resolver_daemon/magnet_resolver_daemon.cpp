@@ -61,7 +61,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
     }
   }
 
-  std::optional<std::string> get_info_hash() {
+  std::optional<std::string> db_get_info_hash() {
     if (cached_info_hashes_.empty()) {
       try {
         auto empty_keys = store_->get_empty_keys();
@@ -101,7 +101,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           if (resolver_count < that->max_concurrent_resolutions_)  {
             auto n = that->max_concurrent_resolutions_ - resolver_count;
             for (size_t i = 0; i < n; i++) {
-              auto ih = that->get_info_hash();
+              auto ih = that->db_get_info_hash();
               if (ih.has_value()) {
                 results.push_back(ih.value());
               } else {
@@ -151,9 +151,9 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           }
         });
       });
+      using namespace std::placeholders;
       that->dht_service.post([that, ih, resolver_weak]() {
-        using namespace std::placeholders;
-        that->dht.get_peers(ih, std::bind(&Scanner::handle_get_peers_s, that, resolver_weak, _1, _2));
+          that->dht.get_peers(ih, std::bind(&Scanner::handle_get_peers_s, that, resolver_weak, _1, _2));
       });
     });
   }
