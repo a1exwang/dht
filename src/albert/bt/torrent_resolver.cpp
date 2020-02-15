@@ -131,23 +131,30 @@ bool TorrentResolver::finished() const {
 void TorrentResolver::set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler) {
   torrent_handler_ = std::move(handler);
 }
-void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> pc, int total_pieces, size_t metadata_size) {
-  using namespace boost::placeholders;
-  if (total_pieces == 0) {
-    throw std::invalid_argument("Invalid argument, total_pieces cannot be zero");
-  }
-  this->pieces_.resize(total_pieces);
-  this->metadata_size_ = metadata_size;
-  if (pc.expired()) {
+void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> weak_pc, int total_pieces, size_t metadata_size) {
+  if (auto pc = weak_pc.lock(); !pc) {
     LOG(error) << "PeerConnection gone before handshake was handled info_hash: " << this->info_hash_.to_string();
   } else {
-    auto locked_pc = pc.lock();
-    locked_pc->interest([pc](){
-      if (!pc.expired()) {
-        LOG(info) << "TorrentResolver: peer unchoked " << pc.lock()->peer().to_string();
+    if (total_pieces == 0) {
+      LOG(error) << "Peer invalid data, total_pieces == 0, " << pc->peer().to_string();
+      pc->close();
+    }
+    if (this->pieces_.size() == 0) {
+      this->pieces_.resize(total_pieces);
+      this->metadata_size_ = metadata_size;
+    } else {
+      if (pieces_.size() != total_pieces || metadata_size_ != metadata_size) {
+        LOG(error) << "Peer total_pieces or metadata_size not matched, refusing: " << pc->peer().to_string();
+        pc->close();
+      }
+    }
+    pc->interest([weak_pc](){
+      if (auto pc = weak_pc.lock(); pc) {
+        LOG(info) << "TorrentResolver: peer unchoked " << weak_pc.lock()->peer().to_string();
       }
     });
-    locked_pc->start_metadata_transfer(
+    using namespace boost::placeholders;
+    pc->start_metadata_transfer(
         boost::bind(&TorrentResolver::piece_handler, this, pc, _1, _2));
   }
 }

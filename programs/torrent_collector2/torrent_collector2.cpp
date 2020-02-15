@@ -33,7 +33,9 @@ int main(int argc, const char* argv[]) {
   dht.set_announce_peer_handler([&store](const albert::u160::U160 &ih) {
     auto ih_hex = ih.to_string();
     auto item = store.read(ih_hex);
-    if (!item.has_value()) {
+    if (item.has_value()) {
+      LOG(info) << "got info_hash " << ih.to_string() << ", but existed in db";
+    } else {
       try {
         store.create(ih_hex, "");
         LOG(info) << "got info_hash " << ih.to_string() << ", saved to db";
