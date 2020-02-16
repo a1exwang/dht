@@ -104,12 +104,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
       )> piece_data_handler
   );
 
-  size_t memory_size() const {
-    size_t ret = sizeof(*this);
-    ret += read_ring_.memory_size();
-    ret += peer_bitfield_.size() * sizeof(peer_bitfield_[0]);
-    return ret;
-  }
+  size_t memory_size() const;
  private:
   /**
    * Handlers

@@ -30,6 +30,7 @@ class Sqlite3Store :public Store {
   std::optional<std::string> read(const std::string &key) const override;
   std::vector<std::string> get_empty_keys() const override;
   std::vector<std::string> get_empty_keys(size_t offset, size_t limit) const override;
+  size_t memory_size() const override;
  private:
   sqlite3 *db_;
 };

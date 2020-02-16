@@ -194,9 +194,7 @@ DHT::DHT(Config config)
           (config_.public_ip.empty() ? albert::public_ip::my_v4() : boost::asio::ip::address_v4::from_string(config_.public_ip).to_uint()),
           config_.bind_port),
       transaction_manager(std::chrono::seconds(config.transaction_expiration_seconds)),
-      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
-      main_routing_table_(nullptr),
-      info_hash_list_stream_(config_.info_hash_save_path, std::fstream::app) {
+      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)) {
 
   std::ifstream ifs(config_.routing_table_save_path);
   std::unique_ptr<routing_table::RoutingTable> rt;
@@ -231,13 +229,24 @@ DHT::DHT(Config config)
   }
   main_routing_table_ = rt.get();
   routing_tables_.push_back(std::move(rt));
-
-  if (!info_hash_list_stream_.is_open()) {
-    throw std::runtime_error("Failed to open info hash list file '" + config_.info_hash_save_path + "'");
-  }
 }
 
 DHT::~DHT() {}
+
+size_t DHT::memory_size() const {
+  size_t ret = 0;
+  ret += sizeof(*this);
+  ret += transaction_manager.memory_size();
+  for (auto &rt : routing_tables_){
+    ret += rt->memory_size();
+  }
+  ret += get_peers_manager_->memory_size();
+  for (auto &item : message_counters_){
+    ret += item.first.size() + sizeof(item.first) + sizeof(item.second);
+  }
+  ret += black_list_.size() * sizeof(*black_list_.begin());
+  return ret;
+}
 
 DHTInterface::DHTInterface(Config config, boost::asio::io_service &io_service)
     :dht_(std::make_unique<DHT>(std::move(config))), impl_() {
@@ -257,6 +266,9 @@ void DHTInterface::sample_infohashes(const std::function<void (const u160::U160 
 }
 void DHTInterface::set_announce_peer_handler(std::function<void(const u160::U160 &info_hash)> handler) {
   impl_->set_announce_peer_handler(std::move(handler));
+}
+size_t DHTInterface::memory_size() const {
+  return dht_->memory_size() + impl_->memory_size();
 }
 
 void Timer::handler_timer(const boost::system::error_code &error) {

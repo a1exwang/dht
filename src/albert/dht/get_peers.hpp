@@ -43,7 +43,11 @@ class GetPeersRequest {
   bool has_node_traversed(const u160::U160 &id) const;
   void set_node_traversed(const u160::U160 &id);
 
-  std::vector<krpc::NodeInfo> get_available_nodes(size_t n);
+  [[nodiscard]]
+  std::vector<krpc::NodeInfo> get_available_nodes(size_t n) const;
+
+  [[nodiscard]]
+  size_t memory_size() const;
 
 // private:
   std::list<std::function<void (uint32_t, uint16_t)>> callbacks_;
@@ -68,6 +72,9 @@ class GetPeersManager {
   void set_node_traversed(const u160::U160 &id, const u160::U160 &node);
   void create_request(
       const u160::U160 &info_hash);
+
+  [[nodiscard]]
+  size_t memory_size() const;
 
   std::map<u160::U160, std::vector<krpc::NodeInfo>> expand_routes(size_t n_per_request);
 

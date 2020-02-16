@@ -10,6 +10,8 @@
 #include <chrono>
 #include <functional>
 
+#include <albert/log/log.hpp>
+
 namespace albert::store {
 
 std::string escape_sql(const std::string &s) {
@@ -112,6 +114,17 @@ std::vector<std::string> Sqlite3Store::get_empty_keys(size_t offset, size_t limi
     result.push_back(key);
   });
   return result;
+}
+size_t Sqlite3Store::memory_size() const {
+  sqlite3_int64 value = 0, ignored = 0;
+  auto ret = sqlite3_status64(SQLITE_STATUS_MEMORY_USED, &value, &ignored, 0);
+  if (ret == SQLITE_OK) {
+    return value;
+  } else {
+    LOG(error) << "Failed to get SQLITE memory used size: " << sqlite3_errstr(ret);
+    return 0;
+  }
+
 };
 
 }

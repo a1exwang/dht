@@ -21,6 +21,7 @@ class Store {
   virtual std::optional<std::string> read(const std::string &key) const = 0;
   virtual std::vector<std::string> get_empty_keys() const = 0;
   virtual std::vector<std::string> get_empty_keys(size_t offset, size_t limit) const = 0;
+  virtual size_t memory_size() const = 0;
 };
 
 }

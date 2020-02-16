@@ -32,6 +32,9 @@ class RPSThrottler {
   bool enabled() const { return enabled_; }
 
   std::string stat();
+
+  [[nodiscard]]
+  size_t memory_size() const;
  private:
   bool roll_dice_leaky();
 

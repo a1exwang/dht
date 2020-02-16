@@ -57,6 +57,8 @@ class DHT {
 
   bool in_black_list(uint32_t ip, uint16_t port) const;
   bool add_to_black_list(uint32_t ip, uint16_t port);
+
+  size_t memory_size() const;
  private:
   Config config_;
 
@@ -81,7 +83,6 @@ class DHT {
   size_t total_ping_response_received_{};
 
   std::map<std::string, size_t> message_counters_;
-  std::ofstream info_hash_list_stream_;
 
   struct BlackListHash {
     size_t operator()(const std::tuple<uint32_t, uint16_t> &item) const {
@@ -107,6 +108,7 @@ class DHTInterface {
   void get_peers(const u160::U160 &info_hash, const std::function<void(uint32_t, uint16_t)> &callback);
   void sample_infohashes(const std::function<void(const u160::U160 &info_hash)> handler);
   void set_announce_peer_handler(std::function<void (const u160::U160 &info_hash)> handler);
+  size_t memory_size() const;
  private:
   std::unique_ptr<DHT> dht_;
   std::unique_ptr<DHTImpl> impl_;

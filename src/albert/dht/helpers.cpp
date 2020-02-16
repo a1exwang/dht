@@ -238,5 +238,11 @@ bool DHTImpl::try_to_handle_unknown_message(std::shared_ptr<bencoding::Node> nod
   }
   return true;
 }
+size_t DHTImpl::memory_size() const {
+  size_t ret = sizeof(*this);
+  ret += timers_.size() * sizeof(Timer);
+  ret += throttler_.memory_size();
+  return ret;
+}
 
 }

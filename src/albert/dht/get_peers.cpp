@@ -140,7 +140,7 @@ bool get_peers::GetPeersRequest::expired() const {
 }
 void get_peers::GetPeersRequest::add_callback(std::function<void(uint32_t, uint16_t)> callback) { this->callbacks_.emplace_back(std::move(callback)); }
 
-std::vector<krpc::NodeInfo> get_peers::GetPeersRequest::get_available_nodes(size_t n) {
+std::vector<krpc::NodeInfo> get_peers::GetPeersRequest::get_available_nodes(size_t n) const {
   std::vector<krpc::NodeInfo> ret;
   for (auto &item : nodes_) {
     if (!item.second.traversed) {
@@ -151,6 +151,13 @@ std::vector<krpc::NodeInfo> get_peers::GetPeersRequest::get_available_nodes(size
     }
   }
   return ret;
+}
+
+size_t get_peers::GetPeersRequest::memory_size() const {
+  return sizeof(*this) +
+      callbacks_.size() * sizeof(*callbacks_.begin()) +
+      nodes_.size() * sizeof(std::pair<albert::u160::U160, NodeStatus>) +
+      peers_.size() * sizeof(std::tuple<uint32_t, uint16_t>);
 }
 
 bool get_peers::GetPeersManager::has_node(const u160::U160 &id, const u160::U160 &node) const {
@@ -228,6 +235,12 @@ std::map<u160::U160,
   }
   return ret;
 }
-
+size_t get_peers::GetPeersManager::memory_size() const {
+  size_t ret = sizeof(*this);
+  for (auto &r : requests_) {
+    ret += r.second.memory_size() + sizeof(r.first);
+  }
+  return ret;
+}
 
 }

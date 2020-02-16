@@ -90,6 +90,9 @@ class DHTImpl {
 
   void set_announce_peer_handler(std::function<void (const u160::U160 &info_hash)> handler);
 
+  [[nodiscard]]
+  size_t memory_size() const;
+
  private:
   friend class DHT;
   friend class Timer;

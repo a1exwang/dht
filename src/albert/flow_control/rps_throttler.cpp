@@ -173,5 +173,12 @@ std::string RPSThrottler::stat() {
 bool RPSThrottler::roll_dice_leaky() {
   return dist_(rng_) < leak_probability_;
 }
+size_t RPSThrottler::memory_size() const {
+  size_t ret = sizeof(*this);
+  ret += fire_times_.size() * sizeof(*fire_times_.begin());
+  ret += request_queue_.size() * sizeof(*request_queue_.begin());
+  ret += last_latencies.size() * sizeof(*last_latencies.begin());
+  return ret;
+}
 
 }

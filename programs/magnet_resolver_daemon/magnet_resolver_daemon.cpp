@@ -118,10 +118,12 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           }
         }
 
-        LOG(info) << "Scanner: BT resolver count: " << resolver_count
+        LOG(info) << "Scanner: BTResolver count: " << resolver_count
                   << " success " << success_count
                   << " failure " << failure_count
-                  << " memsize " << albert::utils::pretty_size(bt_memory_size)
+                  << " BT memsize " << albert::utils::pretty_size(bt_memory_size)
+                  << " DHT memsize " << albert::utils::pretty_size(that->dht.memory_size())
+                  << " DB memsize " << albert::utils::pretty_size(that->store_->memory_size())
               ;
         for (auto [name, count] : peers_stat) {
           LOG(info) << "Peers '" << name << "': " << count;

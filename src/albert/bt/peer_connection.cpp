@@ -632,5 +632,10 @@ void PeerConnection::continue_receive() {
         }
       });
 }
+size_t PeerConnection::memory_size() const {
+  size_t ret = sizeof(*this);
+  ret += peer_bitfield_.size() * sizeof(peer_bitfield_[0]);
+  return ret;
+}
 
 }
