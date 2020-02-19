@@ -35,23 +35,29 @@ void IOLatencyMeter::loop() {
       last_total = total;
     }
 
-    size_t n = io_.run_one();
-    if (n > 0) {
-      auto t1 = std::chrono::high_resolution_clock::now();
-      double secs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-      if (debug_) {
-        LOG(info) << "IOLatencyMeter: latency " << secs << "ms";
-      }
-
-      latencies[current] = secs;
-
-      current++;
-      current %= last_n;
-
-      total++;
-    } else {
+    boost::system::error_code error;
+    size_t n = io_.run_one(error);
+    if (error) {
+      LOG(error) << "Failed to run_one " << error.message();
       break;
+    } else {
+      if (n > 0) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double secs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+        if (debug_) {
+          LOG(info) << "IOLatencyMeter: latency " << secs << "ms";
+        }
+
+        latencies[current] = secs;
+
+        current++;
+        current %= last_n;
+
+        total++;
+      } else {
+        break;
+      }
     }
   }
 }

@@ -47,9 +47,9 @@ int main(int argc, const char* argv[]) {
         LOG(error) << "failed to save info_hash to database, database too busy, saving to " << backup_file;
       }
     }
-});
+  });
 
-albert::signal::CancelAllIOServices signal(io_service);
+  albert::signal::CancelAllIOServices signal(io_service);
 
   albert::io_latency::IOLatencyMeter meter(io_service, debug);
 #ifdef NDEBUG
