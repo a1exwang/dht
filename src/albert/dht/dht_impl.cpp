@@ -194,7 +194,8 @@ DHT::DHT(Config config)
           (config_.public_ip.empty() ? albert::public_ip::my_v4() : boost::asio::ip::address_v4::from_string(config_.public_ip).to_uint()),
           config_.bind_port),
       transaction_manager(std::chrono::seconds(config.transaction_expiration_seconds)),
-      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)) {
+      get_peers_manager_(std::make_unique<dht::get_peers::GetPeersManager>(config_.get_peers_request_expiration_seconds)),
+      blacklist_(config_.blacklist_size, std::chrono::hours(config_.blacklist_hours)) {
 
   std::ifstream ifs(config_.routing_table_save_path);
   std::unique_ptr<routing_table::RoutingTable> rt;
@@ -244,7 +245,7 @@ size_t DHT::memory_size() const {
   for (auto &item : message_counters_){
     ret += item.first.size() + sizeof(item.first) + sizeof(item.second);
   }
-  ret += black_list_.size() * sizeof(*black_list_.begin());
+  ret += blacklist_.memory_size();
   return ret;
 }
 

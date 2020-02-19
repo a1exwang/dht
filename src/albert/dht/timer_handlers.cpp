@@ -14,7 +14,6 @@
 namespace albert::dht {
 
 void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
-  bool simple = true;
   if (dht_->config_.debug) {
     LOG(info) << "Main routing table debug mode enabled";
     dht_->main_routing_table_->stat();
@@ -37,14 +36,14 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
 //      std::tie(ip, port) = item;
 //      black_list_s << boost::asio::ip::address_v4(ip) << ":" << port << " ";
 //    }
-    LOG(info) << "black list " << dht_->black_list_.size() << " in total";
+    LOG(info) << "black list " << dht_->blacklist_.size() << " in total";
   } else {
     LOG(info) << "main routing table "
               << dht_->main_routing_table_->max_prefix_length() << " "
               << dht_->main_routing_table_->good_node_count() << " "
               << dht_->main_routing_table_->known_node_count() << " "
               << dht_->main_routing_table_->bucket_count() << " "
-              << "banned " << dht_->black_list_.size() << " "
+              << "banned " << dht_->blacklist_.size() << " "
               << "mem " << utils::pretty_size(dht_->main_routing_table_->memory_size()) << " "
               << "tx: (n,mem) " << dht_->transaction_manager.size() << "," << utils::pretty_size(dht_->transaction_manager.memory_size())
           ;
@@ -78,12 +77,14 @@ void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
 }
 
 void DHTImpl::handle_refresh_nodes_timer(const Timer::Cancel &cancel) {
+  dht_->blacklist_.gc();
+
   for (auto &rt : dht_->routing_tables_) {
     rt->gc();
 
     // try refreshing questionable nodes
     size_t n = 0;
-    rt->iterate_nodes([this, &rt, &n](const routing_table::Entry &node) {
+    rt->iterate_nodes([this, &n](const routing_table::Entry &node) {
       if (!node.is_good() && !node.is_bad()) {
         // FIXME: const_cast
         if (const_cast<routing_table::Entry&>(node).require_response_now()) {

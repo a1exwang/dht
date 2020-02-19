@@ -57,6 +57,8 @@ void Config::serialize(std::ostream &os) const {
   os << "delete_good_nodes = " << delete_good_nodes << std::endl;
   os << "fake_id = " << fake_id << std::endl;
   os << "fake_id_prefix_length = " << fake_id_prefix_length << std::endl;
+  os << "blacklist_hours = " << blacklist_hours << std::endl;
+  os << "blacklist_size = " << blacklist_size << std::endl;
   os << "fat_routing_table = " << fat_routing_table << std::endl;
   os << "transaction_expiration_seconds = " << transaction_expiration_seconds << std::endl;
   os << "# end of config." << std::endl;
@@ -96,6 +98,8 @@ Config::Config() {
       ("delete-good-nodes", po::value(&delete_good_nodes), "")
       ("fake-id", po::value(&fake_id), "")
       ("fake-id-prefix-length", po::value(&fake_id_prefix_length), "")
+      ("blacklist-hours", po::value(&blacklist_hours), "")
+      ("blacklist-size", po::value(&blacklist_size), "")
       ("fat-routing-table", po::value(&fat_routing_table), "")
       ("transaction-expiration-seconds", po::value(&transaction_expiration_seconds), "")
       ;

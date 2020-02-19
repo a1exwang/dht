@@ -53,6 +53,9 @@ struct Config :public albert::config::Config {
   size_t fake_id_prefix_length = 128;
   bool fat_routing_table = false;
 
+  size_t blacklist_size = 65536;
+  size_t blacklist_hours = 6;
+
   bool debug = false;
   std::string resolve_torrent_info_hash;
 };
