@@ -21,7 +21,14 @@ std::string escape_sql(const std::string &s) {
 Sqlite3Store::Sqlite3Store(const std::string &path) {
   auto rc = sqlite3_open(path.c_str(), &db_);
   if (rc != SQLITE_OK) {
+    db_ = nullptr;
     throw Sqlite3FailedToOpen(sqlite3_errmsg(db_));
+  }
+}
+
+Sqlite3Store::~Sqlite3Store() {
+  if (db_) {
+    sqlite3_close(db_);
   }
 }
 
@@ -124,7 +131,7 @@ size_t Sqlite3Store::memory_size() const {
     LOG(error) << "Failed to get SQLITE memory used size: " << sqlite3_errstr(ret);
     return 0;
   }
+}
 
-};
 
 }

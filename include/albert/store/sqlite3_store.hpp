@@ -23,7 +23,7 @@ class Sqlite3TimeoutError :public std::runtime_error {
 class Sqlite3Store :public Store {
  public:
   Sqlite3Store(const std::string &path);
-  ~Sqlite3Store() override = default;
+  ~Sqlite3Store() override;
 
   void create(const std::string &key, const std::string &value) override;
   void update(const std::string &key, const std::string &value) override;;

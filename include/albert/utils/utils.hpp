@@ -22,4 +22,6 @@ template <>
 uint16_t host_to_network<uint16_t>(uint16_t input);
 
 std::string pretty_size(size_t, bool bytes = true);
+
+std::tuple<size_t, size_t> process_mem_usage();
 }

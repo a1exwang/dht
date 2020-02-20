@@ -111,6 +111,7 @@ PeerConnection::PeerConnection(
       target_(target),
       peer_(std::make_unique<Peer>(ip, port)) {
 
+  counter++;
   if (use_utp) {
     socket_ = std::make_shared<transport::UTPSocket>(io_context, udp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port));
   } else {
@@ -118,7 +119,9 @@ PeerConnection::PeerConnection(
   }
 }
 
+std::atomic<size_t> PeerConnection::counter = 0;
 PeerConnection::~PeerConnection() {
+  counter--;
 }
 
 void PeerConnection::connect(

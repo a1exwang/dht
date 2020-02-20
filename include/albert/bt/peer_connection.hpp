@@ -67,6 +67,7 @@ enum class ConnectionStatus {
 };
 class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
  public:
+  static std::atomic<size_t> counter;
   PeerConnection(
       boost::asio::io_context &io_context,
       const u160::U160 &self,

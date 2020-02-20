@@ -31,7 +31,8 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
           albert::dht::Config dht_config,
           std::unique_ptr<albert::store::Store> store,
           size_t db_scan_interval_seconds)
-      :store_(std::move(store)),
+      :
+      store_(std::move(store)),
        db_scan_timer(db_service, boost::asio::chrono::seconds(db_scan_interval_seconds)),
        db_scan_interval(db_scan_interval_seconds),
        bt(bt_service, std::move(bt_config)),
@@ -41,13 +42,21 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
   }
 
   void start() {
-    dht_service.post([that = shared_from_this()]() {
-      that->dht.start();
+    dht_service.post([weak_scanner = weak_from_this()]() {
+      if (auto scanner = weak_scanner.lock(); scanner) {
+        scanner->dht.start();
+      }
     });
-    bt_service.post([that = shared_from_this()]() {
-      that->bt.start();
+    bt_service.post([weak_scanner = weak_from_this()]() {
+      if (auto scanner = weak_scanner.lock(); scanner) {
+        scanner->bt.start();
+      }
     });
-    db_scan_timer.async_wait(boost::bind(&Scanner::handle_db_scan_timer, shared_from_this(), boost::asio::placeholders::error()));
+    db_scan_timer.async_wait([weak_scanner = weak_from_this()](const boost::system::error_code &error) {
+      if (auto scanner = weak_scanner.lock(); scanner) {
+        scanner->handle_db_scan_timer(error);
+      }
+    });
 
     thread_pool_.emplace_back(boost::bind(&boost::asio::io_context::run, &bt_service));
     thread_pool_.emplace_back(boost::bind(&boost::asio::io_context::run, &dht_service));
@@ -65,7 +74,7 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
     if (cached_info_hashes_.empty()) {
       try {
         auto empty_keys = store_->get_empty_keys();
-        if (empty_keys.size() == 0) {
+        if (empty_keys.empty()) {
           LOG(info) << "All torrents in database has been downloaded";
           return {};
         }
@@ -87,86 +96,114 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
       throw std::runtime_error("Scanner timer failure " + error.message());
     }
 
-    bt_service.post([that = shared_from_this()]() {
-      auto resolver_count = that->bt.resolver_count();
-      auto peer_count = that->bt.peer_count();
-      auto success_count = that->bt.success_count();
-      auto failure_count = that->bt.failure_count();
-      auto bt_memory_size = that->bt.memory_size();
-      auto peers_stat = that->bt.peers_stat();
+    bt_service.post([weak_scanner = weak_from_this()]() {
+      if (auto scanner = weak_scanner.lock(); scanner) {
+        auto resolver_count = scanner->bt.resolver_count();
+        auto peer_count = scanner->bt.peer_count();
+        auto success_count = scanner->bt.success_count();
+        auto failure_count = scanner->bt.failure_count();
+        auto bt_memory_size = scanner->bt.memory_size();
+        auto peers_stat = scanner->bt.peers_stat();
 
-      that->db_service.post([that, resolver_count, peer_count, success_count, failure_count, bt_memory_size, peers_stat]() {
-        if (peer_count < that->max_concurrent_peers_) {
-          std::vector<std::string> results;
-          if (resolver_count < that->max_concurrent_resolutions_)  {
-            auto n = that->max_concurrent_resolutions_ - resolver_count;
-            for (size_t i = 0; i < n; i++) {
-              auto ih = that->db_get_info_hash();
-              if (ih.has_value()) {
-                results.push_back(ih.value());
-              } else {
-                break;
+        scanner->db_service.post([weak_scanner, resolver_count, peer_count, success_count, failure_count, bt_memory_size, peers_stat]() {
+          if (auto scanner = weak_scanner.lock(); scanner) {
+            if (peer_count < scanner->max_concurrent_peers_) {
+              std::vector<std::string> results;
+              if (resolver_count < scanner->max_concurrent_resolutions_)  {
+                auto n = scanner->max_concurrent_resolutions_ - resolver_count;
+                for (size_t i = 0; i < n; i++) {
+                  auto ih = scanner->db_get_info_hash();
+                  if (ih.has_value()) {
+                    results.push_back(ih.value());
+                  } else {
+                    break;
+                  }
+                }
+              }
+              for (size_t i = 0; i < results.size() && i < scanner->max_add_count_at_a_time; i++) {
+                try {
+                  scanner->resolve_s(albert::u160::U160::from_hex(results[i]));
+                } catch (const std::runtime_error &e) {
+                  LOG(error) << "Failed to resolve info hash: " << e.what();
+                }
               }
             }
-          }
-          for (size_t i = 0; i < results.size() && i < that->max_add_count_at_a_time; i++) {
-            try {
-              that->resolve_s(albert::u160::U160::from_hex(results[i]));
-            } catch (const std::runtime_error &e) {
-              LOG(error) << "Failed to resolve info hash: " << e.what();
-            }
-          }
-        }
 
-        LOG(info) << "Scanner: BTResolver count: " << resolver_count
-                  << " success " << success_count
-                  << " failure " << failure_count
-                  << " BT memsize " << albert::utils::pretty_size(bt_memory_size)
-                  << " DHT memsize " << albert::utils::pretty_size(that->dht.memory_size())
-                  << " DB memsize " << albert::utils::pretty_size(that->store_->memory_size())
-              ;
-        for (auto [name, count] : peers_stat) {
-          LOG(info) << "Peers '" << name << "': " << count;
-        }
-      });
+            LOG(info) << "Scanner: BTResolver count: " << resolver_count
+                      << " success " << success_count
+                      << " failure " << failure_count;
+
+            auto [vsize, rss] = albert::utils::process_mem_usage();
+            LOG(info) << "Memory stat: BT memsize " << albert::utils::pretty_size(bt_memory_size)
+                      << " DHT memsize " << albert::utils::pretty_size(scanner->dht.memory_size())
+                      << " DB memsize " << albert::utils::pretty_size(scanner->store_->memory_size())
+                      << " VIRT " << albert::utils::pretty_size(vsize)
+                      << " RES " << albert::utils::pretty_size(rss)
+                      << " RES-BT " << albert::utils::pretty_size(rss - bt_memory_size)
+                  ;
+            for (auto [name, count] : peers_stat) {
+              LOG(info) << "Peers '" << name << "': " << count;
+            }
+            LOG(info) << "Peers still have hope " << peer_count;
+            LOG(info) << "Memory stat: PeerConnection instances " << albert::bt::peer::PeerConnection::counter;
+          }
+        });
+      }
     });
 
     db_scan_timer.expires_at(db_scan_timer.expiry() + db_scan_interval);
-    db_scan_timer.async_wait(boost::bind(&Scanner::handle_db_scan_timer, shared_from_this(), boost::asio::placeholders::error()));
+    db_scan_timer.async_wait([weak_scanner = weak_from_this()](const boost::system::error_code &error) {
+      if (auto scanner = weak_scanner.lock(); scanner) {
+        scanner->handle_db_scan_timer(error);
+      }
+    });
   }
 
   void resolve_s(const albert::u160::U160 &ih) {
-    bt_service.post([that = shared_from_this(), ih]() {
-      auto resolver_weak = that->bt.resolve_torrent(ih, [ih, that](const albert::bencoding::DictNode &torrent) {
-        that->db_service.post([ih, torrent, that]() {
-          auto file_name = "torrents/" + ih.to_string() + ".torrent";
-          std::ofstream f(file_name, std::ios::binary);
-          torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
-          try {
-            that->store_->update(ih.to_string(), file_name);
-            LOG(info) << "torrent saved as '" << file_name << ", db updated";
-          } catch (const albert::store::Sqlite3TimeoutError &e) {
-            auto backup_file = "failed_to_save_torrents.txt";
-            std::ofstream ofs(backup_file, std::ios::app);
-            ofs << ih.to_string() << " " << file_name << std::endl;
-            LOG(error) << "failed to save torrent to database, database too busy, saving to " << backup_file;
+    bt_service.post([weak_scanner = weak_from_this(), ih]() {
+      if (auto scanner = weak_scanner.lock(); scanner) {
+        auto resolver_weak = scanner->bt.resolve_torrent(ih, [ih, weak_scanner](const albert::bencoding::DictNode &torrent) {
+          if (auto scanner = weak_scanner.lock(); scanner) {
+            scanner->db_service.post([ih, torrent, weak_scanner]() {
+              if (auto scanner = weak_scanner.lock(); scanner) {
+                auto file_name = "torrents/" + ih.to_string() + ".torrent";
+                std::ofstream f(file_name, std::ios::binary);
+                torrent.encode(f, albert::bencoding::EncodeMode::Bencoding);
+                try {
+                  scanner->store_->update(ih.to_string(), file_name);
+                  LOG(info) << "torrent saved as '" << file_name << ", db updated";
+                } catch (const albert::store::Sqlite3TimeoutError &e) {
+                  auto backup_file = "failed_to_save_torrents.txt";
+                  std::ofstream ofs(backup_file, std::ios::app);
+                  ofs << ih.to_string() << " " << file_name << std::endl;
+                  LOG(error) << "failed to save torrent to database, database too busy, saving to " << backup_file;
+                }
+              }
+            });
           }
         });
-      });
-      using namespace std::placeholders;
-      that->dht_service.post([that, ih, resolver_weak]() {
-          that->dht.get_peers(ih, std::bind(&Scanner::handle_get_peers_s, that, resolver_weak, _1, _2));
-      });
+        using namespace std::placeholders;
+        scanner->dht_service.post([weak_scanner, ih, resolver_weak]() {
+          if (auto scanner = weak_scanner.lock(); scanner) {
+            scanner->dht.get_peers(ih, [weak_scanner, resolver_weak](uint32_t ip, uint16_t port) {
+              if (auto scanner = weak_scanner.lock()) {
+                scanner->handle_get_peers_s(resolver_weak, ip, port);
+              }
+            });
+          }
+        });
+      }
     });
   }
 
   void handle_get_peers_s(std::weak_ptr<albert::bt::TorrentResolver> resolver_weak, uint32_t ip, uint16_t port) {
-    bt_service.post([ip, port, resolver_weak, that = shared_from_this()]() {
+    bt_service.post([ip, port, resolver_weak, weak_scanner = weak_from_this()]() {
       auto resolver = resolver_weak.lock();
-      if (!resolver) {
-        LOG(debug) << "TorrentResolver gone before a get_peer request received";
+      auto scanner = weak_scanner.lock();
+      if (!resolver || !scanner) {
+        LOG(debug) << "TorrentResolver or Scanner gone before a get_peer request received";
       } else {
-        if (that->bt.peer_count() < that->max_concurrent_peers_) {
+        if (scanner->bt.peer_count() < scanner->max_concurrent_peers_) {
           resolver->add_peer(ip, port);
         }
       }
@@ -201,22 +238,47 @@ class Scanner :public std::enable_shared_from_this<Scanner> {
 
 
 int main(int argc, char* argv[]) {
-  auto args = albert::config::argv2args(argc, argv);
+  {
+    auto args = albert::config::argv2args(argc, argv);
 
-  albert::dht::Config dht_config;
-  albert::bt::Config bt_config;
-  args = dht_config.from_command_line(args);
-  args = bt_config.from_command_line(args);
-  albert::config::throw_on_remaining_args(args);
+    albert::dht::Config dht_config;
+    albert::bt::Config bt_config;
+    args = dht_config.from_command_line(args);
+    args = bt_config.from_command_line(args);
+    albert::config::throw_on_remaining_args(args);
 
-  albert::log::initialize_logger(dht_config.debug);
-  boost::asio::io_service io_service{};
-  auto store = std::make_unique<albert::store::Sqlite3Store>("torrents/torrents.sqlite3");
+    albert::log::initialize_logger(dht_config.debug);
+    boost::asio::io_service io_service{};
+    auto store = std::make_unique<albert::store::Sqlite3Store>("torrents/torrents.sqlite3");
 
-  size_t db_scan_interval_seconds = 5;
-  auto scanner = std::make_shared<Scanner>(std::move(bt_config), std::move(dht_config), std::move(store), db_scan_interval_seconds);
-  scanner->start();
-  scanner->join();
+    size_t db_scan_interval_seconds = 5;
+    auto scanner = std::make_shared<Scanner>(std::move(bt_config), std::move(dht_config), std::move(store), db_scan_interval_seconds);
+    scanner->start();
+    scanner->join();
+//    {
+//      auto [virt, rss] = albert::utils::process_mem_usage();
+//      LOG(info) << "1VIRT, RSS = " << albert::utils::pretty_size(virt) << " " << albert::utils::pretty_size(rss);
+//    }
+//    std::vector<std::unique_ptr<char>> ps;
+//    for (size_t i = 0; i < 30; i++) {
+//      size_t size = 1ul << i;
+//      ps.push_back(std::unique_ptr<char>(new char[size]));
+//      memset(ps.back().get(), 0, size);
+//
+//      {
+//        auto [virt, rss] = albert::utils::process_mem_usage();
+//        LOG(info) << "1VIRT, RSS = " << albert::utils::pretty_size(virt) << " " << albert::utils::pretty_size(rss);
+//      }
+//    }
+//    {
+//
+//      auto [virt, rss] = albert::utils::process_mem_usage();
+//      LOG(info) << "2VIRT, RSS = " << albert::utils::pretty_size(virt) << " " << albert::utils::pretty_size(rss);
+//    }
+  }
+  auto [virt, rss] = albert::utils::process_mem_usage();
+  LOG(info) << "When exiting VIRT, RSS = " << albert::utils::pretty_size(virt) << " " << albert::utils::pretty_size(rss);
+
   return 0;
 }
 

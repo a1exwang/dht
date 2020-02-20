@@ -60,9 +60,9 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
 
   pc->connect(
       [weak_resolver = weak_from_this(), ip, port](const boost::system::error_code &e) {
-        if (!weak_resolver.expired()) {
+        if (e) {
           auto resolver = weak_resolver.lock();
-          if (e) {
+          if (resolver) {
             if (resolver->peer_connections_.find({ip, port}) != resolver->peer_connections_.end()) {
               auto &pc = resolver->peer_connections_.at({ip, port});
               std::string key = pc->failed_reason();
@@ -73,8 +73,9 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
         }
       },
       [resolver_weak = weak_from_this(), pc_weak = std::weak_ptr<peer::PeerConnection>(pc)](int total_pieces, size_t metadata_size) {
-        if (!resolver_weak.expired() && !pc_weak.expired()) {
-          resolver_weak.lock()->handshake_handler(pc_weak, total_pieces, metadata_size);
+        auto resolver = resolver_weak.lock();
+        if (resolver) {
+          resolver->handshake_handler(pc_weak, total_pieces, metadata_size);
         }
       });
 }
@@ -150,7 +151,7 @@ void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> weak
     }
     pc->interest([weak_pc](){
       if (auto pc = weak_pc.lock(); pc) {
-        LOG(info) << "TorrentResolver: peer unchoked " << weak_pc.lock()->peer().to_string();
+        LOG(info) << "TorrentResolver: peer unchoked " << pc->peer().to_string();
       }
     });
     using namespace boost::placeholders;

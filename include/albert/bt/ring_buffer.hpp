@@ -10,7 +10,7 @@
 
 namespace albert::ring_buffer {
 
-constexpr size_t BufSize = 65536 * 2;
+constexpr size_t BufSize = 4096;
 
 
 class RingBuffer {
