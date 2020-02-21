@@ -314,11 +314,12 @@ void PeerConnection::handle_extended_message(
     auto total_size = get_int64_or_throw(dict, "metadata_size", "ut_metadata");
     m_dict_ = get_dict_or_throw(dict, "m", "ut_metadata");
     piece_count_ = ceil(double(total_size) / MetadataPieceSize);
-    extended_handshake_handler_(piece_count_, total_size);
 
-    if (piece_count_ == 0) {
-      throw InvalidPeerMessage("piece count cannot be zero");
+    if (piece_count_ <= 0) {
+      throw InvalidPeerMessage("piece count cannot <= zero");
     }
+
+    extended_handshake_handler_(piece_count_, total_size);
 
     LOG(debug) << "Extended handshake: from " << peer_->to_string() << std::endl
                << "total pieces: " << piece_count_
