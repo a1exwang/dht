@@ -10,11 +10,15 @@
 
 #include <albert/bencode/bencoding.hpp>
 #include <albert/bt/peer.hpp>
+#include <albert/bt/peer_connection.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>
 #include <albert/u160/u160.hpp>
 
 namespace albert::bt {
+
+std::mutex TorrentResolver::pointers_lock_;
+std::set<TorrentResolver*> TorrentResolver::pointers_;
 
 TorrentResolver::TorrentResolver(
     boost::asio::io_service &io,
@@ -26,7 +30,13 @@ TorrentResolver::TorrentResolver(
     std::chrono::high_resolution_clock::time_point expiration_at
     )
     :io_(io), timer_(io_), info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port), use_utp_(use_utp),
-    has_metadata_(false), expiration_at_(expiration_at) { }
+    has_metadata_(false), expiration_at_(expiration_at) {
+  {
+    std::unique_lock _(pointers_lock_);
+    pointers_.insert(this);
+  }
+
+}
 
 TorrentResolver::TorrentResolver(
     boost::asio::io_service &io,
@@ -39,15 +49,29 @@ TorrentResolver::TorrentResolver(
     :io_(io), timer_(io_),
      info_hash_(info_hash), self_(self), bind_ip_(bind_ip), bind_port_(bind_port),
      use_utp_(use_utp), info_(info), has_metadata_(true) {
+  {
+    std::unique_lock _(pointers_lock_);
+    pointers_.insert(this);
+  }
 
   timer_.expires_at(boost::asio::chrono::steady_clock::now());
   timer_.async_wait(std::bind(&TorrentResolver::timer_handler, this, std::placeholders::_1));
 }
 
+TorrentResolver::~TorrentResolver() {
+  {
+    std::unique_lock _(pointers_lock_);
+    pointers_.erase(this);
+  }
+  for (auto &pc : peer_connections_) {
+    pc.second->close();
+  }
+}
+
 void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
   using namespace std::placeholders;
 
-  auto pc = std::make_shared<peer::PeerConnection>(
+  auto pc = albert::common::make_shared<peer::PeerConnection>(
       io_,
       self(),
       info_hash_,
@@ -56,6 +80,7 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
       ip,
       port,
       use_utp_);
+  auto pc2 = pc;
   peer_connections_[{ip, port}] = pc;
 
   pc->connect(
@@ -72,7 +97,7 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
           }
         }
       },
-      [resolver_weak = weak_from_this(), pc_weak = std::weak_ptr<peer::PeerConnection>(pc)](int total_pieces, size_t metadata_size) {
+      [resolver_weak = weak_from_this(), pc_weak = albert::common::wp<peer::PeerConnection>(pc)](int total_pieces, size_t metadata_size) {
         auto resolver = resolver_weak.lock();
         if (resolver) {
           resolver->handshake_handler(pc_weak, total_pieces, metadata_size);
@@ -80,7 +105,7 @@ void TorrentResolver::add_peer(uint32_t ip, uint16_t port) {
       });
 }
 
-void TorrentResolver::piece_handler(std::weak_ptr<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data) {
+void TorrentResolver::piece_handler(wp<peer::PeerConnection> pc, int piece, const std::vector<uint8_t> &data) {
   if (piece >= 0 && piece < pieces_.size()) {
     if (pieces_[piece].empty()) {
       pieces_[piece] = data;
@@ -106,6 +131,8 @@ void TorrentResolver::piece_handler(std::weak_ptr<peer::PeerConnection> pc, int 
       bencoding::DictNode torrent(std::move(dict));
       if (torrent_handler_) {
         torrent_handler_(torrent);
+        // TODO: this will cause SEGV?
+//        torrent_handler_ = nullptr;
       }
     } else {
       LOG(error) << "hash of Torrent.info(" << calculated_hash.to_string() << ") not match info-hash(" << info_hash_.to_string() << ")";
@@ -132,7 +159,7 @@ bool TorrentResolver::finished() const {
 void TorrentResolver::set_torrent_handler(std::function<void(const bencoding::DictNode &torrent)> handler) {
   torrent_handler_ = std::move(handler);
 }
-void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> weak_pc, int total_pieces, size_t metadata_size) {
+void TorrentResolver::handshake_handler(wp<peer::PeerConnection> weak_pc, int total_pieces, size_t metadata_size) {
   if (auto pc = weak_pc.lock(); !pc) {
     LOG(error) << "PeerConnection gone before handshake was handled info_hash: " << this->info_hash_.to_string();
   } else {
@@ -156,12 +183,12 @@ void TorrentResolver::handshake_handler(std::weak_ptr<peer::PeerConnection> weak
     });
     using namespace boost::placeholders;
     pc->start_metadata_transfer(
-        boost::bind(&TorrentResolver::piece_handler, this, pc, _1, _2));
-  }
-}
-TorrentResolver::~TorrentResolver() {
-  for (auto &pc : peer_connections_) {
-    pc.second->close();
+        [weak_resolver = weak_from_this(), weak_pc](int piece, const std::vector<uint8_t> &data) {
+          if (auto resolver = weak_resolver.lock(); resolver) {
+            resolver->piece_handler(weak_pc, piece, data);
+          }
+        }
+    );
   }
 }
 size_t TorrentResolver::pieces_got() const {

@@ -147,6 +147,7 @@ void DHTImpl::bootstrap_routing_table(routing_table::RoutingTable &routing_table
       break;
     }
 
+    LOG(info) << "DHT bootstraping from " << node_host << ":" << node_port << "(" << ep << ")";
     find_self(routing_table, ep);
   }
 

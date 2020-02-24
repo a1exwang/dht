@@ -1,0 +1,5 @@
+add_library(common memory.cpp)
+if (ALBERT_DEBUG_MEMORY)
+    add_library(memory_debug memory_debug.cpp)
+    target_link_libraries(common PUBLIC memory_debug)
+endif()

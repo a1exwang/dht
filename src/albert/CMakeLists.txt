@@ -1,5 +1,6 @@
 add_subdirectory(bencoding)
 add_subdirectory(bt)
+add_subdirectory(common)
 add_subdirectory(config)
 add_subdirectory(cui)
 add_subdirectory(dht)

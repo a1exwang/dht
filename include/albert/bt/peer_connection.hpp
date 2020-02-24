@@ -66,8 +66,17 @@ enum class ConnectionStatus {
   Disconnected,
 };
 class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
+  static std::mutex pointers_lock_;
+  static std::set<PeerConnection*> pointers_;
  public:
-  static std::atomic<size_t> counter;
+  static std::set<PeerConnection*> get_pointers() {
+    std::unique_lock _(pointers_lock_);
+    return pointers_;
+  }
+  static size_t get_pointers_size() {
+    std::unique_lock _(pointers_lock_);
+    return pointers_.size();
+  }
   PeerConnection(
       boost::asio::io_context &io_context,
       const u160::U160 &self,
@@ -95,7 +104,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
   void set_block_handler(std::function<void(size_t piece, size_t offset, gsl::span<uint8_t> data)> block_handler) { block_handler_ = block_handler; }
   void request(size_t index, size_t begin, size_t length);
 
-  const Peer &peer() { return *peer_; }
+  const Peer &peer() const { return *peer_; }
   const u160::U160 &peer_id() const { return peer_id_; }
 
   void start_metadata_transfer(
@@ -152,7 +161,7 @@ class PeerConnection :public std::enable_shared_from_this<PeerConnection> {
 
   // buffers
   std::array<uint8_t, 65536> write_buffer_{};
-  ring_buffer::RingBuffer read_ring_;
+  ring_buffer::RingBuffer<65536 * 2> read_ring_;
 
   // connection status
   std::unique_ptr<Peer> peer_;

@@ -8,7 +8,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo)
+if (CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo OR STATIC_CXX_STDLIB)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -34,9 +34,20 @@ include_directories(include)
 find_package(Boost REQUIRED COMPONENTS system log program_options)
 find_package(OpenSSL REQUIRED)
 find_package(SQLite3 REQUIRED)
-if(CMAKE_BUILD_TYPE STREQUAL Debug)
+
+if(ALBERT_DEBUG_MEMORY OR CMAKE_BUILD_TYPE STREQUAL Debug)
+#    add_definitions(-DBACKWARD_HAS_BFD=1)
+#    add_definitions(-DBACKWARD_HAS_DWARF=1)
+
     add_subdirectory(3rdparty/backward-cpp)
+    link_libraries(dw dl)
+    if (ALBERT_DEBUG_MEMORY)
+        add_definitions(-DALBERT_DEBUG_MEMORY)
+    endif()
 endif()
+
+message(STATUS "ALBERT_DEBUG_MEMORY = '${ALBERT_DEBUG_MEMORY}'")
+
 add_subdirectory(3rdparty/GSL)
 link_libraries(GSL)
 

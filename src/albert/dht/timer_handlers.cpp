@@ -57,7 +57,7 @@ void DHTImpl::handle_report_stat_timer(const Timer::Cancel &cancel) {
       }
     }
   }
-  LOG(info) << "DHT RPSThrottler: " << throttler_.stat();
+  LOG(debug) << "DHT RPSThrottler: " << throttler_.stat();
 }
 void DHTImpl::handle_expand_route_timer(const Timer::Cancel &cancel) {
   for (auto &rt : dht_->routing_tables_) {

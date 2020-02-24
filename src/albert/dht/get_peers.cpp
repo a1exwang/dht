@@ -213,7 +213,7 @@ void get_peers::GetPeersManager::gc() {
     requests_.erase(item);
   }
 
-  LOG(info) << "GetPeersManager: nodes/traversed/peers/valid requests/deleting "
+  LOG(debug) << "GetPeersManager: nodes/traversed/peers/valid requests/deleting "
             << total_nodes << "/"
             << total_traversed << "/"
             << total_peers << "/"

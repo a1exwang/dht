@@ -1,16 +1,9 @@
 #pragma once
+#include <albert/common/memory.hpp>
 
 
-#include <memory>
+namespace albert {
 
-
-namespace albert::common {
-
-template <typename T>
-using sp = std::shared_ptr<T>;
-template <typename T>
-using wp = std::weak_ptr<T>;
-template <typename T>
-using up = std::unique_ptr<T>;
+using namespace albert::common;
 
 }

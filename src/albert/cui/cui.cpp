@@ -15,6 +15,7 @@
 #include <boost/system/error_code.hpp>
 
 #include <albert/bt/torrent_resolver.hpp>
+#include <albert/bt/peer_connection.hpp>
 #include <albert/dht/dht.hpp>
 #include <albert/krpc/krpc.hpp>
 #include <albert/log/log.hpp>

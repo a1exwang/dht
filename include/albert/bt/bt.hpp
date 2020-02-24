@@ -34,7 +34,7 @@ class BT {
  private:
   void handle_gc_timer(const boost::system::error_code &error);
   void reset_gc_timer();
- private:
+ public:
   Config config_;
   boost::asio::io_service &io_;
   u160::U160 self_;

@@ -98,6 +98,8 @@ std::string make_empty_message(uint8_t message_type) {
 }
 }
 
+std::mutex PeerConnection::pointers_lock_{};
+std::set<PeerConnection*> PeerConnection::pointers_{};
 PeerConnection::PeerConnection(
     boost::asio::io_context &io_context,
     const u160::U160 &self,
@@ -111,7 +113,11 @@ PeerConnection::PeerConnection(
       target_(target),
       peer_(std::make_unique<Peer>(ip, port)) {
 
-  counter++;
+  {
+    std::unique_lock _(pointers_lock_);
+    pointers_.insert(this);
+  }
+
   if (use_utp) {
     socket_ = std::make_shared<transport::UTPSocket>(io_context, udp::endpoint(boost::asio::ip::address_v4(bind_ip), bind_port));
   } else {
@@ -119,9 +125,11 @@ PeerConnection::PeerConnection(
   }
 }
 
-std::atomic<size_t> PeerConnection::counter = 0;
 PeerConnection::~PeerConnection() {
-  counter--;
+  {
+    std::unique_lock _(pointers_lock_);
+    pointers_.erase(this);
+  }
 }
 
 void PeerConnection::connect(
@@ -152,12 +160,14 @@ void PeerConnection::handle_connect(
     connection_status_ = ConnectionStatus::Disconnected;
     failed_reason_ = "timeout";
     connect_handler_(boost::asio::error::timed_out);
+    connect_handler_ = nullptr;
   } else if (ec) {
     LOG(debug) << "Connect error: " << peer_->to_string() << " " << ec.message();
     close();
     connection_status_ = ConnectionStatus::Disconnected;
     failed_reason_ = "connect_error: " + ec.message();
     connect_handler_(ec);
+    connect_handler_ = nullptr;
   } else {
     connection_status_ = ConnectionStatus::Connected;
     LOG(info) << "PeerConnection: connected to " << this->peer_->to_string();
@@ -319,7 +329,10 @@ void PeerConnection::handle_extended_message(
       throw InvalidPeerMessage("piece count cannot <= zero");
     }
 
-    extended_handshake_handler_(piece_count_, total_size);
+    if (extended_handshake_handler_) {
+      extended_handshake_handler_(piece_count_, total_size);
+      extended_handshake_handler_ = nullptr;
+    }
 
     LOG(debug) << "Extended handshake: from " << peer_->to_string() << std::endl
                << "total pieces: " << piece_count_
@@ -403,6 +416,7 @@ void PeerConnection::handle_receive(const boost::system::error_code &err, size_t
 //            } else {
           if (connect_handler_) {
             connect_handler_(boost::system::error_code());
+            connect_handler_ = nullptr;
           }
 //            }
         } else {
